@@ -54,28 +54,6 @@ func setupTestHome(t *testing.T) string {
 	return dir
 }
 
-func clearKibanaEnv(t *testing.T) {
-	t.Helper()
-	for _, k := range []string{
-		"KIBANA_CLI_HOST", "KIBANA_CLI_USER", "KIBANA_CLI_PASSWORD",
-		"KIBANA_CLI_KIBANA_VERSION", "KIBANA_CLI_INSECURE", "KIBANA_CLI_TIMEOUT",
-		"KIBANA_CLI_ALLOWED_INDEX_PREFIXES",
-	} {
-		t.Setenv(k, "")
-	}
-}
-
-func runCLIIsolatedEnv(t *testing.T, home string, env map[string]string, args []string) (stdout string, exitCode int) {
-	t.Helper()
-	resetCLIState(t)
-	for k, v := range env {
-		t.Setenv(k, v)
-	}
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	return runCLI(t, args)
-}
-
 func writeFieldMap(t *testing.T, home string, content string) {
 	t.Helper()
 	dir := filepath.Join(home, ".kibana-cli")

@@ -27,10 +27,6 @@ func newMockKibanaServerWith(opts mockKibanaOptions) *httptest.Server {
 	}))
 }
 
-func mockKibanaHandler(w http.ResponseWriter, r *http.Request) {
-	mockKibanaHandlerWith(w, r, mockKibanaOptions{})
-}
-
 func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKibanaOptions) {
 	switch {
 	case r.URL.Path == "/api/status":
@@ -67,10 +63,6 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
-}
-
-func mockKibanaProxy(w http.ResponseWriter, r *http.Request, method, path string) {
-	mockKibanaProxyWith(w, r, method, path, mockKibanaOptions{})
 }
 
 func mockKibanaProxyWith(w http.ResponseWriter, r *http.Request, method, path string, opts mockKibanaOptions) {
