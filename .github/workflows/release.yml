@@ -57,12 +57,13 @@ jobs:
       - name: Extract release notes
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d }' > release-notes.md
-          [ -s release-notes.md ] || cp CHANGELOG.md release-notes.md
+          NOTES="/tmp/release-notes.md"
+          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d }' > "$NOTES"
+          [ -s "$NOTES" ] || cp CHANGELOG.md "$NOTES"
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean --release-notes=release-notes.md
+          args: release --clean --release-notes=/tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
