@@ -21,6 +21,9 @@
     "url": "git+https://github.com/fatecannotbealtered/kibana-cli.git"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "kibana-cli": "scripts/run.js"
   },
