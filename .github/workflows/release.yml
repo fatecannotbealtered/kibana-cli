@@ -87,6 +87,13 @@ jobs:
             echo "::error::Tag version (${TAG_VERSION}) != package.json (${PKG_VERSION})"
             exit 1
           fi
-      - run: npm publish --access public
+      - name: Publish to npm
+        shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN not configured; skipping npm publish"
+            exit 0
+          fi
+          npm publish --access public
