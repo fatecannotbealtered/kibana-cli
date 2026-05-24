@@ -1,0 +1,44 @@
+{
+  "name": "@fatecannotbealtered-/kibana-cli",
+  "version": "1.0.0",
+  "description": "Kibana log query CLI for humans and AI Agents — search and aggregate logs via Kibana Console Proxy",
+  "keywords": [
+    "kibana",
+    "logs",
+    "cli",
+    "ai-agent",
+    "elk",
+    "devtools",
+    "openclaw"
+  ],
+  "author": "guosong6886@gmail.com",
+  "homepage": "https://github.com/fatecannotbealtered/kibana-cli#readme",
+  "bugs": {
+    "url": "https://github.com/fatecannotbealtered/kibana-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fatecannotbealtered/kibana-cli.git"
+  },
+  "license": "MIT",
+  "bin": {
+    "kibana-cli": "scripts/run.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "files": [
+    "scripts/install.js",
+    "scripts/run.js",
+    "skills/",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "docs/COMPATIBILITY.md"
+  ],
+  "os": ["darwin", "linux", "win32"],
+  "cpu": ["x64", "arm64"],
+  "engines": {
+    "node": ">=16"
+  }
+}

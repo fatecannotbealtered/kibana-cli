@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.23']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - run: go mod tidy
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - name: check-clean
+        if: runner.os == 'Linux'
+        run: bash scripts/check-clean.sh
+      - run: go build -v ./...
+      - run: go test -race -v ./...
+      - name: Smoke test (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          go build -o kibana-cli-test ./cmd/kibana-cli
+          ./kibana-cli-test --version
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          go build -o kibana-cli-test.exe ./cmd/kibana-cli
+          .\kibana-cli-test.exe --version
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Extract release notes
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d }' > release-notes.md
+          [ -s release-notes.md ] || cp CHANGELOG.md release-notes.md
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean --release-notes=release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm pack --dry-run
+      - name: Verify version consistency
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version (${TAG_VERSION}) != package.json (${PKG_VERSION})"
+            exit 1
+          fi
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

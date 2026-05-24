@@ -1,0 +1,227 @@
+package config
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Config stores Kibana connection credentials.
+// Host is the Kibana base URL (e.g. https://kibana.example.com), not the Discover UI path.
+type Config struct {
+	Host            string `json:"host"`
+	KibanaVersion   string `json:"kibanaVersion,omitempty"`
+	CredentialStore string `json:"credentialStore,omitempty"`
+	CredentialKind  string `json:"credentialKind,omitempty"`
+	Username        string `json:"username,omitempty"`
+	Password        string `json:"password,omitempty"`
+}
+
+// Dir returns ~/.kibana-cli/
+func Dir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".kibana-cli"
+	}
+	return filepath.Join(home, ".kibana-cli")
+}
+
+// FilePath returns ~/.kibana-cli/config.json
+func FilePath() string {
+	return filepath.Join(Dir(), "config.json")
+}
+
+func firstNonEmpty(candidates ...string) string {
+	for _, c := range candidates {
+		if v := strings.TrimSpace(c); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// Load reads configuration: KIBANA_CLI_* env overrides file.
+func Load() (*Config, error) {
+	cfg := &Config{}
+	data, err := os.ReadFile(FilePath())
+	if err == nil {
+		if jsonErr := json.Unmarshal(data, cfg); jsonErr != nil {
+			return nil, fmt.Errorf("parsing config %s: %w", FilePath(), jsonErr)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_HOST")); v != "" {
+		cfg.Host = v
+	}
+	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_USER")); v != "" {
+		cfg.Username = v
+	}
+	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_PASSWORD")); v != "" {
+		cfg.Password = v
+	}
+	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_KIBANA_VERSION")); v != "" {
+		cfg.KibanaVersion = v
+	}
+	if cfg.usesKeyringStore() && cfg.secretsFromEnv() == "" {
+		if err := loadSecretFromKeyring(cfg); err != nil {
+			return nil, err
+		}
+	}
+	return cfg, nil
+}
+
+// SaveOptions controls credential persistence.
+type SaveOptions struct {
+	Plaintext bool
+}
+
+// Save persists configuration (keyring by default).
+func Save(cfg *Config, opts SaveOptions) error {
+	store := CredentialStoreFile
+	if !opts.Plaintext {
+		if !KeyringAvailable() {
+			return errors.New("OS credential store unavailable; use environment variables or --plaintext")
+		}
+		if err := saveSecretToKeyring(cfg); err != nil {
+			return fmt.Errorf("saving to OS credential store: %w", err)
+		}
+		store = CredentialStoreKeyring
+	}
+	disk := cfg.onDiskCopy(store)
+	if err := writeConfigFile(disk); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeConfigFile(cfg *Config) error {
+	if err := os.MkdirAll(Dir(), 0700); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding config: %w", err)
+	}
+	if err := os.WriteFile(FilePath(), data, 0600); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+	return nil
+}
+
+func (c *Config) usesKeyringStore() bool {
+	return strings.TrimSpace(c.CredentialStore) == CredentialStoreKeyring
+}
+
+func (c *Config) secretsFromEnv() string {
+	if firstNonEmpty(os.Getenv("KIBANA_CLI_PASSWORD")) != "" {
+		return "env"
+	}
+	return ""
+}
+
+func readDiskConfigOnly() (*Config, error) {
+	data, err := os.ReadFile(FilePath())
+	if err != nil {
+		return nil, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", FilePath(), err)
+	}
+	return &cfg, nil
+}
+
+// Delete removes config and keyring secrets.
+func Delete() error {
+	if cfg, err := readDiskConfigOnly(); err == nil {
+		deleteKeyringSecrets(cfg)
+	}
+	err := os.Remove(FilePath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("deleting config: %w", err)
+	}
+	return nil
+}
+
+// IsConfigured reports whether Kibana host and credentials exist.
+func IsConfigured() bool {
+	cfg, err := Load()
+	if err != nil {
+		return false
+	}
+	return cfg.Host != "" && strings.TrimSpace(cfg.Username) != "" && cfg.Password != ""
+}
+
+// AuthSource returns env-cli / file / keyring / none.
+func AuthSource() string {
+	if firstNonEmpty(os.Getenv("KIBANA_CLI_HOST"), os.Getenv("KIBANA_CLI_USER"), os.Getenv("KIBANA_CLI_PASSWORD")) != "" {
+		return "env-cli"
+	}
+	if data, err := os.ReadFile(FilePath()); err == nil {
+		var disk Config
+		if json.Unmarshal(data, &disk) == nil && disk.usesKeyringStore() {
+			return "keyring"
+		}
+		return "file"
+	}
+	return "none"
+}
+
+// CredentialStoreLabel describes where secrets are stored.
+func CredentialStoreLabel(cfg *Config) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.secretsFromEnv() != "" {
+		return "environment"
+	}
+	if cfg.usesKeyringStore() {
+		return CredentialStoreKeyring
+	}
+	if cfg.Password != "" {
+		return CredentialStoreFile
+	}
+	return ""
+}
+
+// MustLoad validates configuration for Kibana mode.
+func MustLoad() (*Config, error) {
+	cfg, err := Load()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Host == "" {
+		return nil, errors.New("not configured: run 'kibana-cli auth login' or set KIBANA_CLI_HOST")
+	}
+	if strings.TrimSpace(cfg.Username) == "" || cfg.Password == "" {
+		return nil, errors.New("not configured: set KIBANA_CLI_USER and KIBANA_CLI_PASSWORD or run auth login")
+	}
+	if err := ValidateKibanaHost(cfg.Host); err != nil {
+		return nil, err
+	}
+	cfg.Host = strings.TrimRight(cfg.Host, "/")
+	return cfg, nil
+}
+
+func loopbackHost(raw string) string {
+	host := strings.TrimPrefix(raw, "http://")
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if at := strings.LastIndex(host, "@"); at >= 0 {
+		host = host[at+1:]
+	}
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.ToLower(host)
+}
+
+// AuthMode returns "basic" for status output.
+func (c *Config) AuthMode() string {
+	return "basic"
+}

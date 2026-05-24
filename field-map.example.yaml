@@ -1,0 +1,58 @@
+# Example field map — copy to ~/.kibana-cli/field-map.yaml via: kibana-cli config init
+# Index names change in ops: use index_rules (globs) or index_patterns, not fixed environment names.
+version: 1
+
+defaults:
+  index: "logs-*"
+  time_field: "@timestamp"
+  service_fields:
+    - log_app
+    - service_name
+    - service
+  level_fields:
+    - level
+    - log.level
+  message_fields:
+    - message
+    - msg
+  trace_id_fields:
+    - traceId
+    - trace_id
+    - log_traceId
+  trace_mode: field
+
+# First matching rule wins when --index is set (adjust globs when naming changes).
+index_rules:
+  - match: "*v3*log*"
+    trace_mode: msg
+    message_fields: [msg]
+  - match: "*legacy*log*"
+    trace_mode: field
+    trace_id_fields: [log_traceId, traceId]
+    message_fields: [msg]
+
+profiles:
+  trace-in-msg:
+    index_patterns:
+      - "*v3*log*"
+      - "*mdc*"
+    message_fields: [msg]
+    trace_mode: msg
+
+  trace-in-field:
+    index_patterns:
+      - "*legacy*log*"
+      - "*-elk-*"
+    message_fields: [msg]
+    trace_id_fields: [log_traceId, traceId, trace_id]
+    trace_mode: field
+
+  java-app:
+    index_patterns: ["java-app-*"]
+    service_fields: [log_app, application]
+    message_fields: [msg]
+
+services:
+  order-svc:
+    match_fields: [log_app, service_name]
+    profiles: [java-app]

@@ -1,0 +1,19 @@
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.txt
+coverage
+coverage.*
+.goreleaser-dist/
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.local
+
+# Local test artifacts (may contain machine paths / usernames)
+docs/evidence/
+docs/TEST_REPORT.md
+docs/TEST_REPORT.html

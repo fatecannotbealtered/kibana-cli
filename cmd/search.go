@@ -1,0 +1,220 @@
+package cmd
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/fatecannotbealtered/kibana-cli/internal/config"
+	"github.com/fatecannotbealtered/kibana-cli/internal/fieldmap"
+	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
+	"github.com/fatecannotbealtered/kibana-cli/internal/msgtrace"
+	"github.com/fatecannotbealtered/kibana-cli/internal/output"
+	"github.com/spf13/cobra"
+)
+
+var searchCmd = &cobra.Command{
+	Use:   "search",
+	Short: "Search service logs via Kibana",
+	Long: `Search logs through Kibana Console Proxy (_search).
+
+Use field-map.yaml (--profile / --service) when indices use different field names.
+Use --data-view with a Kibana data view id to resolve the index pattern title.
+
+Examples:
+  kibana-cli search --profile java-app --service order-svc --level ERROR --from now-30m --json
+  kibana-cli search --index 'app-test-log-*' --query 'timeout' --from now-15m --json
+  kibana-cli search --data-view 17f4cc60-eafc-11ec-8e68-f14beaf972d1 --level ERROR --json`,
+	RunE: runSearch,
+}
+
+func init() {
+	rootCmd.AddCommand(searchCmd)
+	searchCmd.Flags().String("index", "", "Index or index pattern (overrides profile)")
+	searchCmd.Flags().String("data-view", "", "Kibana data view / index-pattern id (resolves to index title)")
+	searchCmd.Flags().String("profile", "", "Profile name from field-map.yaml")
+	searchCmd.Flags().String("service", "", "Logical service name (maps to multiple fields)")
+	searchCmd.Flags().String("level", "", "Log level (maps across level_fields)")
+	searchCmd.Flags().String("trace-id", "", "Trace ID (uses trace_mode / trace_field from field-map or flags)")
+	searchCmd.Flags().String("trace-mode", "", "Override trace lookup: field|msg (for heterogeneous indices)")
+	searchCmd.Flags().StringArray("trace-field", nil, "Override trace id fields (repeatable, e.g. log_traceId)")
+	searchCmd.Flags().String("query", "", "Keyword or Lucene query_string")
+	searchCmd.Flags().Bool("msg-only", true, "Search --query only in message field (match_phrase); default on")
+	searchCmd.Flags().Bool("all-fields", false, "Search --query across all fields (disables --msg-only)")
+	searchCmd.Flags().String("from", "now-15m", "Range start (date math, e.g. now-15m)")
+	searchCmd.Flags().String("to", "now", "Range end")
+	searchCmd.Flags().String("time-field", "", "Timestamp field (default from profile or @timestamp)")
+	searchCmd.Flags().Int("size", 50, "Max hits (1-1000)")
+	searchCmd.Flags().String("fields", "", "Comma-separated fields in JSON output")
+	searchCmd.Flags().StringArray("field", nil, "Exact term filter key=value (repeatable)")
+}
+
+func runSearch(cmd *cobra.Command, _ []string) error {
+	fm, err := loadFieldMapOrExit()
+	if err != nil {
+		return err
+	}
+	profile, _ := cmd.Flags().GetString("profile")
+	service, _ := cmd.Flags().GetString("service")
+	level, _ := cmd.Flags().GetString("level")
+	traceID, _ := cmd.Flags().GetString("trace-id")
+
+	client, _, err := newKibanaClient()
+	if err != nil {
+		return err
+	}
+	index, err := resolveIndexFromFlags(cmd, client)
+	if err != nil {
+		return handleAPIError(err, jsonMode)
+	}
+
+	resolved, err := fieldmap.ResolveSearchOptions(fm, profile, index, service, level)
+	if err != nil {
+		return failValidation(err.Error())
+	}
+	if err := config.ValidateIndexTarget(resolved.Index); err != nil {
+		return failValidation(err.Error())
+	}
+	timeField, _ := cmd.Flags().GetString("time-field")
+	if timeField != "" {
+		resolved.TimeField = timeField
+	}
+	if tm, _ := cmd.Flags().GetString("trace-mode"); strings.TrimSpace(tm) != "" {
+		resolved.TraceMode = fieldmap.NormalizeTraceMode(tm)
+	}
+	if tf := mustStringArrayFlag(cmd, "trace-field"); len(tf) > 0 {
+		resolved.TraceIDFields = fieldmap.UniqueStrings(tf)
+	}
+
+	size, sizeCapped, err := requireSize(cmd)
+	if err != nil {
+		return err
+	}
+	fields := map[string]string{}
+	for _, pair := range mustStringArrayFlag(cmd, "field") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || k == "" {
+			return failValidation("invalid --field, expected key=value: " + pair)
+		}
+		fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	query, _ := cmd.Flags().GetString("query")
+	msgOnly, _ := cmd.Flags().GetBool("msg-only")
+	allFields, _ := cmd.Flags().GetBool("all-fields")
+	if allFields {
+		msgOnly = false
+	}
+	from, _ := cmd.Flags().GetString("from")
+	to, _ := cmd.Flags().GetString("to")
+
+	opts := kibanaclient.SearchOptions{
+		Index:         resolved.Index,
+		Query:         query,
+		MsgOnly:       msgOnly,
+		Fields:        fields,
+		From:          from,
+		To:            to,
+		TimeField:     resolved.TimeField,
+		Size:          size,
+		SortDesc:      true,
+		ServiceValue:  service,
+		ServiceFields: resolved.ServiceFields,
+		LevelValue:    level,
+		LevelFields:   resolved.LevelFields,
+		TraceID:       traceID,
+		TraceFields:   resolved.TraceIDFields,
+		TraceMode:     resolved.TraceMode,
+		MessageField:  resolved.PrimaryMessageField(),
+	}
+	if dryRunOutput("search logs", map[string]any{
+		"index":   resolved.Index,
+		"profile": resolved.Profile,
+		"query":   kibanaclient.BuildQuery(opts),
+		"size":    size,
+	}) {
+		return nil
+	}
+	result, err := client.Search(apiCtx(), opts)
+	if err != nil {
+		return handleAPIError(err, jsonMode)
+	}
+	if jsonMode {
+		project := getFieldsFlag(cmd)
+		if len(project) == 0 && len(resolved.MessageFields) > 0 {
+			project = append(project, "@timestamp")
+			project = append(project, resolved.MessageFields...)
+			project = append(project, resolved.ServiceFields...)
+			project = append(project, resolved.LevelFields...)
+		}
+		hits := output.FlattenSearchHits(result.Hits, project)
+		payload := map[string]any{
+			"ok":      true,
+			"tookMs":  result.TookMs,
+			"total":   result.Total,
+			"index":   resolved.Index,
+			"profile": resolved.Profile,
+			"hits":    hits,
+			"size":    size,
+		}
+		if sizeCapped {
+			payload["sizeCapped"] = true
+			payload["sizeMax"] = sizeMax
+		}
+		if resolved.TraceMode != "" {
+			payload["traceMode"] = resolved.TraceMode
+		}
+		output.PrintJSON(payload)
+		return nil
+	}
+	if len(result.Hits) == 0 {
+		output.Info("No hits.")
+		return nil
+	}
+	for _, h := range result.Hits {
+		ts := h.Timestamp
+		if ts == "" {
+			ts = "-"
+		}
+		msg := firstMessage(h.Source, resolved.MessageFields)
+		svc := firstFieldValue(h.Source, resolved.ServiceFields)
+		lvl := firstFieldValue(h.Source, resolved.LevelFields)
+		traceHint := ""
+		if tid, _, ok := msgtrace.ParseBracketIDs(msg); ok {
+			traceHint = tid[:8] + "… "
+		}
+		fmt.Printf("%s  %-8s  %-16s  %s%s\n", ts, lvl, svc, traceHint, msg)
+	}
+	output.Gray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, resolved.Index, result.TookMs))
+	return nil
+}
+
+func mustStringArrayFlag(cmd *cobra.Command, name string) []string {
+	v, _ := cmd.Flags().GetStringArray(name)
+	return v
+}
+
+func firstMessage(src map[string]any, fields []string) string {
+	for _, f := range fields {
+		if v, ok := src[f].(string); ok && v != "" {
+			return v
+		}
+	}
+	for _, key := range []string{"message", "msg", "log.message"} {
+		if v, ok := src[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func firstFieldValue(src map[string]any, fields []string) string {
+	for _, f := range fields {
+		if v, ok := src[f].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
