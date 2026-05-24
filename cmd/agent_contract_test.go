@@ -56,8 +56,14 @@ func TestAgentContract_Ready(t *testing.T) {
 }
 
 func TestValidationError_JSONEnvelope(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
 	setupTestHome(t)
-	out, code := runCLI(t, []string{"search", "--index", "logs-*", "--field", "bad", "--json"})
+	out, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"search", "--index", "logs-*", "--field", "bad", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("exit %d: %s", code, out)
 	}

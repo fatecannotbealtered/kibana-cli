@@ -13,12 +13,12 @@ import (
 
 // IndexField describes one field on a Kibana index pattern.
 type IndexField struct {
-	Name             string   `json:"name"`
-	Type             string   `json:"type"`
-	ESTypes          []string `json:"esTypes,omitempty"`
-	Searchable       bool     `json:"searchable"`
-	Aggregatable     bool     `json:"aggregatable"`
-	ReadFromDocValues bool    `json:"readFromDocValues,omitempty"`
+	Name              string   `json:"name"`
+	Type              string   `json:"type"`
+	ESTypes           []string `json:"esTypes,omitempty"`
+	Searchable        bool     `json:"searchable"`
+	Aggregatable      bool     `json:"aggregatable"`
+	ReadFromDocValues bool     `json:"readFromDocValues,omitempty"`
 }
 
 // ListFieldsForIndexPattern returns fields for an index pattern title via Kibana API.

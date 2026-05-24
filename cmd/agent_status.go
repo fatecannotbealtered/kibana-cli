@@ -13,14 +13,14 @@ const (
 
 // AgentStatus is the machine-readable summary every Agent should read first.
 type AgentStatus struct {
-	OK         bool              `json:"ok"`
-	Status     string            `json:"status"`
-	Message    string            `json:"message"`
-	Error      string            `json:"error,omitempty"`
-	Hint       string            `json:"hint,omitempty"`
-	ErrorCode  output.ErrorCode  `json:"errorCode,omitempty"`
-	StatusCode int               `json:"statusCode,omitempty"`
-	ExitCode   int               `json:"exitCode"`
+	OK         bool             `json:"ok"`
+	Status     string           `json:"status"`
+	Message    string           `json:"message"`
+	Error      string           `json:"error,omitempty"`
+	Hint       string           `json:"hint,omitempty"`
+	ErrorCode  output.ErrorCode `json:"errorCode,omitempty"`
+	StatusCode int              `json:"statusCode,omitempty"`
+	ExitCode   int              `json:"exitCode"`
 }
 
 func agentNotConfigured() AgentStatus {

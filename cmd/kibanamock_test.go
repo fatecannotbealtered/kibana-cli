@@ -9,11 +9,11 @@ import (
 )
 
 type mockKibanaOptions struct {
-	AuthFail         bool
-	AuthStatus       int
-	SearchProbeFail  bool
+	AuthFail          bool
+	AuthStatus        int
+	SearchProbeFail   bool
 	SearchProbeStatus int
-	ProxyStatus      int
+	ProxyStatus       int
 }
 
 // newMockKibanaServer returns a minimal Kibana API stub (Console Proxy + saved objects).

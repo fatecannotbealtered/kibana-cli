@@ -76,11 +76,11 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		}
 		if jsonMode {
 			output.PrintJSON(map[string]any{
-				"ok":     false,
-				"exists": false,
-				"path":   fieldmap.FilePath(),
-				"message": msg,
-				"hint":   st.Hint,
+				"ok":        false,
+				"exists":    false,
+				"path":      fieldmap.FilePath(),
+				"message":   msg,
+				"hint":      st.Hint,
 				"errorCode": st.ErrorCode,
 				"exitCode":  st.ExitCode,
 			})

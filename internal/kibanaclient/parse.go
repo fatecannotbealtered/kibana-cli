@@ -80,7 +80,7 @@ type AggResult struct {
 
 func parseTermsAgg(data []byte, field string) (*AggResult, error) {
 	var raw struct {
-		Took int `json:"took"`
+		Took         int `json:"took"`
 		Aggregations struct {
 			TermsAgg struct {
 				Buckets []struct {

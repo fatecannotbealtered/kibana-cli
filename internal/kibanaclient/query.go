@@ -20,10 +20,10 @@ type SearchOptions struct {
 	ServiceFields []string
 	LevelValue    string
 	LevelFields   []string
-	TraceID         string
-	TraceFields     []string
-	TraceMode       string // field | msg (from field-map profile)
-	MessageField    string // primary message field for trace_mode msg
+	TraceID       string
+	TraceFields   []string
+	TraceMode     string // field | msg (from field-map profile)
+	MessageField  string // primary message field for trace_mode msg
 	// MsgOnly restricts --query to match_phrase on msg (no other fields).
 	MsgOnly bool
 }

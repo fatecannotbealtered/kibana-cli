@@ -80,7 +80,7 @@ func TestAuth_Status_Configured_Mock(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	out, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"auth", "status", "--json"})
@@ -97,7 +97,7 @@ func TestContext_Mock(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	out, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"context", "--json"})
@@ -165,7 +165,7 @@ func TestSearch_Mock_JSON(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, testFieldMapYAML)
 	out, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"search", "--index", "logs-*", "--service", "order-svc", "--level", "ERROR", "--size", "5", "--json"})
@@ -196,7 +196,7 @@ func TestSearch_InvalidField(t *testing.T) {
 	defer srv.Close()
 	setupTestHome(t)
 	_, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"search", "--index", "logs-*", "--field", "bad", "--json"})
@@ -211,7 +211,7 @@ func TestAgg_Mock_JSON(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, testFieldMapYAML)
 	out, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--json"})
@@ -228,7 +228,7 @@ func TestAgg_BucketsValidation(t *testing.T) {
 	defer srv.Close()
 	setupTestHome(t)
 	_, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--buckets", "200", "--json"})
@@ -274,7 +274,7 @@ func TestDoctor_JSON_Success(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	out, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"doctor", "--json"})
@@ -348,7 +348,7 @@ func TestRequireSize_Cap(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	_, code := runCLIWithEnv(t, map[string]string{
-		"KIBANA_CLI_HOST":  srv.URL,
+		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
 	}, []string{"search", "--index", "logs-*", "--size", "5000", "--json"})
