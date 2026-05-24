@@ -25,7 +25,10 @@ jobs:
       - run: go vet ./...
       - name: check-clean
         if: runner.os == 'Linux'
-        run: bash scripts/check-clean.sh
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ripgrep
+          bash scripts/check-clean.sh
       - run: go build -v ./...
       - run: go test -race -v ./...
       - name: Smoke test (Unix)
