@@ -38,6 +38,3 @@ archives:
 
 checksum:
   name_template: checksums.txt
-
-release:
-  skip_existing: true
