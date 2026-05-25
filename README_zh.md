@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@fatecannotbealtered-/kibana-cli.svg)](https://www.npmjs.com/package/@fatecannotbealtered-/kibana-cli)
 
 [English](README.md) | 中文
 
@@ -21,14 +22,43 @@
 
 ## 安装
 
+### 快速开始
+
+推荐流程：先通过 npm 安装 CLI，再用 `npx skills add` 安装 AI Agent Skill。
+
 ```bash
+# 安装 CLI
 npm install -g @fatecannotbealtered-/kibana-cli
+
+# 安装 CLI Skill
 npx skills add fatecannotbealtered/kibana-cli -y -g
+
+# 配置（CI / Agent 场景 — 推荐环境变量）
 export KIBANA_CLI_HOST=https://kibana.example.com
 export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
+
+# 验证连通性
 kibana-cli context --json
 ```
+
+CLI 包提供 `kibana-cli` 命令；Skill 会让兼容的 AI 编程助手知道如何安全地调用它。如果你是正在协助用户安装的 AI Agent，请执行同一组步骤，并在遇到交互式浏览器或终端提示时让用户配合完成。
+
+更习惯交互式登录？凭据默认写入**操作系统凭据库**：
+
+```bash
+kibana-cli auth login --host https://kibana.example.com --user dev_ro
+kibana-cli context --json
+```
+
+### 其他安装方式
+
+```bash
+# Go install
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.0
+```
+
+或从 [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases) 下载二进制文件并添加到 PATH。
 
 ## 鉴权
 

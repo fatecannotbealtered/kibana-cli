@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@fatecannotbealtered-/kibana-cli.svg)](https://www.npmjs.com/package/@fatecannotbealtered-/kibana-cli)
 
 [English](README.md) | [中文](README_zh.md)
 
@@ -22,20 +23,44 @@ Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-
 
 ## Install
 
+### Quick start
+
+Recommended flow: install the CLI from npm, then install the AI Agent Skill with `npx skills add`.
+
 ```bash
+# Install CLI
 npm install -g @fatecannotbealtered-/kibana-cli
+
+# Install CLI Skill
 npx skills add fatecannotbealtered/kibana-cli -y -g
+
+# Configure (CI / AI Agent — env vars recommended)
 export KIBANA_CLI_HOST=https://kibana.example.com
 export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
+
+# Verify connectivity
 kibana-cli context --json
 ```
+
+The CLI package provides the `kibana-cli` binary; the Skill package teaches compatible AI coding assistants how to use it safely. If you are an AI Agent helping a user set this up, run the same steps and ask the user to complete any interactive browser or terminal prompts.
+
+Prefer interactive login? Credentials are stored in the **OS credential store** by default:
+
+```bash
+kibana-cli auth login --host https://kibana.example.com --user dev_ro
+kibana-cli context --json
+```
+
+### Alternative: Go install
 
 ```bash
 go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.0
 ```
 
-Download binaries from [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases).
+### Alternative: Download binary
+
+Download from [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases) and add to your PATH.
 
 ## Authentication
 
