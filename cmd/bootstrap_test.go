@@ -22,8 +22,8 @@ func TestRunBootstrapCheck_PartialEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusConfigError {
-		t.Fatalf("status=%s", out.AgentStatus.Status)
+	if out.Status != AgentStatusConfigError {
+		t.Fatalf("status=%s", out.Status)
 	}
 	if lastExit != ExitBadArgs || out.ConfigError == "" {
 		t.Fatalf("exit=%d configError=%q", lastExit, out.ConfigError)
@@ -43,8 +43,8 @@ func TestRunBootstrapCheck_NotConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusNotConfigured {
-		t.Fatalf("status=%s", out.AgentStatus.Status)
+	if out.Status != AgentStatusNotConfigured {
+		t.Fatalf("status=%s", out.Status)
 	}
 	if lastExit != ExitBadArgs {
 		t.Fatalf("exit=%d", lastExit)
@@ -69,8 +69,8 @@ func TestRunBootstrapCheck_InvalidConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusConfigError {
-		t.Fatalf("status=%s msg=%s", out.AgentStatus.Status, out.Message)
+	if out.Status != AgentStatusConfigError {
+		t.Fatalf("status=%s msg=%s", out.Status, out.Message)
 	}
 	if lastExit != ExitBadArgs {
 		t.Fatalf("exit=%d", lastExit)
@@ -90,8 +90,8 @@ func TestRunBootstrapCheck_InvalidHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusConfigError {
-		t.Fatalf("status=%s", out.AgentStatus.Status)
+	if out.Status != AgentStatusConfigError {
+		t.Fatalf("status=%s", out.Status)
 	}
 	if out.ConfigError == "" {
 		t.Fatal("expected config error detail")
@@ -113,8 +113,8 @@ func TestRunBootstrapCheck_AuthFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusAuthFailed {
-		t.Fatalf("status=%s", out.AgentStatus.Status)
+	if out.Status != AgentStatusAuthFailed {
+		t.Fatalf("status=%s", out.Status)
 	}
 	if out.AuthValid || out.AuthError == "" {
 		t.Fatalf("authValid=%v authError=%q", out.AuthValid, out.AuthError)
@@ -139,8 +139,8 @@ func TestRunBootstrapCheck_SearchUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusSearchUnavailable {
-		t.Fatalf("status=%s", out.AgentStatus.Status)
+	if out.Status != AgentStatusSearchUnavailable {
+		t.Fatalf("status=%s", out.Status)
 	}
 	if out.AuthValid != true || out.SearchReachable {
 		t.Fatalf("auth=%v search=%v", out.AuthValid, out.SearchReachable)
@@ -165,8 +165,8 @@ func TestRunBootstrapCheck_Ready(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.AgentStatus.Status != AgentStatusReady || !out.OK {
-		t.Fatalf("status=%s ok=%v", out.AgentStatus.Status, out.OK)
+	if out.Status != AgentStatusReady || !out.OK {
+		t.Fatalf("status=%s ok=%v", out.Status, out.OK)
 	}
 	if out.Username != "agent" || out.KibanaVersion == "" || !out.SearchReachable {
 		t.Fatalf("username=%q version=%q search=%v", out.Username, out.KibanaVersion, out.SearchReachable)

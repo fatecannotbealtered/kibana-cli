@@ -17,7 +17,9 @@ func captureStdout(fn func()) string {
 	old := os.Stdout
 	os.Stdout = w
 	fn()
-	w.Close()
+	if err := w.Close(); err != nil {
+		panic(err)
+	}
 	os.Stdout = old
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
@@ -32,7 +34,9 @@ func captureStderr(fn func()) string {
 	old := os.Stderr
 	os.Stderr = w
 	fn()
-	w.Close()
+	if err := w.Close(); err != nil {
+		panic(err)
+	}
 	os.Stderr = old
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)

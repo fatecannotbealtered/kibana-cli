@@ -13,8 +13,14 @@ func Test_isTerminal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(f.Name())
-		defer f.Close()
+		t.Cleanup(func() {
+			if err := f.Close(); err != nil {
+				t.Errorf("close: %v", err)
+			}
+			if err := os.Remove(f.Name()); err != nil {
+				t.Errorf("remove: %v", err)
+			}
+		})
 		if isTerminal(f) {
 			t.Fatal("temp file should not be a terminal")
 		}
@@ -44,7 +50,11 @@ func Test_isTerminal(t *testing.T) {
 		if err != nil {
 			t.Skip("console not available:", err)
 		}
-		defer f.Close()
+		t.Cleanup(func() {
+			if err := f.Close(); err != nil {
+				t.Errorf("close: %v", err)
+			}
+		})
 		if !isTerminal(f) {
 			t.Skip("opened device is not reported as char device on this platform")
 		}
