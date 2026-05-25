@@ -64,7 +64,7 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean --skip-existing --release-notes=/tmp/release-notes.md
+          args: release --clean --release-notes=/tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -95,6 +95,11 @@ jobs:
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
             echo "NPM_TOKEN not configured; skipping npm publish"
+            exit 0
+          fi
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if npm view "@fatecannotbealtered-/kibana-cli@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
+            echo "npm ${VERSION} already published; skipping"
             exit 0
           fi
           npm publish --access public
