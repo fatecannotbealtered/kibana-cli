@@ -15,8 +15,9 @@ func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult,
 		opts.Size = 50
 	}
 	body := map[string]any{
-		"query": buildQuery(opts),
-		"size":  opts.Size,
+		"query":            buildQuery(opts),
+		"size":             opts.Size,
+		"track_total_hits": true,
 	}
 	if opts.SortDesc {
 		body["sort"] = []any{map[string]any{opts.TimeField: map[string]string{"order": "desc"}}}

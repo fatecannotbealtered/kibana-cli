@@ -50,12 +50,12 @@ jobs:
       - name: Smoke test (Unix)
         if: runner.os != 'Windows'
         run: |
-          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=1.0.0" -o kibana-cli-test ./cmd/kibana-cli
+          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=1.0.1" -o kibana-cli-test ./cmd/kibana-cli
           ./kibana-cli-test --version
           ./kibana-cli-test reference | head -5
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         run: |
-          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=1.0.0" -o kibana-cli-test.exe ./cmd/kibana-cli
+          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=1.0.1" -o kibana-cli-test.exe ./cmd/kibana-cli
           .\kibana-cli-test.exe --version

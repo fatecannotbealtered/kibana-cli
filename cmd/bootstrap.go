@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
+	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
 )
 
 // bootstrapOutcome is the shared doctor/context validation result.
@@ -39,10 +40,16 @@ func runBootstrapCheck() (*bootstrapOutcome, error) {
 		applyAgentExit(out.AgentStatus)
 		return out, nil
 	}
-	client, _, err := newKibanaClient()
+	initClientOptionsFromEnv()
+	validCfg, err := config.MustLoad()
 	if err != nil {
-		return nil, err
+		msg := err.Error()
+		out.AgentStatus = agentConfigErrorDetail(msg)
+		out.ConfigError = msg
+		applyAgentExit(out.AgentStatus)
+		return out, nil
 	}
+	client := kibanaclient.NewClient(validCfg)
 	start := time.Now()
 	vr, err := client.Validate(apiCtx())
 	out.LatencyMs = time.Since(start).Milliseconds()

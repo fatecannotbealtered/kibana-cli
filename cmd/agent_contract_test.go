@@ -88,6 +88,29 @@ func TestSearch_DryRun_JSON(t *testing.T) {
 	}
 }
 
+func TestSearch_DryRun_DataView_SkipsResolve(t *testing.T) {
+	srv := newMockKibanaServerWith(mockKibanaOptions{IndexPatternFail: true})
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	out, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"search", "--data-view", "dv-1", "--dry-run", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	j := lastJSONLine(out)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(j), &payload); err != nil {
+		t.Fatalf("json parse: %v out=%s", err, out)
+	}
+	if idx, _ := payload["index"].(string); idx != "<data-view:dv-1>" {
+		t.Fatalf("index=%q want placeholder json=%s", idx, j)
+	}
+}
+
 func TestMainProcess_ExitCode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("subprocess exit test skipped on windows in CI matrix")

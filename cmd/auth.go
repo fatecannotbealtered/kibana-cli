@@ -134,7 +134,7 @@ func finishLogin(host, user, password string) error {
 		store = config.CredentialStoreFile
 	}
 	if err := config.Save(cfg, config.SaveOptions{Plaintext: authLoginPlaintextFlag}); err != nil {
-		return failNetwork("failed to save config: " + err.Error())
+		return failConfig("failed to save config: " + err.Error())
 	}
 	if jsonMode {
 		output.PrintJSON(map[string]any{
@@ -166,9 +166,14 @@ func finishLogin(host, user, password string) error {
 	return nil
 }
 
+var (
+	stdinIsTerminal   = term.IsTerminal
+	readStdinPassword = term.ReadPassword
+)
+
 func readPasswordPair(reader *bufio.Reader, user string) (string, string) {
-	if term.IsTerminal(int(syscall.Stdin)) {
-		b, err := term.ReadPassword(int(syscall.Stdin))
+	if stdinIsTerminal(int(syscall.Stdin)) {
+		b, err := readStdinPassword(int(syscall.Stdin))
 		fmt.Println()
 		if err == nil {
 			return user, strings.TrimSpace(string(b))
@@ -178,12 +183,19 @@ func readPasswordPair(reader *bufio.Reader, user string) (string, string) {
 	return user, strings.TrimSpace(line)
 }
 
+// deleteConfigHook is set by tests to simulate config.Delete failures.
+var deleteConfigHook func() error
+
 func runAuthLogout(_ *cobra.Command, _ []string) error {
 	if dryRunOutput("delete credentials", map[string]any{"path": config.FilePath()}) {
 		return nil
 	}
-	if err := config.Delete(); err != nil {
-		return failNetwork(err.Error())
+	del := config.Delete
+	if deleteConfigHook != nil {
+		del = deleteConfigHook
+	}
+	if err := del(); err != nil {
+		return failConfig(err.Error())
 	}
 	if jsonMode {
 		output.PrintJSON(map[string]any{"ok": true, "status": "logged_out"})
@@ -198,9 +210,11 @@ func runAuthStatus(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return failConfig(err.Error())
 	}
+	configured := config.IsConfigured()
+	ok := configured && cfg.Host != "" && config.ValidateKibanaHost(cfg.Host) == nil
 	result := map[string]any{
-		"ok":              config.IsConfigured(),
-		"configured":      config.IsConfigured(),
+		"ok":              ok,
+		"configured":      configured,
 		"host":            cfg.Host,
 		"authMode":        cfg.AuthMode(),
 		"source":          config.AuthSource(),

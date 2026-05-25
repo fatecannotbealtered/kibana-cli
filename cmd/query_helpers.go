@@ -17,6 +17,10 @@ func loadFieldMapOrExit() (*fieldmap.Map, error) {
 	return fm, nil
 }
 
+func dataViewDryRunIndex(id string) string {
+	return "<data-view:" + id + ">"
+}
+
 func resolveIndexFromFlags(cmd *cobra.Command, client *kibanaclient.Client) (string, error) {
 	index, _ := cmd.Flags().GetString("index")
 	dataView, _ := cmd.Flags().GetString("data-view")
@@ -24,7 +28,11 @@ func resolveIndexFromFlags(cmd *cobra.Command, client *kibanaclient.Client) (str
 		output.Warn("--data-view overrides --index")
 	}
 	if strings.TrimSpace(dataView) != "" {
-		title, err := client.ResolveIndexPattern(apiCtx(), strings.TrimSpace(dataView))
+		id := strings.TrimSpace(dataView)
+		if dryRun {
+			return dataViewDryRunIndex(id), nil
+		}
+		title, err := client.ResolveIndexPattern(apiCtx(), id)
 		if err != nil {
 			return "", err
 		}

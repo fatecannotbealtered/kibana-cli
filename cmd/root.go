@@ -28,9 +28,11 @@ const (
 	ExitNetwork   = 7
 )
 
+const defaultTimeoutSeconds = 60
+
 var ErrSilent = errors.New("")
 
-var version = "1.0.0"
+var version = "1.0.1"
 
 var (
 	jsonMode       bool
@@ -45,7 +47,10 @@ var lastExit int
 var cmdStartTime time.Time
 var activeCmd *cobra.Command
 
-func LastExitCode() int { return lastExit }
+func LastExitCode() int {
+	code := lastExit
+	return code
+}
 
 func apiCtx() context.Context {
 	if activeCmd != nil {
@@ -73,21 +78,29 @@ var rootCmd = &cobra.Command{
 		output.FormatGray("Log search for AI Agents — Kibana Console Proxy only")),
 }
 
-func init() {
-	if version == "dev" {
-		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
-			version = info.Main.Version
-		}
+var readBuildInfo = debug.ReadBuildInfo
+
+func resolveBuildVersion(v string) string {
+	if v != "dev" {
+		return v
 	}
+	if info, ok := readBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return v
+}
+
+func init() {
+	version = resolveBuildVersion(version)
 	rootCmd.Version = version
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.PersistentFlags().BoolVar(&jsonMode, "json", false, "Output result as JSON")
-	rootCmd.PersistentFlags().BoolVar(&forceMode, "force", false, "Skip confirmation prompts")
+	rootCmd.PersistentFlags().BoolVar(&forceMode, "force", false, "Overwrite existing field-map.yaml on config init")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress non-JSON stdout output (for scripts and AI Agents)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview planned action without executing (writes and read queries)")
 	rootCmd.PersistentFlags().BoolVar(&insecureTLS, "insecure", false, "Skip TLS certificate verification (corporate/self-signed CA)")
-	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", 60, "HTTP request timeout in seconds")
+	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "HTTP request timeout in seconds")
 
 	cobra.OnInitialize(func() { output.Quiet = quietMode })
 
@@ -109,7 +122,8 @@ func init() {
 }
 
 func Execute() error {
-	return ExecuteContext(context.Background())
+	ctx := context.Background()
+	return ExecuteContext(ctx)
 }
 
 func ExecuteContext(ctx context.Context) error {
@@ -173,19 +187,33 @@ func applyInsecureFromEnv() {
 	}
 }
 
-func initClientOptionsFromEnv() {
-	applyInsecureFromEnv()
-	sec := timeoutSeconds
-	if sec < 1 {
-		if s := strings.TrimSpace(os.Getenv("KIBANA_CLI_TIMEOUT")); s != "" {
-			if n, err := strconv.Atoi(s); err == nil && n > 0 {
-				sec = n
-			}
-		}
-		if sec < 1 {
-			sec = 60
+func timeoutExplicitlySet(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Flags().Changed("timeout") || c.PersistentFlags().Changed("timeout") {
+			return true
 		}
 	}
+	return false
+}
+
+func applyTimeoutFromEnv(cmd *cobra.Command) int {
+	if timeoutExplicitlySet(cmd) {
+		if timeoutSeconds > 0 {
+			return timeoutSeconds
+		}
+		return defaultTimeoutSeconds
+	}
+	if s := strings.TrimSpace(os.Getenv("KIBANA_CLI_TIMEOUT")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultTimeoutSeconds
+}
+
+func initClientOptionsFromEnv() {
+	applyInsecureFromEnv()
+	sec := applyTimeoutFromEnv(activeCmd)
 	kibanaclient.SetClientOptions(kibanaclient.ClientOptions{
 		Timeout:            time.Duration(sec) * time.Second,
 		InsecureSkipVerify: insecureTLS,

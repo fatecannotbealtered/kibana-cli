@@ -20,9 +20,12 @@ type Config struct {
 	Password        string `json:"password,omitempty"`
 }
 
+// userHomeDir is os.UserHomeDir in production; tests may override it.
+var userHomeDir = os.UserHomeDir
+
 // Dir returns ~/.kibana-cli/
 func Dir() string {
-	home, err := os.UserHomeDir()
+	home, err := userHomeDir()
 	if err != nil {
 		return ".kibana-cli"
 	}
@@ -43,8 +46,32 @@ func firstNonEmpty(candidates ...string) string {
 	return ""
 }
 
+// envAuthVars returns trimmed KIBANA_CLI_HOST, KIBANA_CLI_USER, KIBANA_CLI_PASSWORD.
+// anySet is true when at least one of the three is non-empty.
+func envAuthVars() (host, user, password string, anySet bool) {
+	host = firstNonEmpty(os.Getenv("KIBANA_CLI_HOST"))
+	user = firstNonEmpty(os.Getenv("KIBANA_CLI_USER"))
+	password = firstNonEmpty(os.Getenv("KIBANA_CLI_PASSWORD"))
+	anySet = host != "" || user != "" || password != ""
+	return host, user, password, anySet
+}
+
+func validateEnvAuthOverride() error {
+	host, user, password, anySet := envAuthVars()
+	if !anySet {
+		return nil
+	}
+	if host == "" || user == "" || password == "" {
+		return errors.New("partial KIBANA_CLI_* auth env: set all of KIBANA_CLI_HOST, KIBANA_CLI_USER, and KIBANA_CLI_PASSWORD together, or unset all three")
+	}
+	return nil
+}
+
 // Load reads configuration: KIBANA_CLI_* env overrides file.
 func Load() (*Config, error) {
+	if err := validateEnvAuthOverride(); err != nil {
+		return nil, err
+	}
 	cfg := &Config{}
 	data, err := os.ReadFile(FilePath())
 	if err == nil {
@@ -54,14 +81,10 @@ func Load() (*Config, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
-	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_HOST")); v != "" {
-		cfg.Host = v
-	}
-	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_USER")); v != "" {
-		cfg.Username = v
-	}
-	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_PASSWORD")); v != "" {
-		cfg.Password = v
+	if host, user, password, anySet := envAuthVars(); anySet {
+		cfg.Host = host
+		cfg.Username = user
+		cfg.Password = password
 	}
 	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_KIBANA_VERSION")); v != "" {
 		cfg.KibanaVersion = v
@@ -98,11 +121,15 @@ func Save(cfg *Config, opts SaveOptions) error {
 	return nil
 }
 
+var configJSONMarshal = func(v any) ([]byte, error) {
+	return json.MarshalIndent(v, "", "  ")
+}
+
 func writeConfigFile(cfg *Config) error {
 	if err := os.MkdirAll(Dir(), 0700); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	data, err := configJSONMarshal(cfg)
 	if err != nil {
 		return fmt.Errorf("encoding config: %w", err)
 	}
@@ -158,7 +185,8 @@ func IsConfigured() bool {
 
 // AuthSource returns env-cli / file / keyring / none.
 func AuthSource() string {
-	if firstNonEmpty(os.Getenv("KIBANA_CLI_HOST"), os.Getenv("KIBANA_CLI_USER"), os.Getenv("KIBANA_CLI_PASSWORD")) != "" {
+	host, user, password, anySet := envAuthVars()
+	if anySet && host != "" && user != "" && password != "" {
 		return "env-cli"
 	}
 	if data, err := os.ReadFile(FilePath()); err == nil {

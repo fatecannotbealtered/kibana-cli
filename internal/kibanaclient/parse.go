@@ -16,26 +16,37 @@ type SearchHit struct {
 
 // SearchResult is the CLI search envelope.
 type SearchResult struct {
-	TookMs int         `json:"tookMs"`
-	Total  int64       `json:"total"`
-	Hits   []SearchHit `json:"hits"`
+	TookMs        int         `json:"tookMs"`
+	Total         int64       `json:"total"`
+	TotalRelation string      `json:"totalRelation,omitempty"`
+	Hits          []SearchHit `json:"hits"`
 }
 
-func parseTotalHits(raw json.RawMessage) int64 {
+type hitsTotal struct {
+	Value    int64
+	Relation string
+}
+
+func parseHitsTotal(raw json.RawMessage) hitsTotal {
 	if len(raw) == 0 {
-		return 0
+		return hitsTotal{}
 	}
 	var n int64
 	if json.Unmarshal(raw, &n) == nil {
-		return n
+		return hitsTotal{Value: n, Relation: "eq"}
 	}
 	var obj struct {
-		Value int64 `json:"value"`
+		Value    int64  `json:"value"`
+		Relation string `json:"relation"`
 	}
 	if json.Unmarshal(raw, &obj) == nil {
-		return obj.Value
+		return hitsTotal{Value: obj.Value, Relation: obj.Relation}
 	}
-	return 0
+	return hitsTotal{}
+}
+
+func parseTotalHits(raw json.RawMessage) int64 {
+	return parseHitsTotal(raw).Value
 }
 
 func parseSearchResponse(data []byte) (*SearchResult, error) {
@@ -53,7 +64,8 @@ func parseSearchResponse(data []byte) (*SearchResult, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
-	out := &SearchResult{TookMs: raw.Took, Total: parseTotalHits(raw.Hits.Total)}
+	total := parseHitsTotal(raw.Hits.Total)
+	out := &SearchResult{TookMs: raw.Took, Total: total.Value, TotalRelation: total.Relation}
 	for _, h := range raw.Hits.Hits {
 		hit := SearchHit{Index: h.Index, ID: h.ID, Source: h.Source}
 		if ts, ok := h.Source["@timestamp"].(string); ok {

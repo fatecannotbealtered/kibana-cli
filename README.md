@@ -13,10 +13,11 @@
 Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-intensity **search** and **agg** with an Agent-friendly JSON contract, following [`jira-cli`](https://github.com/fatecannotbealtered/jira-cli) and [`gitlab-cli`](https://github.com/fatecannotbealtered/gitlab-cli):
 
 - **Unified `--json` contract** — same `AgentStatus` envelope for bootstrap, validation, and API errors (all on stdout)
-- **`field-map.yaml`** — one logical service name across heterogeneous indices
+- **`field-map.yaml`** (optional) — logical service names across heterogeneous indices; `index_rules` in `field-map.example.yaml`
 - **`--data-view`** — resolve index pattern from a Kibana data view id
-- **`--dry-run`** — preview search/agg queries and write actions without executing
-- **`--force` / `--insecure` / `--timeout`**
+- **`--dry-run`** — preview search/agg query bodies and write actions with **no Kibana API calls** (including `--data-view` index resolution, which uses a placeholder index in the preview)
+- **`--force`** — overwrite existing `field-map.yaml` on `config init`
+- **`--insecure` / `--timeout`**
 - **Machine-readable error envelopes** — `ok`, `status`, `errorCode`, `statusCode`, `hint`, `exitCode`
 - **Semantic exit codes** (`0`/`2`/`3`/`4`/`5`/`6`/`7`)
 - **`SKILL.md`** — `npx skills add fatecannotbealtered/kibana-cli`
@@ -43,6 +44,15 @@ export KIBANA_CLI_PASSWORD='...'
 kibana-cli context --json
 ```
 
+```powershell
+# Windows PowerShell
+$env:KIBANA_CLI_HOST = "https://kibana.example.com"
+$env:KIBANA_CLI_USER = "dev_ro"
+$env:KIBANA_CLI_PASSWORD = "..."
+
+kibana-cli context --json
+```
+
 The CLI package provides the `kibana-cli` binary; the Skill package teaches compatible AI coding assistants how to use it safely. If you are an AI Agent helping a user set this up, run the same steps and ask the user to complete any interactive browser or terminal prompts.
 
 Prefer interactive login? Credentials are stored in the **OS credential store** by default:
@@ -55,7 +65,7 @@ kibana-cli context --json
 ### Alternative: Go install
 
 ```bash
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.0
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.1
 ```
 
 ### Alternative: Download binary
@@ -79,9 +89,9 @@ Secrets default to the **OS credential store**; `config.json` has no plaintext p
 | `KIBANA_CLI_HOST` | Kibana base URL |
 | `KIBANA_CLI_USER` / `KIBANA_CLI_PASSWORD` | HTTP Basic |
 | `KIBANA_CLI_KIBANA_VERSION` | Optional; skip auto-detect |
-| `KIBANA_CLI_INSECURE` | `1` — skip TLS verification |
+| `KIBANA_CLI_INSECURE` | `1` or `true` — skip TLS verification |
 | `KIBANA_CLI_TIMEOUT` | HTTP timeout seconds (default `60`) |
-| `KIBANA_CLI_ALLOWED_INDEX_PREFIXES` | Optional comma-separated index allowlist |
+| `KIBANA_CLI_ALLOWED_INDEX_PREFIXES` | Optional comma-separated prefixes; index pattern must **start with** one of them |
 
 ### Exit codes
 
@@ -105,12 +115,16 @@ kibana-cli context --json
 kibana-cli doctor --json
 kibana-cli config init|show
 kibana-cli patterns list|fields --json
-kibana-cli search --index 'app-test-log-*' --level ERROR --from now-30m --json
+kibana-cli search --index 'app-test-log-*' --level ERROR --json
 kibana-cli search --data-view <uuid> --query 'timeout' --json
 kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --json
 ```
 
-Global flags: `--json`, `--quiet`, `--dry-run`, `--force`, `--timeout`, `--insecure`.
+`search` defaults to `--from now-15m` (omit `--from` to use that window).
+
+Optional `~/.kibana-cli/field-map.yaml` (`kibana-cli config init`). Profiles and `index_rules` (glob overrides per index) are documented in `field-map.example.yaml`.
+
+Global flags: `--json`, `--quiet`, `--dry-run`, `--force` (overwrite `field-map.yaml` on `config init`), `--timeout`, `--insecure` (or `KIBANA_CLI_INSECURE=1` / `true`).
 
 ### Agent workflow
 

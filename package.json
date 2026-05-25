@@ -1,6 +1,6 @@
 {
   "name": "@fatecannotbealtered-/kibana-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Kibana log query CLI for humans and AI Agents — search and aggregate logs via Kibana Console Proxy",
   "keywords": [
     "kibana",

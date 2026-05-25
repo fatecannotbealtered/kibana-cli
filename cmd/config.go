@@ -44,10 +44,10 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 	if err := os.MkdirAll(config.Dir(), 0700); err != nil {
-		return failNetwork(err.Error())
+		return failConfig(err.Error())
 	}
 	if err := os.WriteFile(path, []byte(fieldmap.ExampleYAML), 0600); err != nil {
-		return failNetwork(err.Error())
+		return failConfig(err.Error())
 	}
 	if jsonMode {
 		output.PrintJSON(map[string]any{"ok": true, "status": "ok", "path": path})

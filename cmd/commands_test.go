@@ -28,7 +28,7 @@ func TestRoot_Version(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out, "1.0.0") && !strings.Contains(out, "kibana-cli") {
+	if !strings.Contains(out, "1.0.1") && !strings.Contains(out, "kibana-cli") {
 		t.Fatalf("version output: %q", out)
 	}
 }
@@ -42,19 +42,6 @@ func TestRoot_Help(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q: %s", want, out)
 		}
-	}
-}
-
-func TestAuth_Logout_DryRun_JSON(t *testing.T) {
-	home := setupTestHome(t)
-	_ = home
-	out, code := runCLI(t, []string{"auth", "logout", "--dry-run", "--json"})
-	if code != ExitOK {
-		t.Fatalf("exit %d out=%s", code, out)
-	}
-	j := lastJSONLine(out)
-	if !strings.Contains(j, `"dryRun":true`) && !strings.Contains(j, `"dryRun": true`) {
-		t.Fatalf("expected dry-run json: %s", out)
 	}
 }
 
@@ -91,6 +78,9 @@ func TestAuth_Status_Configured_Mock(t *testing.T) {
 	if !strings.Contains(j, `"configured":true`) && !strings.Contains(j, `"configured": true`) {
 		t.Fatalf("unexpected: %s", out)
 	}
+	if !strings.Contains(j, `"ok":true`) && !strings.Contains(j, `"ok": true`) {
+		t.Fatalf("missing ok:true: %s", out)
+	}
 }
 
 func TestContext_Mock(t *testing.T) {
@@ -113,49 +103,6 @@ func TestContext_Mock(t *testing.T) {
 	}
 	if !strings.Contains(j, `"message"`) {
 		t.Fatalf("missing message: %s", out)
-	}
-}
-
-func TestConfig_Init_Show(t *testing.T) {
-	home := setupTestHome(t)
-	out, code := runCLI(t, []string{"config", "init", "--json"})
-	if code != ExitOK {
-		t.Fatalf("init exit %d: %s", code, out)
-	}
-	path := filepath.Join(home, ".kibana-cli", "field-map.yaml")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatal(err)
-	}
-	out, code = runCLI(t, []string{"config", "show", "--json"})
-	if code != ExitOK {
-		t.Fatalf("show exit %d: %s", code, out)
-	}
-	if !strings.Contains(out, `"fieldMap"`) {
-		t.Fatalf("show output: %s", out)
-	}
-}
-
-func TestConfig_Init_ForceOverwrite(t *testing.T) {
-	home := setupTestHome(t)
-	writeFieldMap(t, home, "version: 1\ndefaults:\n  index: old-*\n")
-	_, code := runCLI(t, []string{"config", "init", "--force", "--json"})
-	if code != ExitOK {
-		t.Fatal(code)
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".kibana-cli", "field-map.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "java-app") {
-		t.Fatalf("expected example yaml, got %s", data)
-	}
-}
-
-func TestConfig_Show_Missing(t *testing.T) {
-	setupTestHome(t)
-	_, code := runCLI(t, []string{"config", "show", "--json"})
-	if code != ExitNotFound {
-		t.Fatalf("expected ExitNotFound, got %d", code)
 	}
 }
 

@@ -9,11 +9,24 @@ import (
 )
 
 type mockKibanaOptions struct {
-	AuthFail          bool
-	AuthStatus        int
-	SearchProbeFail   bool
-	SearchProbeStatus int
-	ProxyStatus       int
+	AuthFail           bool
+	AuthStatus         int
+	SearchProbeFail    bool
+	SearchProbeStatus  int
+	ProxyStatus        int
+	IndexPatternFail   bool
+	IndexPatternStatus int
+	SearchNoHits       bool
+	SearchFail         bool
+	SearchFailStatus   int
+	SearchTotalGte     bool
+	SearchSource       map[string]any
+	EmptyPatterns      bool
+	EmptyFields        bool
+	SavedObjectsFail   bool
+	SavedObjectsStatus int
+	FieldsAPIFail      bool
+	FieldsAPIStatus    int
 }
 
 // newMockKibanaServer returns a minimal Kibana API stub (Console Proxy + saved objects).
@@ -38,6 +51,19 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 		method := strings.ToUpper(r.URL.Query().Get("method"))
 		mockKibanaProxyWith(w, r, method, path, opts)
 	case r.URL.Path == "/api/saved_objects/_find":
+		if opts.SavedObjectsFail {
+			status := opts.SavedObjectsStatus
+			if status == 0 {
+				status = http.StatusServiceUnavailable
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"message":"saved objects unavailable"}`))
+			return
+		}
+		if opts.EmptyPatterns {
+			_ = json.NewEncoder(w).Encode(map[string]any{"saved_objects": []any{}})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"saved_objects": []map[string]any{
 				{
@@ -49,10 +75,32 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 			},
 		})
 	case strings.HasPrefix(r.URL.Path, "/api/saved_objects/index-pattern/"):
+		if opts.IndexPatternFail {
+			status := opts.IndexPatternStatus
+			if status == 0 {
+				status = http.StatusServiceUnavailable
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"message":"index-pattern unavailable"}`))
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"attributes": map[string]any{"title": "logs-*"},
 		})
 	case r.URL.Path == "/api/index_patterns/_fields_for_wildcard":
+		if opts.FieldsAPIFail {
+			status := opts.FieldsAPIStatus
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"message":"fields api unavailable"}`))
+			return
+		}
+		if opts.EmptyFields {
+			_ = json.NewEncoder(w).Encode(map[string]any{"fields": []any{}})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"fields": []map[string]any{
 				{"name": "@timestamp", "type": "date", "searchable": true, "aggregatable": true},
@@ -87,6 +135,15 @@ func mockKibanaProxyWith(w http.ResponseWriter, r *http.Request, method, path st
 			"roles":    []string{"viewer"},
 		})
 	case strings.HasSuffix(path, "/_search") && method == http.MethodPost:
+		if opts.SearchFail {
+			status := opts.SearchFailStatus
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"reason":"search failed"}}`))
+			return
+		}
 		if path == "*/_search" && opts.SearchProbeFail {
 			status := opts.SearchProbeStatus
 			if status == 0 {
@@ -113,22 +170,32 @@ func mockKibanaProxyWith(w http.ResponseWriter, r *http.Request, method, path st
 			})
 			return
 		}
+		src := map[string]any{
+			"@timestamp":   "2024-01-01T00:00:00Z",
+			"level":        "ERROR",
+			"service_name": "order-svc",
+			"msg":          "timeout",
+		}
+		if opts.SearchSource != nil {
+			src = opts.SearchSource
+		}
+		hits := []map[string]any{
+			{"_index": "logs-2024", "_id": "1", "_source": src},
+		}
+		totalVal := 1
+		if opts.SearchNoHits {
+			hits = nil
+			totalVal = 0
+		}
+		totalObj := map[string]any{"value": totalVal}
+		if opts.SearchTotalGte {
+			totalObj["relation"] = "gte"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"took": 5,
 			"hits": map[string]any{
-				"total": map[string]any{"value": 1},
-				"hits": []map[string]any{
-					{
-						"_index": "logs-2024",
-						"_id":    "1",
-						"_source": map[string]any{
-							"@timestamp":   "2024-01-01T00:00:00Z",
-							"level":        "ERROR",
-							"service_name": "order-svc",
-							"msg":          "timeout",
-						},
-					},
-				},
+				"total": totalObj,
+				"hits":  hits,
 			},
 		})
 	case path == "*/_search" && method == http.MethodPost:

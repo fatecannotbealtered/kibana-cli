@@ -25,6 +25,8 @@ var testDir string
 var cleanupMu sync.Mutex
 var lastCleanupDay string
 
+var jsonMarshal = json.Marshal
+
 // SetDirForTest overrides the audit directory (tests only).
 func SetDirForTest(dir string) { testDir = dir }
 
@@ -51,7 +53,7 @@ func Log(cmdPath string, args []string, exitCode int, durationMs int64) {
 		Exit: exitCode,
 		Ms:   durationMs,
 	}
-	data, err := json.Marshal(e)
+	data, err := jsonMarshal(e)
 	if err != nil {
 		return
 	}

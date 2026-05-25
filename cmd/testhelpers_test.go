@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/output"
@@ -19,10 +20,13 @@ func resetCLIState(t *testing.T) {
 	forceMode = false
 	quietMode = false
 	dryRun = false
+	insecureTLS = false
+	timeoutSeconds = defaultTimeoutSeconds
 	lastExit = 0
 	activeCmd = nil
 	output.Quiet = false
 	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd)
+	resetCommandFlags(rootCmd)
 }
 
 func resetCommandFlags(cmds ...*cobra.Command) {
@@ -73,13 +77,31 @@ func runCLI(t *testing.T, args []string) (stdout string, exitCode int) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
+
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = stderrW
+	var stderrBuf bytes.Buffer
+	stderrDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&stderrBuf, stderrR)
+		close(stderrDone)
+	}()
+
 	stdoutCaptured := captureStdout(t, func() {
 		err := rootCmd.Execute()
 		if err != nil && !errors.Is(err, ErrSilent) {
 			t.Fatalf("execute %v: %v", args, err)
 		}
 	})
-	return buf.String() + stdoutCaptured, lastExit
+	_ = stderrW.Close()
+	os.Stderr = origStderr
+	<-stderrDone
+	_ = stderrR.Close()
+	return buf.String() + stdoutCaptured + stderrBuf.String(), lastExit
 }
 
 func runCLIWithEnv(t *testing.T, env map[string]string, args []string) (stdout string, exitCode int) {
@@ -90,14 +112,78 @@ func runCLIWithEnv(t *testing.T, env map[string]string, args []string) (stdout s
 	return runCLI(t, args)
 }
 
-func captureStdout(t *testing.T, fn func()) string {
+func runCLIWithStdin(t *testing.T, stdin string, args []string) (stdout string, exitCode int) {
 	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	orig := os.Stdout
-	os.Stdout = w
+	orig := os.Stdin
+	os.Stdin = r
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.WriteString(w, stdin)
+		_ = w.Close()
+		close(done)
+	}()
+	stdout, exitCode = runCLI(t, args)
+	<-done
+	os.Stdin = orig
+	_ = r.Close()
+	return stdout, exitCode
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	return captureWriter(t, &os.Stdout, fn)
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	return captureWriter(t, &os.Stderr, fn)
+}
+
+func captureCLIOutput(t *testing.T, fn func()) string {
+	t.Helper()
+	stdoutR, stdoutW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origOut, origErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = stdoutW, stderrW
+	var outBuf, errBuf bytes.Buffer
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(&outBuf, stdoutR)
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(&errBuf, stderrR)
+	}()
+	fn()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
+	os.Stdout, os.Stderr = origOut, origErr
+	wg.Wait()
+	_ = stdoutR.Close()
+	_ = stderrR.Close()
+	return outBuf.String() + errBuf.String()
+}
+
+func captureWriter(t *testing.T, target **os.File, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := *target
+	*target = w
 	var buf bytes.Buffer
 	done := make(chan struct{})
 	go func() {
@@ -106,7 +192,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	}()
 	fn()
 	_ = w.Close()
-	os.Stdout = orig
+	*target = orig
 	<-done
 	_ = r.Close()
 	return buf.String()

@@ -51,6 +51,20 @@ func agentConfigError(detail string) AgentStatus {
 	}
 }
 
+// agentConfigErrorDetail reports validation or MustLoad failures (message is the error detail).
+func agentConfigErrorDetail(detail string) AgentStatus {
+	code := output.ErrConfig
+	return AgentStatus{
+		OK:        false,
+		Status:    AgentStatusConfigError,
+		Message:   detail,
+		Error:     detail,
+		Hint:      output.HintForErrorCode(code),
+		ErrorCode: code,
+		ExitCode:  ExitBadArgs,
+	}
+}
+
 func agentAuthFailed(detail string) AgentStatus {
 	code := output.ErrAuth
 	msg := "Kibana authentication failed"

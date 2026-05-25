@@ -46,16 +46,7 @@ func failValidation(msg string) error {
 }
 
 func failConfig(msg string) error {
-	st := AgentStatus{
-		OK:        false,
-		Status:    AgentStatusConfigError,
-		Message:   msg,
-		Error:     msg,
-		Hint:      output.HintForErrorCode(output.ErrConfig),
-		ErrorCode: output.ErrConfig,
-		ExitCode:  ExitBadArgs,
-	}
-	emitAgentFailure(st)
+	emitAgentFailure(agentConfigErrorDetail(msg))
 	return ErrSilent
 }
 
@@ -132,8 +123,11 @@ func classifySearchProbeError(detail string, statusCode int) (output.ErrorCode, 
 		strings.Contains(lower, "tls") ||
 		strings.Contains(lower, "connection refused") ||
 		strings.Contains(lower, "no such host") ||
-		strings.Contains(lower, "certificate") {
+		strings.Contains(lower, "certificate") ||
+		strings.Contains(lower, "context canceled") ||
+		strings.Contains(lower, "deadline exceeded") ||
+		strings.Contains(lower, "unexpected eof") {
 		return output.ErrNetwork, ExitNetwork
 	}
-	return output.ErrForbidden, ExitForbidden
+	return output.ErrUnknown, ExitNetwork
 }

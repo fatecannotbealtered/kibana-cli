@@ -40,10 +40,7 @@ type contextResult struct {
 
 func runContext(_ *cobra.Command, _ []string) error {
 	k := &contextKibana{}
-	out, err := runBootstrapCheck()
-	if err != nil {
-		return err
-	}
+	out, _ := runBootstrapCheck()
 	applyBootstrapToContext(out, k)
 	if out.ConfigError != "" {
 		k.AuthError = out.ConfigError

@@ -11,15 +11,26 @@ import (
 	"github.com/fatecannotbealtered/kibana-cli/cmd"
 )
 
+// runCLI is the entry hook used by run(); tests may replace it.
+var runCLI = cmd.ExecuteContext
+
+// exitFn is os.Exit in production; tests replace it to avoid exiting the process.
+var exitFn = os.Exit
+
 func main() {
+	exitFn(run())
+}
+
+// run executes the CLI. main delegates to cmd.ExecuteContext; tests cover exit paths here.
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	if err := cmd.ExecuteContext(ctx); err != nil {
+	if err := runCLI(ctx); err != nil {
 		if errors.Is(err, cmd.ErrSilent) {
-			os.Exit(cmd.LastExitCode())
+			return cmd.LastExitCode()
 		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(cmd.ExitBadArgs)
+		return cmd.ExitBadArgs
 	}
+	return 0
 }

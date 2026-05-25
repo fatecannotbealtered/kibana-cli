@@ -34,6 +34,11 @@ func SetClientOptions(o ClientOptions) {
 	globalHTTP = o
 }
 
+// CurrentClientOptions returns the global HTTP settings (for tests).
+func CurrentClientOptions() ClientOptions {
+	return globalHTTP
+}
+
 // Client performs log queries via Kibana Console Proxy.
 type Client struct {
 	baseURL       string
@@ -48,10 +53,7 @@ func NewClient(cfg *config.Config) *Client {
 	opts := globalHTTP
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if opts.InsecureSkipVerify {
-		if transport.TLSClientConfig == nil {
-			transport.TLSClientConfig = &tls.Config{}
-		}
-		transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
 	}
 	return &Client{
 		baseURL:       strings.TrimRight(cfg.Host, "/"),
@@ -97,7 +99,10 @@ func (c *Client) EnsureVersion(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	data, _ := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
 	if resp.StatusCode >= 400 {
 		return parseAPIError(resp.StatusCode, data)
 	}

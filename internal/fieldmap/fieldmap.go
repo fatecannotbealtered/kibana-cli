@@ -235,16 +235,10 @@ func BuildValueORQuery(fields []string, value string) map[string]any {
 	quoted := quoteQueryValue(value)
 	for _, f := range fields {
 		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
 		parts = append(parts, fmt.Sprintf("%s:%s", quoteField(f), quoted))
 		if !strings.HasSuffix(f, ".keyword") {
 			parts = append(parts, fmt.Sprintf("%s.keyword:%s", quoteField(f), quoted))
 		}
-	}
-	if len(parts) == 0 {
-		return nil
 	}
 	return map[string]any{
 		"query_string": map[string]any{

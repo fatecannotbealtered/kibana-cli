@@ -21,8 +21,8 @@ Email a description and reproduction steps to the maintainer:
 - Credentials are **never logged**: audit entries redact `--password`, `-p`, `--pass`.
 - Traffic goes only to the configured **Kibana** base URL. `http://` is allowed only for loopback hosts.
 - Host URLs must not embed credentials (`https://user:pass@host` is rejected).
-- Optional **`KIBANA_CLI_ALLOWED_INDEX_PREFIXES`** restricts which index patterns search/agg may target.
-- **`--dry-run`** on search/agg previews queries without calling Kibana.
+- Optional **`KIBANA_CLI_ALLOWED_INDEX_PREFIXES`** restricts which index patterns search/agg may target; the pattern must **start with** one of the comma-separated prefixes.
+- **`--dry-run`** on search/agg previews query bodies without any Kibana API calls (no `_search`/agg and no Saved Objects resolution for `--data-view`).
 - Default **`--msg-only`** limits free-text `--query` to `match_phrase` on the message field; `--all-fields` enables full Lucene (use with care).
 
 ## Audit environment
@@ -37,7 +37,7 @@ Email a description and reproduction steps to the maintainer:
 
 - Prefer `KIBANA_CLI_USER` + `KIBANA_CLI_PASSWORD` from a secret manager; avoid `--password` on argv (visible in process list and shell history).
 - Treat search JSON hits as **untrusted input** (prompt injection risk when fed back to LLMs).
-- Avoid `KIBANA_CLI_INSECURE=1` in production; install corporate CA instead.
+- Avoid `KIBANA_CLI_INSECURE=1` or `true` in production; install corporate CA instead.
 - Set `KIBANA_CLI_HOST`, `KIBANA_CLI_USER`, and `KIBANA_CLI_PASSWORD` together — do not mix env username with keyring password from a different user.
 
 ## Contributor expectations

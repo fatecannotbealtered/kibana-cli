@@ -66,16 +66,16 @@ function install() {
   try {
     console.log(`Downloading ${NAME} v${VERSION} for ${platform}-${arch}...`);
     download(GITHUB_URL, archivePath);
-    try {
+    if (process.env.KIBANA_CLI_SKIP_CHECKSUM === "1") {
+      console.warn("Warning: checksum verification skipped (KIBANA_CLI_SKIP_CHECKSUM=1)");
+    } else {
       download(checksumURL, checksumPath);
       const line = fs.readFileSync(checksumPath, "utf8").split("\n").find((l) => l.includes(archiveName));
-      if (line) {
-        verifyChecksum(archivePath, line.trim().split(/\s+/)[0]);
-        console.log("✔ Checksum verified");
+      if (!line) {
+        throw new Error(`No checksum entry for ${archiveName} in checksums.txt`);
       }
-    } catch (e) {
-      if (e.message.includes("Checksum mismatch")) throw e;
-      console.warn("Warning: could not verify checksum —", e.message);
+      verifyChecksum(archivePath, line.trim().split(/\s+/)[0]);
+      console.log("✔ Checksum verified");
     }
     if (isWindows) {
       execFileSync("powershell", [

@@ -15,8 +15,15 @@ kibana-cli is a **Kibana log query CLI**. All search traffic uses **Kibana Conso
 export KIBANA_CLI_HOST=https://kibana.example.com   # base URL only, no /app/discover
 export KIBANA_CLI_USER=<user>
 export KIBANA_CLI_PASSWORD=<pass>
-# Optional: skip TLS verify for corporate CA
+# Optional: skip TLS verify for corporate CA (1 or true)
 export KIBANA_CLI_INSECURE=1
+```
+
+```powershell
+$env:KIBANA_CLI_HOST = "https://kibana.example.com"
+$env:KIBANA_CLI_USER = "<user>"
+$env:KIBANA_CLI_PASSWORD = "<pass>"
+$env:KIBANA_CLI_INSECURE = "true"
 ```
 
 Optional `KIBANA_CLI_KIBANA_VERSION` avoids an extra status round-trip.

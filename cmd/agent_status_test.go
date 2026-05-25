@@ -35,8 +35,30 @@ func TestAgentSearchUnavailableNetwork(t *testing.T) {
 }
 
 func TestClassifySearchProbeError(t *testing.T) {
-	code, exit := classifySearchProbeError("", 429)
-	if code != output.ErrRateLimit || exit != ExitRateLimit {
-		t.Fatalf("%s %d", code, exit)
+	tests := []struct {
+		name       string
+		detail     string
+		statusCode int
+		wantCode   output.ErrorCode
+		wantExit   int
+	}{
+		{name: "rate limit", statusCode: 429, wantCode: output.ErrRateLimit, wantExit: ExitRateLimit},
+		{name: "forbidden", statusCode: 403, wantCode: output.ErrForbidden, wantExit: ExitForbidden},
+		{name: "auth", statusCode: 401, wantCode: output.ErrAuth, wantExit: ExitAuth},
+		{name: "server", statusCode: 502, wantCode: output.ErrServer, wantExit: ExitNetwork},
+		{name: "dial", detail: "dial tcp: connection refused", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
+		{name: "context canceled", detail: "context canceled", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
+		{name: "deadline exceeded", detail: "context deadline exceeded", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
+		{name: "unexpected eof", detail: "unexpected EOF", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
+		{name: "unknown detail", detail: "index probe returned empty body", wantCode: output.ErrUnknown, wantExit: ExitNetwork},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			code, exit := classifySearchProbeError(tc.detail, tc.statusCode)
+			if code != tc.wantCode || exit != tc.wantExit {
+				t.Fatalf("classifySearchProbeError(%q, %d) = (%s, %d), want (%s, %d)",
+					tc.detail, tc.statusCode, code, exit, tc.wantCode, tc.wantExit)
+			}
+		})
 	}
 }

@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateKibanaHost(t *testing.T) {
 	tests := []struct {
@@ -13,6 +16,15 @@ func TestValidateKibanaHost(t *testing.T) {
 		{"https://kibana.example.com/login", true},
 		{"ftp://kibana.example.com", true},
 		{"", true},
+		{"   ", true},
+		{"kibana.example.com", true},
+		{"http://localhost:5601", false},
+		{"http://127.0.0.1:5601", false},
+		{"http://[::1]:5601", false},
+		{"http://::1:5601", false},
+		{"http://kibana.example.com", true},
+		{"https://user:pass@kibana.example.com", true},
+		{"https://%zz", true},
 	}
 	for _, tc := range tests {
 		err := ValidateKibanaHost(tc.host)
@@ -22,5 +34,12 @@ func TestValidateKibanaHost(t *testing.T) {
 		if !tc.wantErr && err != nil {
 			t.Fatalf("unexpected error for %q: %v", tc.host, err)
 		}
+	}
+}
+
+func TestValidateKibanaHostHTTPLoopbackMessage(t *testing.T) {
+	err := ValidateKibanaHost("http://remote.internal:5601")
+	if err == nil || !strings.Contains(err.Error(), "http:// is only allowed for loopback") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

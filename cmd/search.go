@@ -37,7 +37,7 @@ func init() {
 	searchCmd.Flags().String("trace-id", "", "Trace ID (uses trace_mode / trace_field from field-map or flags)")
 	searchCmd.Flags().String("trace-mode", "", "Override trace lookup: field|msg (for heterogeneous indices)")
 	searchCmd.Flags().StringArray("trace-field", nil, "Override trace id fields (repeatable, e.g. log_traceId)")
-	searchCmd.Flags().String("query", "", "Keyword or Lucene query_string")
+	searchCmd.Flags().String("query", "", "Keyword (default: match_phrase on message via --msg-only) or Lucene query_string with --all-fields")
 	searchCmd.Flags().Bool("msg-only", true, "Search --query only in message field (match_phrase); default on")
 	searchCmd.Flags().Bool("all-fields", false, "Search --query across all fields (disables --msg-only)")
 	searchCmd.Flags().String("from", "now-15m", "Range start (date math, e.g. now-15m)")
@@ -158,6 +158,9 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 			"profile": resolved.Profile,
 			"hits":    hits,
 			"size":    size,
+		}
+		if result.TotalRelation != "" {
+			payload["totalRelation"] = result.TotalRelation
 		}
 		if sizeCapped {
 			payload["sizeCapped"] = true

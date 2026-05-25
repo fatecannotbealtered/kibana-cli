@@ -35,10 +35,7 @@ type doctorResult struct {
 }
 
 func runDoctor(_ *cobra.Command, _ []string) error {
-	out, err := runBootstrapCheck()
-	if err != nil {
-		return err
-	}
+	out, _ := runBootstrapCheck()
 	result := &doctorResult{
 		AgentStatus:     out.AgentStatus,
 		ConfigExists:    out.ConfigExists,
