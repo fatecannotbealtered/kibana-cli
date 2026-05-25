@@ -8,8 +8,22 @@ metadata: {"openclaw":{"emoji":"🔍","requires":{"bins":["kibana-cli"]}}}
 
 Kibana log query CLI for AI Agents. **Kibana base URL + HTTP Basic only.**
 
-> Install CLI: `npm install -g @fatecannotbealtered-/kibana-cli`  
-> Install Skill: `npx skills add fatecannotbealtered/kibana-cli -y -g`
+```bash
+# Please install kibana-cli and use it for all Kibana log search/aggregation going forward (always pass --json).
+# Install CLI
+npm install -g @fatecannotbealtered-/kibana-cli
+
+# Install CLI Skill (required) — copies into your agent-supported skills directory
+npx skills add fatecannotbealtered/kibana-cli -y -g
+
+# Configure
+export KIBANA_CLI_HOST=https://kibana.example.com
+export KIBANA_CLI_USER=<user>
+export KIBANA_CLI_PASSWORD=<pass>
+
+# Verify
+kibana-cli context --json
+```
 
 ## Prerequisites
 

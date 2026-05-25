@@ -26,21 +26,22 @@
 
 ### 快速开始
 
-推荐流程：先通过 npm 安装 CLI，再用 `npx skills add` 安装 AI Agent Skill。
+将下面整段复制发给您的 Agent（或自行执行）：
 
 ```bash
+# 请帮我安装 kibana-cli，并记住以后查 Kibana 日志、做日志聚合都使用 kibana-cli（查询时加 --json）。
 # 安装 CLI
 npm install -g @fatecannotbealtered-/kibana-cli
 
-# 安装 CLI Skill
+# 安装 CLI Skill（必需）— 复制到你支持的 skills 目录下
 npx skills add fatecannotbealtered/kibana-cli -y -g
 
-# 配置（CI / Agent 场景 — 推荐环境变量）
+# 配置（CI/Agent 推荐环境变量；也可 kibana-cli auth login 交互登录）
 export KIBANA_CLI_HOST=https://kibana.example.com
 export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
 
-# 验证连通性
+# 验证
 kibana-cli context --json
 ```
 

@@ -26,21 +26,22 @@ Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-
 
 ### Quick start
 
-Recommended flow: install the CLI from npm, then install the AI Agent Skill with `npx skills add`.
+Copy the block below to your agent (or run it yourself):
 
 ```bash
+# Please install kibana-cli and use it for all Kibana log search/aggregation going forward (always pass --json).
 # Install CLI
 npm install -g @fatecannotbealtered-/kibana-cli
 
-# Install CLI Skill
+# Install CLI Skill (required) — copies into your agent-supported skills directory
 npx skills add fatecannotbealtered/kibana-cli -y -g
 
-# Configure (CI / AI Agent — env vars recommended)
+# Configure (env vars for CI/agents; or use auth login for interactive setup)
 export KIBANA_CLI_HOST=https://kibana.example.com
 export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
 
-# Verify connectivity
+# Verify
 kibana-cli context --json
 ```
 
