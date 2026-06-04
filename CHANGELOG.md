@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-06-04
+
+### Changed
+
+- **`--query` defaults to broad all-fields search** (recall-first): free-text/Lucene queries now hit every field via `query_string`. Add `--precise` to narrow to `match_phrase` on the configured message field(s).
+- **BREAKING:** removed the deprecated `--msg-only` and `--all-fields` flags on `search` / `agg`; use `--precise` (opt-in) instead.
+- Documentation aligned (SECURITY, SKILL) with the new default query semantics.
+
+### Added
+
+- `--precise` matches across **all** configured message fields (not just the primary one).
+- Trace lookup in `field` mode falls back to a free-text match of the id across all fields, so a present-but-differently-named trace field no longer silently returns zero hits.
+- `search` zero-hit diagnostics (`zeroReason` / `hint` / `diagnostics`): distinguishes `no_data_in_window`, `matched_in_other_fields`, and `filters_excluded_all` via a `size:0` count probe.
+
 ## [1.0.1] - 2026-05-26
 
 ### Fixed

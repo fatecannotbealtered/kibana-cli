@@ -28,7 +28,7 @@ func TestRoot_Version(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out, "1.0.1") && !strings.Contains(out, "kibana-cli") {
+	if !strings.Contains(out, "1.0.2") && !strings.Contains(out, "kibana-cli") {
 		t.Fatalf("version output: %q", out)
 	}
 }
