@@ -474,7 +474,7 @@ func TestRunAgg_IndexResolveAPIError(t *testing.T) {
 	}
 }
 
-func TestRunAgg_AllFieldsClearsMsgOnly(t *testing.T) {
+func TestRunAgg_Precise(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
@@ -486,21 +486,20 @@ func TestRunAgg_AllFieldsClearsMsgOnly(t *testing.T) {
 	t.Setenv("KIBANA_CLI_PASSWORD", "p")
 	_ = aggCmd.Flags().Set("index", "logs-*")
 	_ = aggCmd.Flags().Set("terms", "level")
-	_ = aggCmd.Flags().Set("msg-only", "true")
-	_ = aggCmd.Flags().Set("all-fields", "true")
+	_ = aggCmd.Flags().Set("precise", "true")
 	if err := runAgg(aggCmd, nil); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestAgg_AllFieldsFlag(t *testing.T) {
+func TestAgg_BroadDefault(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
 	writeFieldMap(t, home, testFieldMapYAML)
 	_, code := runCLIWithEnv(t, map[string]string{
 		"KIBANA_CLI_HOST": srv.URL, "KIBANA_CLI_USER": "u", "KIBANA_CLI_PASSWORD": "p",
-	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--all-fields", "--json"})
+	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--json"})
 	if code != ExitOK {
 		t.Fatal(code)
 	}

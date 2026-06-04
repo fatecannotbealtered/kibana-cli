@@ -113,7 +113,7 @@ func TestAgg_AllFieldsQuery(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--query", "timeout", "--all-fields", "--json"})
+	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--query", "timeout", "--json"})
 	if code != ExitOK {
 		t.Fatalf("got exit %d", code)
 	}

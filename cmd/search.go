@@ -37,9 +37,8 @@ func init() {
 	searchCmd.Flags().String("trace-id", "", "Trace ID (uses trace_mode / trace_field from field-map or flags)")
 	searchCmd.Flags().String("trace-mode", "", "Override trace lookup: field|msg (for heterogeneous indices)")
 	searchCmd.Flags().StringArray("trace-field", nil, "Override trace id fields (repeatable, e.g. log_traceId)")
-	searchCmd.Flags().String("query", "", "Keyword (default: match_phrase on message via --msg-only) or Lucene query_string with --all-fields")
-	searchCmd.Flags().Bool("msg-only", true, "Search --query only in message field (match_phrase); default on")
-	searchCmd.Flags().Bool("all-fields", false, "Search --query across all fields (disables --msg-only)")
+	searchCmd.Flags().String("query", "", "Keyword/Lucene query; searches across ALL fields by default (use --precise to narrow to message)")
+	searchCmd.Flags().Bool("precise", false, "Restrict --query to message field(s) via match_phrase (opt-in; default searches all fields)")
 	searchCmd.Flags().String("from", "now-15m", "Range start (date math, e.g. now-15m)")
 	searchCmd.Flags().String("to", "now", "Range end")
 	searchCmd.Flags().String("time-field", "", "Timestamp field (default from profile or @timestamp)")
@@ -102,18 +101,14 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
 	query, _ := cmd.Flags().GetString("query")
-	msgOnly, _ := cmd.Flags().GetBool("msg-only")
-	allFields, _ := cmd.Flags().GetBool("all-fields")
-	if allFields {
-		msgOnly = false
-	}
+	precise, _ := cmd.Flags().GetBool("precise")
 	from, _ := cmd.Flags().GetString("from")
 	to, _ := cmd.Flags().GetString("to")
 
 	opts := kibanaclient.SearchOptions{
 		Index:         resolved.Index,
 		Query:         query,
-		MsgOnly:       msgOnly,
+		MsgOnly:       precise,
 		Fields:        fields,
 		From:          from,
 		To:            to,
@@ -128,6 +123,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		TraceFields:   resolved.TraceIDFields,
 		TraceMode:     resolved.TraceMode,
 		MessageField:  resolved.PrimaryMessageField(),
+		MessageFields: resolved.MessageFields,
 	}
 	if dryRunOutput("search logs", map[string]any{
 		"index":   resolved.Index,
@@ -169,11 +165,21 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		if resolved.TraceMode != "" {
 			payload["traceMode"] = resolved.TraceMode
 		}
+		if result.Total == 0 {
+			if reason, hint, probes := explainZeroHits(client, opts, precise); reason != "" {
+				payload["zeroReason"] = reason
+				payload["hint"] = hint
+				payload["diagnostics"] = probes
+			}
+		}
 		output.PrintJSON(payload)
 		return nil
 	}
 	if len(result.Hits) == 0 {
 		output.Info("No hits.")
+		if _, hint, _ := explainZeroHits(client, opts, precise); hint != "" {
+			output.Gray("  " + hint)
+		}
 		return nil
 	}
 	for _, h := range result.Hits {
@@ -220,4 +226,38 @@ func firstFieldValue(src map[string]any, fields []string) string {
 		}
 	}
 	return ""
+}
+
+// explainZeroHits probes why a search returned nothing, distinguishing
+// "no data in window" vs "filters excluded all" vs "term lives in other fields".
+// Best-effort: returns empty reason if probes fail.
+func explainZeroHits(client *kibanaclient.Client, opts kibanaclient.SearchOptions, precise bool) (reason, hint string, probes map[string]any) {
+	base := kibanaclient.SearchOptions{Index: opts.Index, From: opts.From, To: opts.To, TimeField: opts.TimeField}
+	windowTotal, err := client.Count(apiCtx(), base)
+	if err != nil {
+		return "", "", nil
+	}
+	probes = map[string]any{"windowTotal": windowTotal}
+	if windowTotal == 0 {
+		return "no_data_in_window",
+			"No documents in this index for the time window; widen --from/--to or verify the index pattern.",
+			probes
+	}
+	if q := strings.TrimSpace(opts.Query); q != "" {
+		broad := base
+		broad.Query = q // MsgOnly stays false: search all fields
+		if broadTotal, err := client.Count(apiCtx(), broad); err == nil {
+			probes["broadMatchTotal"] = broadTotal
+			if broadTotal > 0 {
+				h := fmt.Sprintf("%d docs match %q across all fields but current filters/precision excluded them.", broadTotal, q)
+				if precise {
+					h += " Drop --precise to search all fields."
+				}
+				return "matched_in_other_fields", h, probes
+			}
+		}
+	}
+	return "filters_excluded_all",
+		fmt.Sprintf("%d docs exist in the window but none matched; relax --level/--service/--field or the query.", windowTotal),
+		probes
 }

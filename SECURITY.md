@@ -23,7 +23,7 @@ Email a description and reproduction steps to the maintainer:
 - Host URLs must not embed credentials (`https://user:pass@host` is rejected).
 - Optional **`KIBANA_CLI_ALLOWED_INDEX_PREFIXES`** restricts which index patterns search/agg may target; the pattern must **start with** one of the comma-separated prefixes.
 - **`--dry-run`** on search/agg previews query bodies without any Kibana API calls (no `_search`/agg and no Saved Objects resolution for `--data-view`).
-- Default **`--msg-only`** limits free-text `--query` to `match_phrase` on the message field; `--all-fields` enables full Lucene (use with care).
+- Free-text `--query` searches **across all fields** by default (full Lucene `query_string`); `--precise` narrows it to `match_phrase` on the configured message field(s).
 
 ## Audit environment
 

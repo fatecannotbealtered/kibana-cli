@@ -22,9 +22,10 @@ type SearchOptions struct {
 	LevelFields   []string
 	TraceID       string
 	TraceFields   []string
-	TraceMode     string // field | msg (from field-map profile)
-	MessageField  string // primary message field for trace_mode msg
-	// MsgOnly restricts --query to match_phrase on msg (no other fields).
+	TraceMode     string   // field | msg (from field-map profile)
+	MessageField  string   // primary message field (trace_mode msg / fallback)
+	MessageFields []string // all configured message fields (precise multi-field search)
+	// MsgOnly (precise) restricts --query to match_phrase across message fields only.
 	MsgOnly bool
 }
 
@@ -71,18 +72,9 @@ func buildQuery(opts SearchOptions) map[string]any {
 	}
 	if q := strings.TrimSpace(opts.Query); q != "" {
 		if opts.MsgOnly {
-			must = append(must, map[string]any{
-				"match_phrase": map[string]any{msgField: q},
-			})
+			must = append(must, buildMessagePhraseQuery(opts.MessageFields, msgField, q))
 		} else {
-			must = append(must, map[string]any{
-				"query_string": map[string]any{
-					"query":            q,
-					"default_field":    "*",
-					"lenient":          true,
-					"analyze_wildcard": true,
-				},
-			})
+			must = append(must, broadQueryString(q))
 		}
 	}
 	boolQ := map[string]any{}
@@ -116,6 +108,8 @@ func termFilterClauses(key, value string) []map[string]any {
 }
 
 // buildTraceQuery matches trace ID per profile: field (ELK traceId) or msg (MDC prefix in message).
+// In field mode it also falls back to a free-text match of the id across all fields, so a
+// present-but-differently-named trace field never silently returns zero hits.
 func buildTraceQuery(traceID string, traceFields []string, traceMode, msgField string) map[string]any {
 	traceID = strings.TrimSpace(traceID)
 	if traceID == "" {
@@ -127,6 +121,62 @@ func buildTraceQuery(traceID string, traceFields []string, traceMode, msgField s
 			"match_phrase": map[string]any{msgField: traceID},
 		}
 	default:
-		return fieldmap.BuildValueORQuery(traceFields, traceID)
+		fieldQ := fieldmap.BuildValueORQuery(traceFields, traceID)
+		free := freeTextQuery(traceID)
+		if fieldQ == nil {
+			return free
+		}
+		return map[string]any{
+			"bool": map[string]any{
+				"should":               []map[string]any{fieldQ, free},
+				"minimum_should_match": 1,
+			},
+		}
+	}
+}
+
+// broadQueryString searches a keyword/Lucene query across all fields (recall-first default).
+func broadQueryString(q string) map[string]any {
+	return map[string]any{
+		"query_string": map[string]any{
+			"query":            q,
+			"default_field":    "*",
+			"lenient":          true,
+			"analyze_wildcard": true,
+		},
+	}
+}
+
+// freeTextQuery matches a quoted value across all fields (used as trace-id fallback).
+func freeTextQuery(value string) map[string]any {
+	v := strings.ReplaceAll(value, `\`, `\\`)
+	v = strings.ReplaceAll(v, `"`, `\"`)
+	return map[string]any{
+		"query_string": map[string]any{
+			"query":         `"` + v + `"`,
+			"default_field": "*",
+			"lenient":       true,
+		},
+	}
+}
+
+// buildMessagePhraseQuery (precise mode) does match_phrase across all configured message fields.
+func buildMessagePhraseQuery(fields []string, fallback, q string) map[string]any {
+	fs := fieldmap.UniqueStrings(fields)
+	if len(fs) == 0 {
+		fs = []string{strings.TrimSpace(fallback)}
+	}
+	if len(fs) == 1 {
+		return map[string]any{"match_phrase": map[string]any{fs[0]: q}}
+	}
+	should := make([]map[string]any, 0, len(fs))
+	for _, f := range fs {
+		should = append(should, map[string]any{"match_phrase": map[string]any{f: q}})
+	}
+	return map[string]any{
+		"bool": map[string]any{
+			"should":               should,
+			"minimum_should_match": 1,
+		},
 	}
 }

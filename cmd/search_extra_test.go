@@ -66,6 +66,22 @@ func TestSearch_TextMode_NoHits(t *testing.T) {
 	}
 }
 
+func TestSearch_ZeroHits_Diagnostics(t *testing.T) {
+	srv := newMockKibanaServerWith(mockKibanaOptions{SearchNoHits: true})
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, searchExtraFieldMap)
+	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
+		"search", "--index", "logs-*", "--query", "timeout", "--json",
+	})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "zeroReason") || !strings.Contains(out, "no_data_in_window") {
+		t.Fatalf("expected zero-hit diagnostics: %s", out)
+	}
+}
+
 func TestSearch_TextMode_TraceHint(t *testing.T) {
 	traceMsg := "[aabbccdd00112233445566778899aabb, 00cfa11a2dfa446a920d59a76aa56df1] worker timeout"
 	srv := newMockKibanaServerWith(mockKibanaOptions{
@@ -90,26 +106,26 @@ func TestSearch_TextMode_TraceHint(t *testing.T) {
 	}
 }
 
-func TestSearch_AllFields_Query(t *testing.T) {
-	srv := newMockKibanaServer()
-	defer srv.Close()
-	home := setupTestHome(t)
-	writeFieldMap(t, home, searchExtraFieldMap)
-	_, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
-		"search", "--index", "logs-*", "--query", "timeout", "--all-fields", "--json",
-	})
-	if code != ExitOK {
-		t.Fatal(code)
-	}
-}
-
-func TestSearch_MsgOnly_Default(t *testing.T) {
+func TestSearch_BroadDefault_Query(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
 	writeFieldMap(t, home, searchExtraFieldMap)
 	_, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
 		"search", "--index", "logs-*", "--query", "timeout", "--json",
+	})
+	if code != ExitOK {
+		t.Fatal(code)
+	}
+}
+
+func TestSearch_Precise_Query(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, searchExtraFieldMap)
+	_, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
+		"search", "--index", "logs-*", "--query", "timeout", "--precise", "--json",
 	})
 	if code != ExitOK {
 		t.Fatal(code)

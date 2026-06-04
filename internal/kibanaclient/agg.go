@@ -22,6 +22,7 @@ type AggOptions struct {
 	Query         string
 	MsgOnly       bool
 	MessageField  string
+	MessageFields []string
 }
 
 // Terms runs a terms aggregation (retries with .keyword on text-field errors).
@@ -56,6 +57,7 @@ func (c *Client) termsOnce(ctx context.Context, opts AggOptions, field string) (
 		Query:         opts.Query,
 		MsgOnly:       opts.MsgOnly,
 		MessageField:  opts.MessageField,
+		MessageFields: opts.MessageFields,
 		ServiceValue:  opts.ServiceValue,
 		ServiceFields: opts.ServiceFields,
 		LevelValue:    opts.LevelValue,

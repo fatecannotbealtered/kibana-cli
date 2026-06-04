@@ -96,3 +96,35 @@ func TestBuildQuery_msgOnly(t *testing.T) {
 		t.Fatalf("match_phrase: %#v", must[0])
 	}
 }
+
+// Default (MsgOnly=false) searches across all fields via query_string default_field "*".
+func TestBuildQuery_broadDefault(t *testing.T) {
+	q := buildQuery(SearchOptions{Query: "timeout", TimeField: "@timestamp", From: "now-1d"})
+	must := q["bool"].(map[string]any)["must"].([]map[string]any)
+	qs, ok := must[0]["query_string"].(map[string]any)
+	if !ok || qs["default_field"] != "*" {
+		t.Fatalf("expected broad query_string over *, got %#v", must[0])
+	}
+}
+
+// Precise mode searches match_phrase across ALL configured message fields, not just the first.
+func TestBuildQuery_preciseMultiMessageField(t *testing.T) {
+	q := buildQuery(SearchOptions{
+		Query: "timeout", MsgOnly: true, TimeField: "@timestamp", From: "now-1d",
+		MessageFields: []string{"msg", "message"},
+	})
+	must := q["bool"].(map[string]any)["must"].([]map[string]any)
+	should := must[0]["bool"].(map[string]any)["should"].([]map[string]any)
+	if len(should) != 2 {
+		t.Fatalf("expected match_phrase across 2 message fields, got %#v", must[0])
+	}
+}
+
+// Trace field mode falls back to a free-text match across all fields (no silent zero).
+func TestBuildTraceQuery_fieldModeFreeTextFallback(t *testing.T) {
+	q := buildTraceQuery("abc123", []string{"traceId"}, "field", "msg")
+	should := q["bool"].(map[string]any)["should"].([]map[string]any)
+	if len(should) != 2 {
+		t.Fatalf("expected configured-field OR free-text fallback, got %#v", q)
+	}
+}

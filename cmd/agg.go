@@ -31,9 +31,8 @@ func init() {
 	aggCmd.Flags().String("service", "", "Filter by logical service name")
 	aggCmd.Flags().String("level", "", "Filter by log level")
 	aggCmd.Flags().String("terms", "", "Field to aggregate (required)")
-	aggCmd.Flags().String("query", "", "Additional text query (match_phrase on message by default)")
-	aggCmd.Flags().Bool("msg-only", true, "Search --query only in message field (match_phrase); default on")
-	aggCmd.Flags().Bool("all-fields", false, "Search --query across all fields (disables --msg-only)")
+	aggCmd.Flags().String("query", "", "Additional text query; searches across ALL fields by default (use --precise to narrow to message)")
+	aggCmd.Flags().Bool("precise", false, "Restrict --query to message field(s) via match_phrase (opt-in)")
 	aggCmd.Flags().String("from", "now-1h", "Time range start")
 	aggCmd.Flags().String("to", "now", "Time range end")
 	aggCmd.Flags().String("time-field", "", "Timestamp field")
@@ -80,11 +79,7 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 		resolved.TimeField = timeField
 	}
 	query, _ := cmd.Flags().GetString("query")
-	msgOnly, _ := cmd.Flags().GetBool("msg-only")
-	allFields, _ := cmd.Flags().GetBool("all-fields")
-	if allFields {
-		msgOnly = false
-	}
+	precise, _ := cmd.Flags().GetBool("precise")
 
 	aggOpts := kibanaclient.AggOptions{
 		Index:         resolved.Index,
@@ -98,8 +93,9 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 		LevelValue:    level,
 		LevelFields:   resolved.LevelFields,
 		Query:         query,
-		MsgOnly:       msgOnly,
+		MsgOnly:       precise,
 		MessageField:  resolved.PrimaryMessageField(),
+		MessageFields: resolved.MessageFields,
 	}
 	if dryRunOutput("aggregate logs", map[string]any{
 		"index":      resolved.Index,
