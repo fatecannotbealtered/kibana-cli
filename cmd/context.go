@@ -12,7 +12,7 @@ var contextCmd = &cobra.Command{
 	Short: "Show Kibana auth context (AI Agent bootstrap)",
 	Long: `Show Kibana authentication and log-query reachability.
 
-With --json, read ok, status, message, hint, errorCode, and exitCode first, then the kibana object.`,
+JSON is the default output. Read ok, status, message, hint, errorCode, and exitCode first, then the kibana object.`,
 	RunE: runContext,
 }
 
@@ -59,8 +59,8 @@ func printContext(result *contextResult) {
 		return
 	}
 	fmt.Println()
-	output.Bold("  kibana-cli Context")
-	output.Gray("  ────────────────────────────────────────")
+	output.AuxBold("  kibana-cli Context")
+	output.AuxGray("  ────────────────────────────────────────")
 	fmt.Println()
 	if result.Message != "" {
 		if result.OK {
@@ -69,7 +69,7 @@ func printContext(result *contextResult) {
 			output.Error(result.Message)
 		}
 		if result.Hint != "" {
-			output.Gray("  " + result.Hint)
+			output.AuxGray("  " + result.Hint)
 		}
 	}
 	k := result.Kibana
@@ -80,6 +80,6 @@ func printContext(result *contextResult) {
 	if k.SearchError != "" && !k.SearchReachable {
 		output.Warn(k.SearchError)
 	}
-	output.Gray(fmt.Sprintf("  exit %d", result.ExitCode))
+	output.AuxGray(fmt.Sprintf("  exit %d", result.ExitCode))
 	fmt.Println()
 }

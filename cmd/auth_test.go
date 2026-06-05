@@ -65,6 +65,7 @@ func TestAuth_Login_DryRun_Text(t *testing.T) {
 		"--user", "ops",
 		"--password", "secret",
 		"--dry-run",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -123,6 +124,7 @@ func TestAuth_Login_Success_Text_Keyring(t *testing.T) {
 		"--host", srv.URL,
 		"--user", "ops",
 		"--password", "secret",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -173,6 +175,7 @@ func TestAuth_Login_Success_Text_PlaintextWarn(t *testing.T) {
 		"--user", "ops",
 		"--password", "secret",
 		"--plaintext",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -192,6 +195,7 @@ func TestAuth_Login_SearchProbeWarn_Text(t *testing.T) {
 		"--host", srv.URL,
 		"--user", "ops",
 		"--password", "secret",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -273,7 +277,7 @@ func TestAuth_Login_Interactive_Success(t *testing.T) {
 	defer srv.Close()
 	setupTestHome(t)
 	stdin := srv.URL + "\nops\nsecret\n"
-	out, code := runCLIWithStdin(t, stdin, []string{"auth", "login"})
+	out, code := runCLIWithStdin(t, stdin, []string{"auth", "login", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -301,6 +305,7 @@ func TestAuth_Login_Interactive_PasswordStdin(t *testing.T) {
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -323,7 +328,7 @@ func TestAuth_Logout_DryRun_JSON(t *testing.T) {
 
 func TestAuth_Logout_DryRun_Text(t *testing.T) {
 	setupTestHome(t)
-	out, code := runCLI(t, []string{"auth", "logout", "--dry-run"})
+	out, code := runCLI(t, []string{"auth", "logout", "--dry-run", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -362,7 +367,7 @@ func TestAuth_Logout_Success_Text(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(`{"host":"http://x","username":"u","password":"p"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, code := runCLI(t, []string{"auth", "logout"})
+	out, code := runCLI(t, []string{"auth", "logout", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -414,7 +419,7 @@ func TestAuth_Status_NoConfig_Text(t *testing.T) {
 	t.Setenv("KIBANA_CLI_HOST", "")
 	t.Setenv("KIBANA_CLI_USER", "")
 	t.Setenv("KIBANA_CLI_PASSWORD", "")
-	_, code := runCLI(t, []string{"auth", "status"})
+	_, code := runCLI(t, []string{"auth", "status", "--format", "text"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected ExitBadArgs, got %d", code)
 	}
@@ -463,6 +468,7 @@ func TestAuth_Status_Configured_Text_File(t *testing.T) {
 		"--user", "ops",
 		"--password", "secret",
 		"--plaintext",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatal(code)
@@ -470,7 +476,7 @@ func TestAuth_Status_Configured_Text_File(t *testing.T) {
 	t.Setenv("KIBANA_CLI_HOST", "")
 	t.Setenv("KIBANA_CLI_USER", "")
 	t.Setenv("KIBANA_CLI_PASSWORD", "")
-	out, code := runCLI(t, []string{"auth", "status"})
+	out, code := runCLI(t, []string{"auth", "status", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}

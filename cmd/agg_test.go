@@ -59,7 +59,7 @@ func TestAgg_TableOutput(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"agg", "--index", "logs-*", "--terms", "level"})
+	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}

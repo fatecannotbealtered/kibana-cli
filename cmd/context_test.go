@@ -12,7 +12,7 @@ func TestContext_TableSuccess(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"context"})
+	}, []string{"context", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -23,7 +23,7 @@ func TestContext_TableSuccess(t *testing.T) {
 
 func TestContext_TableNotConfigured(t *testing.T) {
 	setupTestHome(t)
-	out, code := runCLI(t, []string{"context"})
+	out, code := runCLI(t, []string{"context", "--format", "text"})
 	if code != ExitBadArgs {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -40,11 +40,12 @@ func TestContext_TableSearchUnavailable(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"context"})
+	}, []string{"context", "--format", "text"})
 	if code != ExitForbidden {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	combined := captureCLIOutput(t, func() {
+		jsonMode = false
 		printContext(&contextResult{
 			AgentStatus: agentSearchUnavailable("agent", "7.10.0", "forbidden", 403),
 			Kibana: &contextKibana{
@@ -66,7 +67,7 @@ func TestContext_TableAuthFailed(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"context"})
+	}, []string{"context", "--format", "text"})
 	if code != ExitAuth {
 		t.Fatalf("exit %d: %s", code, out)
 	}

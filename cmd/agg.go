@@ -18,8 +18,8 @@ var aggCmd = &cobra.Command{
 	Long: `Run a terms aggregation on log indices via Kibana Console Proxy.
 
 Examples:
-  kibana-cli agg --profile java-app --terms level --from now-1h --json
-  kibana-cli agg --index 'app-test-log-*' --terms level --service order-svc --json`,
+  kibana-cli agg --profile java-app --terms level --from now-1h
+  kibana-cli agg --index 'app-test-log-*' --terms level --service order-svc`,
 	RunE: runAgg,
 }
 
@@ -146,6 +146,6 @@ func printAggResult(result *kibanaclient.AggResult) error {
 		_, _ = fmt.Fprintf(w, "%s\t%d\n", b.Key, b.Count)
 	}
 	_ = w.Flush()
-	output.Gray(fmt.Sprintf("  field=%s total=%d took=%dms", result.Field, result.Total, result.TookMs))
+	output.AuxGray(fmt.Sprintf("  field=%s total=%d took=%dms", result.Field, result.Total, result.TookMs))
 	return nil
 }

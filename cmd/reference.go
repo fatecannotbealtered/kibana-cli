@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strings"
 
+	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -17,6 +19,14 @@ var referenceCmd = &cobra.Command{
 		lines = append(lines, "# kibana-cli Command Reference", "")
 		lines = append(lines, fmt.Sprintf("Version: %s", rootCmd.Version), "")
 		walkCommands(rootCmd, &lines, "")
+		if jsonMode {
+			output.PrintJSON(map[string]any{
+				"ok":      true,
+				"format":  "markdown",
+				"content": strings.Join(lines, "\n"),
+			})
+			return nil
+		}
 		for _, line := range lines {
 			cmd.Println(line)
 		}

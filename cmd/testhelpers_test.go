@@ -16,7 +16,10 @@ import (
 
 func resetCLIState(t *testing.T) {
 	t.Helper()
-	jsonMode = false
+	jsonMode = true
+	jsonFlag = false
+	outputFormat = FormatJSON
+	compactMode = false
 	forceMode = false
 	quietMode = false
 	dryRun = false
@@ -25,6 +28,7 @@ func resetCLIState(t *testing.T) {
 	lastExit = 0
 	activeCmd = nil
 	output.Quiet = false
+	output.JSONCompact = false
 	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd, updateCmd)
 	resetCommandFlags(rootCmd)
 }

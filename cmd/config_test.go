@@ -35,7 +35,7 @@ func TestConfig_Init_JSON(t *testing.T) {
 
 func TestConfig_Init_Text(t *testing.T) {
 	home := setupTestHome(t)
-	out, code := runCLI(t, []string{"config", "init"})
+	out, code := runCLI(t, []string{"config", "init", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -58,7 +58,7 @@ func TestConfig_Init_DryRun_JSON(t *testing.T) {
 
 func TestConfig_Init_DryRun_Text(t *testing.T) {
 	setupTestHome(t)
-	out, code := runCLI(t, []string{"config", "init", "--dry-run"})
+	out, code := runCLI(t, []string{"config", "init", "--dry-run", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -79,7 +79,7 @@ func TestConfig_Init_AlreadyExists(t *testing.T) {
 func TestConfig_Init_AlreadyExists_Text(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, "version: 1\n")
-	out, code := runCLI(t, []string{"config", "init"})
+	out, code := runCLI(t, []string{"config", "init", "--format", "text"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected ExitBadArgs, got %d", code)
 	}
@@ -147,7 +147,7 @@ func TestConfig_Show_JSON_WithMap(t *testing.T) {
 func TestConfig_Show_Text_WithMap(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, configTestFieldMapYAML)
-	out, code := runCLI(t, []string{"config", "show"})
+	out, code := runCLI(t, []string{"config", "show", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -174,7 +174,7 @@ func TestConfig_Show_Missing_Text(t *testing.T) {
 	setupTestHome(t)
 	var stdout string
 	stderr := captureStderr(t, func() {
-		stdout, _ = runCLI(t, []string{"config", "show"})
+		stdout, _ = runCLI(t, []string{"config", "show", "--format", "text"})
 	})
 	if !strings.Contains(stderr, "field-map.yaml") && !strings.Contains(stdout, "field-map.yaml") {
 		t.Fatalf("expected warning: stdout=%q stderr=%q", stdout, stderr)

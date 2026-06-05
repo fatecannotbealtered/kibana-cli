@@ -12,7 +12,7 @@ func TestPatterns_List_Table(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"patterns", "list"})
+	}, []string{"patterns", "list", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -28,7 +28,7 @@ func TestPatterns_List_Empty(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"patterns", "list"})
+	}, []string{"patterns", "list", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -44,7 +44,7 @@ func TestPatterns_Fields_Table(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"patterns", "fields", "--index", "logs-*"})
+	}, []string{"patterns", "fields", "--index", "logs-*", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -60,7 +60,7 @@ func TestPatterns_Fields_Empty(t *testing.T) {
 		"KIBANA_CLI_HOST":     srv.URL,
 		"KIBANA_CLI_USER":     "ops",
 		"KIBANA_CLI_PASSWORD": "secret",
-	}, []string{"patterns", "fields", "--index", "logs-*"})
+	}, []string{"patterns", "fields", "--index", "logs-*", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}

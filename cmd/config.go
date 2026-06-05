@@ -54,7 +54,7 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 	output.Success("Created " + path)
-	output.Gray("  Edit profiles and services to match your log indices.")
+	output.AuxGray("  Edit profiles and services to match your log indices.")
 	return nil
 }
 
@@ -95,14 +95,14 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 	fmt.Println()
-	output.Bold("  field-map.yaml")
-	output.Gray("  " + fieldmap.FilePath())
+	output.AuxBold("  field-map.yaml")
+	output.AuxGray("  " + fieldmap.FilePath())
 	fmt.Println()
 	output.Info(fmt.Sprintf("defaults.index: %s", m.Defaults.Index))
 	output.Info(fmt.Sprintf("profiles: %d", len(m.Profiles)))
 	output.Info(fmt.Sprintf("services: %d", len(m.Services)))
 	for name := range m.Profiles {
-		output.Gray("  profile: " + name)
+		output.AuxGray("  profile: " + name)
 	}
 	fmt.Println()
 	return nil

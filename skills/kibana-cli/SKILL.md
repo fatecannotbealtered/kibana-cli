@@ -1,6 +1,6 @@
 ---
 name: kibana-cli
-description: Query Kibana logs via Console Proxy for AI Agents. Triggers on kibana logs, ELK, log search, log aggregation. Always use --json.
+description: Query Kibana logs via Console Proxy for AI Agents. Triggers on kibana logs, ELK, log search, log aggregation. Output defaults to JSON.
 metadata: {"openclaw":{"emoji":"🔍","requires":{"bins":["kibana-cli"]}}}
 ---
 
@@ -9,7 +9,7 @@ metadata: {"openclaw":{"emoji":"🔍","requires":{"bins":["kibana-cli"]}}}
 Kibana log query CLI for AI Agents. **Kibana base URL + HTTP Basic only.**
 
 ```bash
-# Please install kibana-cli and use it for all Kibana log search/aggregation going forward (always pass --json).
+# Please install kibana-cli and use it for all Kibana log search/aggregation going forward. Output defaults to JSON.
 # Install CLI
 npm install -g @fatecannotbealtered-/kibana-cli
 
@@ -22,7 +22,7 @@ export KIBANA_CLI_USER=<user>
 export KIBANA_CLI_PASSWORD=<pass>
 
 # Verify
-kibana-cli context --json
+kibana-cli context
 ```
 
 ## Prerequisites
@@ -41,9 +41,9 @@ kibana-cli context --json
    $env:KIBANA_CLI_PASSWORD = "<pass>"
    ```
 4. Or: `kibana-cli auth login --host <KIBANA_URL> --user <user>` (interactive password prompt).
-5. `kibana-cli context --json` — proceed when `ok` is true (not only `authValid` from doctor).
+5. `kibana-cli context` — proceed when `ok` is true (not only `authValid` from doctor).
 
-**Always use `--json`** when parsing output. All JSON (success and errors) is written to **stdout**.
+Output defaults to JSON, so omit output flags when parsing. Use `--format text` only for human-readable summaries/tables, and `--format raw` only for raw content such as `reference` markdown. `--json` is a compatibility alias for `--format json`, but new commands should not need it. All JSON (success and errors) is written to **stdout**.
 
 ## Exit codes
 
@@ -65,12 +65,12 @@ kibana-cli context --json
 - `--dry-run` previews search/agg bodies and write actions with no Kibana API calls (no `_search`/agg; `--data-view` uses placeholder index `<data-view:{id}>`).
 - `--query` searches all fields by default (recall-first); add `--precise` to narrow to the message field(s) when you need fewer false positives.
 - Optional index allowlist: `KIBANA_CLI_ALLOWED_INDEX_PREFIXES=logs-,app-` — index must **start with** a listed prefix.
-- Use `kibana-cli update --check --json` to check the CLI version. If `update` reports `package_manager_required`, run the returned `command` instead of editing managed files.
+- Use `kibana-cli update --check` to check the CLI version. If `update` reports `package_manager_required`, run the returned `command` instead of editing managed files.
 
 ## Context (run first)
 
 ```bash
-kibana-cli context --json
+kibana-cli context
 ```
 
 Read top-level fields first:
@@ -94,36 +94,36 @@ Then use `kibana.*` for host, username, `searchReachable`, `searchError`.
 
 ```bash
 kibana-cli config init
-kibana-cli config show --json
+kibana-cli config show
 ```
 
 ## Discover fields
 
 ```bash
-kibana-cli patterns list --json
-kibana-cli patterns fields --index 'app-test-log-*' --json
+kibana-cli patterns list
+kibana-cli patterns fields --index 'app-test-log-*'
 ```
 
 ## Search logs (primary)
 
 ```bash
-kibana-cli search --index 'app-test-log-*' --service order-svc --level ERROR --json
-kibana-cli search --data-view <uuid> --query 'timeout' --field device_id=abc --json
-kibana-cli search --profile java-app --service order-svc --fields '@timestamp,level,msg' --size 20 --json
-kibana-cli search --index 'logs-*' --trace-id abc123 --trace-mode msg --json
+kibana-cli search --index 'app-test-log-*' --service order-svc --level ERROR
+kibana-cli search --data-view <uuid> --query 'timeout' --field device_id=abc
+kibana-cli search --profile java-app --service order-svc --fields '@timestamp,level,msg' --size 20
+kibana-cli search --index 'logs-*' --trace-id abc123 --trace-mode msg
 ```
 
 ## Aggregate
 
 ```bash
-kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --json
+kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h
 ```
 
 ## Update CLI
 
 ```bash
-kibana-cli update --check --json
-kibana-cli update --json
+kibana-cli update --check
+kibana-cli update
 ```
 
 Read `status`, `updateAvailable`, `installMethod`, and `command`. Standalone Unix binaries can self-update after checksum verification; npm / Go installs return the package-manager command to run.

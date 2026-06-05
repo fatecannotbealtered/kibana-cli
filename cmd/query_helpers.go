@@ -25,7 +25,7 @@ func resolveIndexFromFlags(cmd *cobra.Command, client *kibanaclient.Client) (str
 	index, _ := cmd.Flags().GetString("index")
 	dataView, _ := cmd.Flags().GetString("data-view")
 	if strings.TrimSpace(dataView) != "" && strings.TrimSpace(index) != "" {
-		output.Warn("--data-view overrides --index")
+		output.AuxWarn("--data-view overrides --index")
 	}
 	if strings.TrimSpace(dataView) != "" {
 		id := strings.TrimSpace(dataView)

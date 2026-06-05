@@ -2,7 +2,7 @@ package cmd
 
 import "github.com/fatecannotbealtered/kibana-cli/internal/output"
 
-// Agent status values for doctor/context JSON (--json).
+// Agent status values for doctor/context JSON output.
 const (
 	AgentStatusReady             = "ready"
 	AgentStatusNotConfigured     = "not_configured"

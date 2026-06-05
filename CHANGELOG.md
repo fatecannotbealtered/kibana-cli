@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - `kibana-cli update` to check GitHub Releases and update standalone binaries with checksum verification. npm / Go managed installs return the package-manager command instead of mutating managed files.
 
+### Changed
+
+- **BREAKING:** CLI output now defaults to JSON. Use `--format text` for human-readable summaries/tables and `--format raw` for unwrapped raw content where supported.
+- Added global `--format json|text|raw` and `--compact` for single-line JSON. `--json` remains as a compatibility alias for `--format json`.
+- `--fields` is valid only with JSON output, `--quiet` only suppresses auxiliary text output, and unsupported command/format combinations now return explicit parameter errors.
+
 ## [1.0.2] - 2026-06-04
 
 ### Changed

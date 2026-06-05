@@ -101,8 +101,18 @@ func TestQuietAndPrintFuncs(t *testing.T) {
 		Info("info")
 		Bold("bold")
 		Gray("gray")
+	}); !strings.Contains(out, "ok") || !strings.Contains(out, "info") || !strings.Contains(out, "bold") || !strings.Contains(out, "gray") {
+		t.Fatalf("quiet should not suppress primary stdout: %q", out)
+	}
+	if out := captureStdout(func() {
+		AuxInfo("aux info")
+		AuxBold("aux bold")
+		AuxGray("aux gray")
 	}); out != "" {
-		t.Fatalf("quiet stdout: %q", out)
+		t.Fatalf("quiet auxiliary stdout: %q", out)
+	}
+	if errOut := captureStderr(func() { AuxWarn("aux warn") }); errOut != "" {
+		t.Fatalf("quiet auxiliary stderr: %q", errOut)
 	}
 
 	Quiet = false

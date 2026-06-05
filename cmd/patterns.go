@@ -27,7 +27,7 @@ var patternsFieldsCmd = &cobra.Command{
 	Long: `List field names and types for a Kibana index pattern title (same value as search --index).
 
 Examples:
-  kibana-cli patterns fields --index 'app-v3-test-log-*' --json
+  kibana-cli patterns fields --index 'app-v3-test-log-*'
   kibana-cli patterns fields --index 'platform-b-test-log-*'`,
 	RunE: runPatternsFields,
 }
@@ -99,6 +99,6 @@ func runPatternsFields(cmd *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%v\t%v\n", f.Name, f.Type, f.Searchable, f.Aggregatable)
 	}
 	_ = w.Flush()
-	output.Gray(fmt.Sprintf("  %d fields on %s", len(fields), index))
+	output.AuxGray(fmt.Sprintf("  %d fields on %s", len(fields), index))
 	return nil
 }

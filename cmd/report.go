@@ -27,7 +27,7 @@ func emitAgentFailure(st AgentStatus) {
 	}
 	output.Error(msg)
 	if st.Hint != "" {
-		output.Gray("  " + st.Hint)
+		output.AuxGray("  " + st.Hint)
 	}
 }
 

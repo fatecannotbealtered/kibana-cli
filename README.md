@@ -10,9 +10,9 @@
 
 ## Why kibana-cli?
 
-Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-intensity **search** and **agg** with an Agent-friendly JSON contract, following [`jira-cli`](https://github.com/fatecannotbealtered/jira-cli) and [`gitlab-cli`](https://github.com/fatecannotbealtered/gitlab-cli):
+Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-intensity **search** and **agg** with an Agent-friendly JSON-by-default contract, following [`jira-cli`](https://github.com/fatecannotbealtered/jira-cli) and [`gitlab-cli`](https://github.com/fatecannotbealtered/gitlab-cli):
 
-- **Unified `--json` contract** — same `AgentStatus` envelope for bootstrap, validation, and API errors (all on stdout)
+- **Default JSON contract** — same `AgentStatus` envelope for bootstrap, validation, and API errors (all on stdout)
 - **`field-map.yaml`** (optional) — logical service names across heterogeneous indices; `index_rules` in `field-map.example.yaml`
 - **`--data-view`** — resolve index pattern from a Kibana data view id
 - **`--dry-run`** — preview search/agg query bodies and write actions with **no Kibana API calls** (including `--data-view` index resolution, which uses a placeholder index in the preview)
@@ -30,7 +30,7 @@ Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-
 Copy the block below to your agent (or run it yourself):
 
 ```bash
-# Please install kibana-cli and use it for all Kibana log search/aggregation going forward (always pass --json).
+# Please install kibana-cli and use it for all Kibana log search/aggregation going forward. Output defaults to JSON.
 # Install CLI
 npm install -g @fatecannotbealtered-/kibana-cli
 
@@ -43,7 +43,7 @@ export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
 
 # Verify
-kibana-cli context --json
+kibana-cli context
 ```
 
 ```powershell
@@ -52,7 +52,7 @@ $env:KIBANA_CLI_HOST = "https://kibana.example.com"
 $env:KIBANA_CLI_USER = "dev_ro"
 $env:KIBANA_CLI_PASSWORD = "..."
 
-kibana-cli context --json
+kibana-cli context
 ```
 
 The CLI package provides the `kibana-cli` binary; the Skill package teaches compatible AI coding assistants how to use it safely. If you are an AI Agent helping a user set this up, run the same steps and ask the user to complete any interactive browser or terminal prompts.
@@ -61,7 +61,7 @@ Prefer interactive login? Credentials are stored in the **OS credential store** 
 
 ```bash
 kibana-cli auth login --host https://kibana.example.com --user dev_ro
-kibana-cli context --json
+kibana-cli context
 ```
 
 ### Alternative: Go install
@@ -77,8 +77,8 @@ Download from [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cl
 ## Update
 
 ```bash
-kibana-cli update --check --json
-kibana-cli update --json
+kibana-cli update --check
+kibana-cli update
 ```
 
 `update` checks GitHub Releases. Standalone Unix binaries are replaced in place only after `checksums.txt` SHA256 verification. If the CLI is managed by npm or Go, it does not mutate those managed files and returns the exact command to run, for example `npm install -g @fatecannotbealtered-/kibana-cli@1.0.2` or `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2`.
@@ -89,8 +89,8 @@ kibana-cli update --json
 
 ```bash
 kibana-cli auth login --host https://kibana.example.com --user dev_ro
-kibana-cli context --json
-kibana-cli auth status --json
+kibana-cli context
+kibana-cli auth status
 ```
 
 Secrets default to the **OS credential store**; `config.json` has no plaintext password.
@@ -118,33 +118,35 @@ Secrets default to the **OS credential store**; `config.json` has no plaintext p
 
 ## Commands
 
-> Run `kibana-cli reference` for the full command tree.
+> Run `kibana-cli reference --format text` for the full human-readable command tree.
 
 ```bash
 kibana-cli auth login|logout|status
-kibana-cli context --json
-kibana-cli doctor --json
+kibana-cli context
+kibana-cli doctor
 kibana-cli config init|show
-kibana-cli patterns list|fields --json
-kibana-cli search --index 'app-test-log-*' --level ERROR --json
-kibana-cli search --data-view <uuid> --query 'timeout' --json
-kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --json
-kibana-cli update --check --json
+kibana-cli patterns list|fields
+kibana-cli search --index 'app-test-log-*' --level ERROR
+kibana-cli search --data-view <uuid> --query 'timeout'
+kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h
+kibana-cli update --check
 ```
 
 `search` defaults to `--from now-15m` (omit `--from` to use that window).
 
 Optional `~/.kibana-cli/field-map.yaml` (`kibana-cli config init`). Profiles and `index_rules` (glob overrides per index) are documented in `field-map.example.yaml`.
 
-Global flags: `--json`, `--quiet`, `--dry-run`, `--force` (overwrite `field-map.yaml` on `config init`), `--timeout`, `--insecure` (or `KIBANA_CLI_INSECURE=1` / `true`).
+Output flags: `--format json|text|raw` (default `json`), `--compact` (JSON only), `--quiet` (suppresses auxiliary text output only), and `--json` as a compatibility alias for `--format json`. `--fields` only affects JSON output, and unsupported formats return an explicit parameter error.
+
+Other global flags: `--dry-run`, `--force` (overwrite `field-map.yaml` on `config init`), `--timeout`, `--insecure` (or `KIBANA_CLI_INSECURE=1` / `true`).
 
 ### Agent workflow
 
 ```text
-kibana-cli context --json       # auth + log search reachability (read ok first)
-kibana-cli patterns fields --json  # discover fields on an index pattern
-kibana-cli search ... --json    # primary: query logs
-kibana-cli agg ... --json       # count by level / service
+kibana-cli context              # auth + log search reachability (read ok first)
+kibana-cli patterns fields      # discover fields on an index pattern
+kibana-cli search ...           # primary: query logs
+kibana-cli agg ...              # count by level / service
 ```
 
 ## License

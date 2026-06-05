@@ -82,8 +82,8 @@ func runAuthLogin(_ *cobra.Command, _ []string) error {
 	reader := bufio.NewReader(os.Stdin)
 	if host == "" {
 		fmt.Println()
-		output.Bold("  kibana-cli Login")
-		output.Gray("  ────────────────────────────────────────")
+		output.AuxBold("  kibana-cli Login")
+		output.AuxGray("  ────────────────────────────────────────")
 		fmt.Println()
 		fmt.Print("  Kibana URL (e.g. https://kibana.example.com): ")
 		line, _ := reader.ReadString('\n')
@@ -151,7 +151,7 @@ func finishLogin(host, user, password string) error {
 	}
 	output.Success("Logged in as " + vr.Username)
 	if vr.KibanaVersion != "" {
-		output.Info("Kibana " + vr.KibanaVersion)
+		output.AuxInfo("Kibana " + vr.KibanaVersion)
 	}
 	if !vr.SearchReachable {
 		output.Warn("Log search probe failed — check index read privileges")
@@ -161,8 +161,8 @@ func finishLogin(host, user, password string) error {
 	} else {
 		output.Success("Password saved in OS credential store (" + config.CredentialStoreKeyring + ")")
 	}
-	output.Info("Config saved to " + config.FilePath())
-	output.Gray("  Try: kibana-cli context --json")
+	output.AuxInfo("Config saved to " + config.FilePath())
+	output.AuxGray("  Try: kibana-cli context")
 	return nil
 }
 
@@ -231,8 +231,8 @@ func runAuthStatus(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 	fmt.Println()
-	output.Bold("  kibana-cli Auth Status")
-	output.Gray("  ────────────────────────────────────────")
+	output.AuxBold("  kibana-cli Auth Status")
+	output.AuxGray("  ────────────────────────────────────────")
 	fmt.Println()
 	if result["configured"].(bool) {
 		output.Success(fmt.Sprintf("Configured (host=%s, auth=%s, source=%s)", cfg.Host, cfg.AuthMode(), config.AuthSource()))

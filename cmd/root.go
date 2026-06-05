@@ -30,12 +30,21 @@ const (
 
 const defaultTimeoutSeconds = 60
 
+const (
+	FormatJSON = "json"
+	FormatText = "text"
+	FormatRaw  = "raw"
+)
+
 var ErrSilent = errors.New("")
 
 var version = "1.0.2"
 
 var (
 	jsonMode       bool
+	jsonFlag       bool
+	outputFormat   string
+	compactMode    bool
 	forceMode      bool
 	quietMode      bool
 	dryRun         bool
@@ -95,19 +104,25 @@ func init() {
 	rootCmd.Version = version
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
-	rootCmd.PersistentFlags().BoolVar(&jsonMode, "json", false, "Output result as JSON")
+	outputFormat = FormatJSON
+	jsonMode = true
+
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", FormatJSON, "Output format: json, text, or raw")
+	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "Output result as JSON (compatibility alias for --format json)")
+	rootCmd.PersistentFlags().BoolVar(&compactMode, "compact", false, "Use compact single-line JSON output")
 	rootCmd.PersistentFlags().BoolVar(&forceMode, "force", false, "Overwrite existing field-map.yaml on config init")
-	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress non-JSON stdout output (for scripts and AI Agents)")
+	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress auxiliary text output")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview planned action without executing (writes and read queries)")
 	rootCmd.PersistentFlags().BoolVar(&insecureTLS, "insecure", false, "Skip TLS certificate verification (corporate/self-signed CA)")
 	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "HTTP request timeout in seconds")
-
-	cobra.OnInitialize(func() { output.Quiet = quietMode })
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		lastExit = 0
 		cmdStartTime = time.Now()
 		activeCmd = cmd
+		if err := applyOutputFormat(cmd); err != nil {
+			return err
+		}
 		initClientOptionsFromEnv()
 		return nil
 	}
@@ -164,6 +179,65 @@ func dryRunOutput(action string, detail map[string]any) bool {
 		output.Info("[dry-run] " + action)
 	}
 	return true
+}
+
+func applyOutputFormat(cmd *cobra.Command) error {
+	format := strings.ToLower(strings.TrimSpace(outputFormat))
+	if format == "" {
+		format = FormatJSON
+	}
+	formatSet := flagExplicitlySet(cmd, "format")
+	jsonSet := flagExplicitlySet(cmd, "json")
+	if jsonSet && formatSet && format != FormatJSON {
+		jsonMode = true
+		outputFormat = FormatJSON
+		output.JSONCompact = compactMode
+		output.Quiet = quietMode
+		return failValidation("--json cannot be combined with --format " + format)
+	}
+	if jsonSet && jsonFlag {
+		format = FormatJSON
+	}
+	switch format {
+	case FormatJSON, FormatText, FormatRaw:
+	default:
+		jsonMode = true
+		outputFormat = FormatJSON
+		output.JSONCompact = compactMode
+		output.Quiet = quietMode
+		return failValidation("--format must be one of: json, text, raw")
+	}
+	if format == FormatRaw && !commandSupportsFormat(cmd, FormatRaw) {
+		jsonMode = true
+		outputFormat = FormatJSON
+		output.JSONCompact = compactMode
+		output.Quiet = quietMode
+		return failValidation(cmd.CommandPath() + " does not support --format raw")
+	}
+	outputFormat = format
+	jsonMode = format == FormatJSON
+	output.JSONCompact = compactMode && jsonMode
+	output.Quiet = quietMode
+	return nil
+}
+
+func commandSupportsFormat(cmd *cobra.Command, format string) bool {
+	if format == FormatJSON || format == FormatText {
+		return true
+	}
+	if format == FormatRaw {
+		return cmd != nil && cmd.CommandPath() == "kibana-cli reference"
+	}
+	return false
+}
+
+func flagExplicitlySet(cmd *cobra.Command, name string) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Flags().Changed(name) || c.PersistentFlags().Changed(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func isWriteCommand(cmd *cobra.Command) bool {

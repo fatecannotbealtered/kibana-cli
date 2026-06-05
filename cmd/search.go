@@ -21,9 +21,9 @@ Use field-map.yaml (--profile / --service) when indices use different field name
 Use --data-view with a Kibana data view id to resolve the index pattern title.
 
 Examples:
-  kibana-cli search --profile java-app --service order-svc --level ERROR --from now-30m --json
-  kibana-cli search --index 'app-test-log-*' --query 'timeout' --from now-15m --json
-  kibana-cli search --data-view 17f4cc60-eafc-11ec-8e68-f14beaf972d1 --level ERROR --json`,
+  kibana-cli search --profile java-app --service order-svc --level ERROR --from now-30m
+  kibana-cli search --index 'app-test-log-*' --query 'timeout' --from now-15m
+  kibana-cli search --data-view 17f4cc60-eafc-11ec-8e68-f14beaf972d1 --level ERROR`,
 	RunE: runSearch,
 }
 
@@ -48,6 +48,9 @@ func init() {
 }
 
 func runSearch(cmd *cobra.Command, _ []string) error {
+	if !jsonMode && cmd.Flags().Changed("fields") {
+		return failValidation("--fields is only supported with --format json")
+	}
 	fm, err := loadFieldMapOrExit()
 	if err != nil {
 		return err
@@ -178,7 +181,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	if len(result.Hits) == 0 {
 		output.Info("No hits.")
 		if _, hint, _ := explainZeroHits(client, opts, precise); hint != "" {
-			output.Gray("  " + hint)
+			output.AuxGray("  " + hint)
 		}
 		return nil
 	}
@@ -196,7 +199,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		}
 		fmt.Printf("%s  %-8s  %-16s  %s%s\n", ts, lvl, svc, traceHint, msg)
 	}
-	output.Gray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, resolved.Index, result.TookMs))
+	output.AuxGray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, resolved.Index, result.TookMs))
 	return nil
 }
 

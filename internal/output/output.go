@@ -27,7 +27,7 @@ func isTerminal(f *os.File) bool {
 
 var noColor = os.Getenv("NO_COLOR") != "" || !isTerminal(os.Stdout)
 
-// Quiet suppresses non-error stdout when true.
+// Quiet suppresses auxiliary text output when true.
 var Quiet bool
 
 func colorize(code, msg string) string {
@@ -38,9 +38,6 @@ func colorize(code, msg string) string {
 }
 
 func Success(msg string) {
-	if Quiet {
-		return
-	}
 	fmt.Println(colorize(ansiGreen, "✔ "+msg))
 }
 
@@ -53,24 +50,43 @@ func Warn(msg string) {
 }
 
 func Info(msg string) {
-	if Quiet {
-		return
-	}
 	fmt.Println(colorize(ansiBlue, "ℹ "+msg))
 }
 
 func Bold(msg string) {
-	if Quiet {
-		return
-	}
 	fmt.Println(colorize(ansiBold, msg))
 }
 
 func Gray(msg string) {
+	fmt.Println(colorize(ansiGray, msg))
+}
+
+func AuxInfo(msg string) {
 	if Quiet {
 		return
 	}
-	fmt.Println(colorize(ansiGray, msg))
+	Info(msg)
+}
+
+func AuxBold(msg string) {
+	if Quiet {
+		return
+	}
+	Bold(msg)
+}
+
+func AuxGray(msg string) {
+	if Quiet {
+		return
+	}
+	Gray(msg)
+}
+
+func AuxWarn(msg string) {
+	if Quiet {
+		return
+	}
+	Warn(msg)
 }
 
 func FormatCyanBold(s string) string { return colorize(ansiBoldCyan, s) }

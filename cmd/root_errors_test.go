@@ -13,14 +13,20 @@ import (
 
 func TestEmitAgentFailure_Quiet(t *testing.T) {
 	resetCLIState(t)
+	jsonMode = false
+	outputFormat = FormatText
 	quietMode = true
 	output.Quiet = true
 	defer func() { output.Quiet = false }()
-	out := captureStdout(t, func() {
-		emitAgentFailure(agentNotConfigured())
+	st := agentNotConfigured()
+	out := captureCLIOutput(t, func() {
+		emitAgentFailure(st)
 	})
-	if strings.TrimSpace(out) != "" {
-		t.Fatalf("quiet should suppress text errors: %q", out)
+	if !strings.Contains(out, st.Message) {
+		t.Fatalf("quiet should keep primary text errors: %q", out)
+	}
+	if strings.Contains(out, st.Hint) {
+		t.Fatalf("quiet should suppress auxiliary text hints: %q", out)
 	}
 }
 

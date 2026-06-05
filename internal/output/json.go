@@ -6,8 +6,19 @@ import (
 	"os"
 )
 
+// JSONCompact switches PrintJSON from pretty output to single-line JSON.
+var JSONCompact bool
+
 func PrintJSON(v any) {
-	data, err := json.MarshalIndent(v, "", "  ")
+	var (
+		data []byte
+		err  error
+	)
+	if JSONCompact {
+		data, err = json.Marshal(v)
+	} else {
+		data, err = json.MarshalIndent(v, "", "  ")
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "json marshal error: %v\n", err)
 		return

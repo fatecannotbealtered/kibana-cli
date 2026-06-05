@@ -23,10 +23,11 @@ func TestExitCodeForStatus(t *testing.T) {
 }
 
 func TestReferenceCommand(t *testing.T) {
+	resetCLIState(t)
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"reference"})
+	rootCmd.SetArgs([]string{"reference", "--format", "text"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ var doctorCmd = &cobra.Command{
 	Short: "Check Kibana configuration and log-query connectivity",
 	Long: `Check configuration, Kibana login, and whether log search works.
 
-With --json, read ok, status, message, hint, errorCode, and exitCode first (Agent-friendly).`,
+JSON is the default output. Read ok, status, message, hint, errorCode, and exitCode first (Agent-friendly).`,
 	RunE: runDoctor,
 }
 
@@ -64,8 +64,8 @@ func printDoctor(result *doctorResult) {
 		return
 	}
 	fmt.Println()
-	output.Bold("  kibana-cli Doctor")
-	output.Gray("  ────────────────────────────────────────")
+	output.AuxBold("  kibana-cli Doctor")
+	output.AuxGray("  ────────────────────────────────────────")
 	fmt.Println()
 	if result.Message != "" {
 		if result.OK {
@@ -74,7 +74,7 @@ func printDoctor(result *doctorResult) {
 			output.Error(result.Message)
 		}
 		if result.Hint != "" {
-			output.Gray("  " + result.Hint)
+			output.AuxGray("  " + result.Hint)
 		}
 	}
 	if result.ConfigExists && result.AuthValid && result.SearchReachable {
@@ -82,6 +82,6 @@ func printDoctor(result *doctorResult) {
 	} else if result.SearchError != "" {
 		output.Warn(result.SearchError)
 	}
-	output.Gray(fmt.Sprintf("  Latency: %dms | exit %d", result.LatencyMs, result.ExitCode))
+	output.AuxGray(fmt.Sprintf("  Latency: %dms | exit %d", result.LatencyMs, result.ExitCode))
 	fmt.Println()
 }

@@ -207,7 +207,7 @@ func TestApplyBootstrapToContext(t *testing.T) {
 func TestDoctor_TextMode_Success(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
-	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{"doctor"})
+	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{"doctor", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -219,7 +219,7 @@ func TestDoctor_TextMode_Success(t *testing.T) {
 func TestDoctor_TextMode_NotConfigured(t *testing.T) {
 	setupTestHome(t)
 	t.Setenv("KIBANA_CLI_HOST", "")
-	out, code := runCLI(t, []string{"doctor"})
+	out, code := runCLI(t, []string{"doctor", "--format", "text"})
 	if code != ExitBadArgs {
 		t.Fatalf("exit %d", code)
 	}
@@ -231,7 +231,7 @@ func TestDoctor_TextMode_NotConfigured(t *testing.T) {
 func TestDoctor_TextMode_SearchUnavailable(t *testing.T) {
 	srv := newMockKibanaServerWith(mockKibanaOptions{SearchProbeFail: true})
 	defer srv.Close()
-	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{"doctor"})
+	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{"doctor", "--format", "text"})
 	if code != ExitForbidden {
 		t.Fatalf("exit %d: %s", code, out)
 	}

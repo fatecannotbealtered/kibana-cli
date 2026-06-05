@@ -44,6 +44,7 @@ func TestSearch_TextMode_Hits(t *testing.T) {
 	writeFieldMap(t, home, searchExtraFieldMap)
 	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
 		"search", "--index", "logs-*", "--service", "order-svc", "--level", "ERROR",
+		"--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -62,7 +63,7 @@ func TestSearch_TextMode_NoHits(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, searchExtraFieldMap)
 	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
-		"search", "--index", "logs-*",
+		"search", "--index", "logs-*", "--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -140,7 +141,7 @@ func TestSearch_TextMode_TraceHint(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, searchExtraFieldMap)
 	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
-		"search", "--index", "logs-*",
+		"search", "--index", "logs-*", "--format", "text",
 	})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
