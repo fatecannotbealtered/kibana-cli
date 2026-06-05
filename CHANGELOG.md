@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-06-05
+
 ### Added
 
 - `kibana-cli update` to check GitHub Releases and update standalone binaries with checksum verification. npm / Go managed installs return the package-manager command instead of mutating managed files.
@@ -75,5 +77,7 @@ First release: **Kibana-only log query CLI** for humans and AI Agents.
 - `KIBANA_CLI_USER` / `KIBANA_CLI_PASSWORD`
 - Optional: `KIBANA_CLI_KIBANA_VERSION`, `KIBANA_CLI_TIMEOUT`, `KIBANA_CLI_INSECURE`, `KIBANA_CLI_ALLOWED_INDEX_PREFIXES`
 
+[1.0.3]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.3
+[1.0.2]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.2
 [1.0.1]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.1
 [1.0.0]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.0

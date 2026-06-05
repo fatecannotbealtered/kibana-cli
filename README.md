@@ -67,7 +67,7 @@ kibana-cli context
 ### Alternative: Go install
 
 ```bash
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3
 ```
 
 ### Alternative: Download binary
@@ -81,7 +81,7 @@ kibana-cli update --check
 kibana-cli update
 ```
 
-`update` checks GitHub Releases. Standalone Unix binaries are replaced in place only after `checksums.txt` SHA256 verification. If the CLI is managed by npm or Go, it does not mutate those managed files and returns the exact command to run, for example `npm install -g @fatecannotbealtered-/kibana-cli@1.0.2` or `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2`.
+`update` checks GitHub Releases. Standalone Unix binaries are replaced in place only after `checksums.txt` SHA256 verification. If the CLI is managed by npm or Go, it does not mutate those managed files and returns the exact command to run, for example `npm install -g @fatecannotbealtered-/kibana-cli@1.0.3` or `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3`.
 
 ## Authentication
 

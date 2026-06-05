@@ -68,7 +68,7 @@ kibana-cli context
 
 ```bash
 # Go install
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3
 ```
 
 或从 [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases) 下载二进制文件并添加到 PATH。
@@ -80,7 +80,7 @@ kibana-cli update --check
 kibana-cli update
 ```
 
-`update` 会检查 GitHub Releases。独立 Unix 二进制会在通过 `checksums.txt` SHA256 校验后原地替换；如果 CLI 由 npm 或 Go 管理，则不会直接修改包管理器管理的文件，而是返回应执行的命令，例如 `npm install -g @fatecannotbealtered-/kibana-cli@1.0.2` 或 `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2`。
+`update` 会检查 GitHub Releases。独立 Unix 二进制会在通过 `checksums.txt` SHA256 校验后原地替换；如果 CLI 由 npm 或 Go 管理，则不会直接修改包管理器管理的文件，而是返回应执行的命令，例如 `npm install -g @fatecannotbealtered-/kibana-cli@1.0.3` 或 `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3`。
 
 ## 鉴权
 

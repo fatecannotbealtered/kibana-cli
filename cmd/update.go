@@ -57,7 +57,7 @@ the release checksums.txt file.`,
 func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for updates without changing files")
-	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. 1.0.2 or v1.0.2)")
+	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. 1.0.3 or v1.0.3)")
 }
 
 type updateRelease struct {
