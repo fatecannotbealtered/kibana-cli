@@ -16,6 +16,7 @@ Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-
 - **`field-map.yaml`** (optional) — logical service names across heterogeneous indices; `index_rules` in `field-map.example.yaml`
 - **`--data-view`** — resolve index pattern from a Kibana data view id
 - **`--dry-run`** — preview search/agg query bodies and write actions with **no Kibana API calls** (including `--data-view` index resolution, which uses a placeholder index in the preview)
+- **`update`** — check GitHub Releases and update standalone binaries after checksum verification; package-manager installs get the correct `npm` / `go install` command
 - **`--force`** — overwrite existing `field-map.yaml` on `config init`
 - **`--insecure` / `--timeout`**
 - **Machine-readable error envelopes** — `ok`, `status`, `errorCode`, `statusCode`, `hint`, `exitCode`
@@ -66,12 +67,21 @@ kibana-cli context --json
 ### Alternative: Go install
 
 ```bash
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.1
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2
 ```
 
 ### Alternative: Download binary
 
 Download from [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases) and add to your PATH.
+
+## Update
+
+```bash
+kibana-cli update --check --json
+kibana-cli update --json
+```
+
+`update` checks GitHub Releases. Standalone Unix binaries are replaced in place only after `checksums.txt` SHA256 verification. If the CLI is managed by npm or Go, it does not mutate those managed files and returns the exact command to run, for example `npm install -g @fatecannotbealtered-/kibana-cli@1.0.2` or `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2`.
 
 ## Authentication
 
@@ -119,6 +129,7 @@ kibana-cli patterns list|fields --json
 kibana-cli search --index 'app-test-log-*' --level ERROR --json
 kibana-cli search --data-view <uuid> --query 'timeout' --json
 kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --json
+kibana-cli update --check --json
 ```
 
 `search` defaults to `--from now-15m` (omit `--from` to use that window).

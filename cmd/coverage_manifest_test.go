@@ -20,13 +20,14 @@ var commandCoverage = []struct {
 	{path: "kibana-cli patterns fields", unitTest: "TestPatterns_Fields_*"},
 	{path: "kibana-cli search", unitTest: "TestSearch_*"},
 	{path: "kibana-cli agg", unitTest: "TestAgg_*"},
+	{path: "kibana-cli update", unitTest: "TestUpdate_*"},
 	{path: "kibana-cli reference", unitTest: "TestReference_*"},
 }
 
 // TestCommandCoverageManifest ensures the coverage table stays complete when commands are added.
 func TestCommandCoverageManifest(t *testing.T) {
-	if len(commandCoverage) < 14 {
-		t.Fatalf("expected >=14 commands, got %d", len(commandCoverage))
+	if len(commandCoverage) < 15 {
+		t.Fatalf("expected >=15 commands, got %d", len(commandCoverage))
 	}
 	for _, row := range commandCoverage {
 		if row.path == "" || row.unitTest == "" {

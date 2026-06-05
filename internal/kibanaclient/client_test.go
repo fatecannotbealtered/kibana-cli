@@ -432,6 +432,50 @@ func TestSearch_sortDescAndHits(t *testing.T) {
 	}
 }
 
+func TestCount_successAndErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/console/proxy" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"took": 1,
+				"hits": map[string]any{
+					"total": map[string]any{"value": 7, "relation": "eq"},
+					"hits":  []any{},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p", KibanaVersion: "8.0.0"})
+	total, err := c.Count(context.Background(), SearchOptions{Index: "logs-*"})
+	if err != nil || total != 7 {
+		t.Fatalf("total=%d err=%v", total, err)
+	}
+
+	c.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusBadGateway,
+				Body:       io.NopCloser(strings.NewReader(`{"message":"down"}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	if _, err := c.Count(context.Background(), SearchOptions{Index: "logs-*"}); err == nil {
+		t.Fatal("expected proxy error")
+	}
+
+	srvBadJSON := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{`))
+	}))
+	defer srvBadJSON.Close()
+	c2 := NewClient(&config.Config{Host: srvBadJSON.URL, Username: "u", Password: "p", KibanaVersion: "8.0.0"})
+	if _, err := c2.Count(context.Background(), SearchOptions{Index: "logs-*"}); err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
 func TestListFieldsForIndexPattern(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

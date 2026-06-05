@@ -1,8 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/fatecannotbealtered/kibana-cli/internal/config"
+	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
 )
 
 const searchExtraFieldMap = `version: 1
@@ -80,6 +86,44 @@ func TestSearch_ZeroHits_Diagnostics(t *testing.T) {
 	if !strings.Contains(out, "zeroReason") || !strings.Contains(out, "no_data_in_window") {
 		t.Fatalf("expected zero-hit diagnostics: %s", out)
 	}
+}
+
+func TestExplainZeroHits_Reasons(t *testing.T) {
+	t.Run("no data in window", func(t *testing.T) {
+		client, closeFn := newCountClient(t, []int64{0}, 0)
+		defer closeFn()
+		reason, hint, probes := explainZeroHits(client, kibanaclient.SearchOptions{Index: "logs-*", Query: "timeout"}, false)
+		if reason != "no_data_in_window" || hint == "" || probes["windowTotal"].(int64) != 0 {
+			t.Fatalf("reason=%q hint=%q probes=%v", reason, hint, probes)
+		}
+	})
+
+	t.Run("matched in other fields", func(t *testing.T) {
+		client, closeFn := newCountClient(t, []int64{10, 3}, 0)
+		defer closeFn()
+		reason, hint, probes := explainZeroHits(client, kibanaclient.SearchOptions{Index: "logs-*", Query: "timeout"}, true)
+		if reason != "matched_in_other_fields" || !strings.Contains(hint, "Drop --precise") || probes["broadMatchTotal"].(int64) != 3 {
+			t.Fatalf("reason=%q hint=%q probes=%v", reason, hint, probes)
+		}
+	})
+
+	t.Run("filters excluded all", func(t *testing.T) {
+		client, closeFn := newCountClient(t, []int64{10}, 0)
+		defer closeFn()
+		reason, hint, probes := explainZeroHits(client, kibanaclient.SearchOptions{Index: "logs-*"}, false)
+		if reason != "filters_excluded_all" || !strings.Contains(hint, "relax") || probes["windowTotal"].(int64) != 10 {
+			t.Fatalf("reason=%q hint=%q probes=%v", reason, hint, probes)
+		}
+	})
+
+	t.Run("probe failure", func(t *testing.T) {
+		client, closeFn := newCountClient(t, nil, http.StatusBadGateway)
+		defer closeFn()
+		reason, hint, probes := explainZeroHits(client, kibanaclient.SearchOptions{Index: "logs-*"}, false)
+		if reason != "" || hint != "" || probes != nil {
+			t.Fatalf("reason=%q hint=%q probes=%v", reason, hint, probes)
+		}
+	})
 }
 
 func TestSearch_TextMode_TraceHint(t *testing.T) {
@@ -248,4 +292,34 @@ func TestFirstMessageAndFieldValue(t *testing.T) {
 	if got := firstMessage(map[string]any{}, nil); got != "" {
 		t.Fatal("expected empty")
 	}
+}
+
+func newCountClient(t *testing.T, totals []int64, failStatus int) (*kibanaclient.Client, func()) {
+	t.Helper()
+	call := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/console/proxy" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if failStatus != 0 {
+			w.WriteHeader(failStatus)
+			_, _ = w.Write([]byte(`{"error":{"reason":"count failed"}}`))
+			return
+		}
+		total := totals[len(totals)-1]
+		if call < len(totals) {
+			total = totals[call]
+		}
+		call++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"took": 1,
+			"hits": map[string]any{
+				"total": map[string]any{"value": total, "relation": "eq"},
+				"hits":  []any{},
+			},
+		})
+	}))
+	client := kibanaclient.NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p", KibanaVersion: "8.0.0"})
+	return client, srv.Close
 }

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `kibana-cli update` to check GitHub Releases and update standalone binaries with checksum verification. npm / Go managed installs return the package-manager command instead of mutating managed files.
+
 ## [1.0.2] - 2026-06-04
 
 ### Changed

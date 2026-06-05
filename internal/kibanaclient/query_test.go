@@ -128,3 +128,13 @@ func TestBuildTraceQuery_fieldModeFreeTextFallback(t *testing.T) {
 		t.Fatalf("expected configured-field OR free-text fallback, got %#v", q)
 	}
 }
+
+func TestBuildTraceQuery_emptyAndNoFields(t *testing.T) {
+	if q := buildTraceQuery("", []string{"traceId"}, "field", "msg"); q != nil {
+		t.Fatalf("empty trace should not build query: %#v", q)
+	}
+	q := buildTraceQuery("abc123", nil, "field", "msg")
+	if _, ok := q["query_string"]; !ok {
+		t.Fatalf("expected free-text fallback when no trace fields, got %#v", q)
+	}
+}

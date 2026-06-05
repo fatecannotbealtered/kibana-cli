@@ -25,7 +25,7 @@ func resetCLIState(t *testing.T) {
 	lastExit = 0
 	activeCmd = nil
 	output.Quiet = false
-	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd)
+	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd, updateCmd)
 	resetCommandFlags(rootCmd)
 }
 

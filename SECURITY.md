@@ -24,6 +24,7 @@ Email a description and reproduction steps to the maintainer:
 - Optional **`KIBANA_CLI_ALLOWED_INDEX_PREFIXES`** restricts which index patterns search/agg may target; the pattern must **start with** one of the comma-separated prefixes.
 - **`--dry-run`** on search/agg previews query bodies without any Kibana API calls (no `_search`/agg and no Saved Objects resolution for `--data-view`).
 - Free-text `--query` searches **across all fields** by default (full Lucene `query_string`); `--precise` narrows it to `match_phrase` on the configured message field(s).
+- **`update`** checks GitHub Releases, downloads release archives and `checksums.txt`, and verifies SHA256 before replacing standalone binaries. npm / Go managed installs are not modified in place; the command reports the package-manager command to run.
 
 ## Audit environment
 
@@ -32,6 +33,7 @@ Email a description and reproduction steps to the maintainer:
 | `KIBANA_NO_AUDIT` | `1` disables audit logging |
 | `KIBANA_AUDIT_RETENTION_MONTHS` | Audit file retention (default 3) |
 | `KIBANA_CLI_USER_AGENT` | Override HTTP User-Agent |
+| `GITHUB_TOKEN` | Optional token for GitHub API rate limits during `kibana-cli update` |
 
 ## Agent / automation guidance
 

@@ -16,6 +16,7 @@
 - **`field-map.yaml`**（可选）— 跨索引统一逻辑服务名；`index_rules` 见 `field-map.example.yaml`
 - **`--data-view`** — 用 Kibana 数据视图 ID 解析索引模式
 - **`--dry-run`** — 预览 search/agg 查询体与写操作，**不发起任何 Kibana API 请求**（含 `--data-view`：预览中使用占位索引，不解析 Saved Objects）
+- **`update`** — 检查 GitHub Releases；独立二进制在校验 checksum 后自更新，npm / Go 管理的安装返回对应包管理命令
 - **`--force`** — 在 `config init` 时覆盖已有 `field-map.yaml`
 - **`--insecure` / `--timeout`**
 - **机器可读错误** — `ok`、`status`、`errorCode`、`statusCode`、`hint`、`exitCode`
@@ -67,10 +68,19 @@ kibana-cli context --json
 
 ```bash
 # Go install
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.1
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2
 ```
 
 或从 [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases) 下载二进制文件并添加到 PATH。
+
+## 更新
+
+```bash
+kibana-cli update --check --json
+kibana-cli update --json
+```
+
+`update` 会检查 GitHub Releases。独立 Unix 二进制会在通过 `checksums.txt` SHA256 校验后原地替换；如果 CLI 由 npm 或 Go 管理，则不会直接修改包管理器管理的文件，而是返回应执行的命令，例如 `npm install -g @fatecannotbealtered-/kibana-cli@1.0.2` 或 `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.2`。
 
 ## 鉴权
 
@@ -118,6 +128,7 @@ kibana-cli patterns list|fields --json
 kibana-cli search --index 'app-test-log-*' --level ERROR --json
 kibana-cli search --data-view <uuid> --query 'timeout' --json
 kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --json
+kibana-cli update --check --json
 ```
 
 `search` 默认 `--from now-15m`（不写 `--from` 即使用该时间窗）。

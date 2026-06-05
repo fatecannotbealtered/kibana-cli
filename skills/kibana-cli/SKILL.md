@@ -65,6 +65,7 @@ kibana-cli context --json
 - `--dry-run` previews search/agg bodies and write actions with no Kibana API calls (no `_search`/agg; `--data-view` uses placeholder index `<data-view:{id}>`).
 - `--query` searches all fields by default (recall-first); add `--precise` to narrow to the message field(s) when you need fewer false positives.
 - Optional index allowlist: `KIBANA_CLI_ALLOWED_INDEX_PREFIXES=logs-,app-` — index must **start with** a listed prefix.
+- Use `kibana-cli update --check --json` to check the CLI version. If `update` reports `package_manager_required`, run the returned `command` instead of editing managed files.
 
 ## Context (run first)
 
@@ -117,6 +118,15 @@ kibana-cli search --index 'logs-*' --trace-id abc123 --trace-mode msg --json
 ```bash
 kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --json
 ```
+
+## Update CLI
+
+```bash
+kibana-cli update --check --json
+kibana-cli update --json
+```
+
+Read `status`, `updateAvailable`, `installMethod`, and `command`. Standalone Unix binaries can self-update after checksum verification; npm / Go installs return the package-manager command to run.
 
 ## Self-description
 

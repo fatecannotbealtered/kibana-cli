@@ -38,7 +38,7 @@ func TestRoot_Help(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{"search", "auth", "doctor", "agg", "patterns", "config", "context", "reference"} {
+	for _, want := range []string{"search", "auth", "doctor", "agg", "patterns", "config", "context", "update", "reference"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q: %s", want, out)
 		}
@@ -254,6 +254,7 @@ func TestReference_AllCommandsListed(t *testing.T) {
 		"kibana-cli agg",
 		"kibana-cli patterns list",
 		"kibana-cli patterns fields",
+		"kibana-cli update",
 		"kibana-cli reference",
 	}
 	for _, cmd := range required {
