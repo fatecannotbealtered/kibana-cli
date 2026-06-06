@@ -145,14 +145,6 @@ func runConfirmedCLI(t *testing.T, args []string) (stdout string, exitCode int) 
 	return runCLI(t, append(append([]string{}, args...), "--confirm", dryRunConfirmToken(t, args)))
 }
 
-func runConfirmedCLIWithEnv(t *testing.T, env map[string]string, args []string) (stdout string, exitCode int) {
-	t.Helper()
-	for k, v := range env {
-		t.Setenv(k, v)
-	}
-	return runConfirmedCLI(t, args)
-}
-
 func dryRunConfirmToken(t *testing.T, args []string) string {
 	t.Helper()
 	out, code := runCLI(t, dryRunArgs(args))
