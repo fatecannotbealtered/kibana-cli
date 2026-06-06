@@ -21,7 +21,7 @@ services:
 
 func TestConfig_Init_JSON(t *testing.T) {
 	home := setupTestHome(t)
-	out, code := runCLI(t, []string{"config", "init", "--json"})
+	out, code := runConfirmedCLI(t, []string{"config", "init", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -35,7 +35,7 @@ func TestConfig_Init_JSON(t *testing.T) {
 
 func TestConfig_Init_Text(t *testing.T) {
 	home := setupTestHome(t)
-	out, code := runCLI(t, []string{"config", "init", "--format", "text"})
+	out, code := runConfirmedCLI(t, []string{"config", "init", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -51,8 +51,8 @@ func TestConfig_Init_DryRun_JSON(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, `"dryRun":true`) && !strings.Contains(out, `"dryRun": true`) {
-		t.Fatalf("expected dry-run: %s", out)
+	if !strings.Contains(out, `"confirm_token"`) || !strings.Contains(out, `"preview"`) {
+		t.Fatalf("expected confirm-token dry-run: %s", out)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestConfig_Init_AlreadyExists_Text(t *testing.T) {
 func TestConfig_Init_ForceOverwrite(t *testing.T) {
 	home := setupTestHome(t)
 	writeFieldMap(t, home, "version: 1\ndefaults:\n  index: old-*\n")
-	_, code := runCLI(t, []string{"config", "init", "--force", "--json"})
+	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
 	if code != ExitOK {
 		t.Fatal(code)
 	}
@@ -110,7 +110,7 @@ func TestConfig_Init_MkdirError(t *testing.T) {
 	if err := os.WriteFile(cliDir, []byte("blocker"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, code := runCLI(t, []string{"config", "init", "--json"})
+	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected ExitBadArgs, got %d", code)
 	}
@@ -126,7 +126,7 @@ func TestConfig_Init_WriteError(t *testing.T) {
 	if err := os.MkdirAll(mapPath, 0700); err != nil {
 		t.Fatal(err)
 	}
-	_, code := runCLI(t, []string{"config", "init", "--json"})
+	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected ExitBadArgs, got %d", code)
 	}

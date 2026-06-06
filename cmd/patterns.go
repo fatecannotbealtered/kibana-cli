@@ -50,7 +50,7 @@ func runPatternsList(_ *cobra.Command, _ []string) error {
 		return handleAPIError(err, jsonMode)
 	}
 	if jsonMode {
-		output.PrintJSON(map[string]any{"ok": true, "patterns": patterns, "count": len(patterns)})
+		printJSONSuccess(map[string]any{"ok": true, "patterns": patterns, "count": len(patterns)})
 		return nil
 	}
 	if len(patterns) == 0 {
@@ -81,7 +81,7 @@ func runPatternsFields(cmd *cobra.Command, _ []string) error {
 		return handleAPIError(err, jsonMode)
 	}
 	if jsonMode {
-		output.PrintJSON(map[string]any{
+		printJSONSuccess(map[string]any{
 			"ok":     true,
 			"index":  index,
 			"count":  len(fields),

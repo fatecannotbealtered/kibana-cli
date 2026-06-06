@@ -53,8 +53,8 @@ func TestAuth_Login_DryRun_JSON(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, `"dryRun":true`) && !strings.Contains(out, `"dryRun": true`) {
-		t.Fatalf("expected dry-run json: %s", out)
+	if !strings.Contains(out, `"confirm_token"`) || !strings.Contains(out, `"preview"`) {
+		t.Fatalf("expected confirm-token dry-run json: %s", out)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestAuth_Login_Success_JSON_Keyring(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -95,13 +95,14 @@ func TestAuth_Login_Success_JSON_Keyring(t *testing.T) {
 	if err := json.Unmarshal([]byte(j), &payload); err != nil {
 		t.Fatalf("json: %v line=%s", err, j)
 	}
-	if payload["ok"] != true {
-		t.Fatalf("ok=%v in %s", payload["ok"], j)
+	data := envelopeData(t, out)
+	if data["ok"] != true {
+		t.Fatalf("ok=%v in %s", data["ok"], j)
 	}
-	if payload["username"] != "agent" {
-		t.Fatalf("username=%v in %s", payload["username"], j)
+	if data["username"] != "agent" {
+		t.Fatalf("username=%v in %s", data["username"], j)
 	}
-	store, _ := payload["credentialStore"].(string)
+	store, _ := data["credentialStore"].(string)
 	if store != "keyring" {
 		t.Fatalf("credentialStore=%q in %s", store, j)
 	}
@@ -119,7 +120,7 @@ func TestAuth_Login_Success_Text_Keyring(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -141,7 +142,7 @@ func TestAuth_Login_Success_Plaintext_JSON(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -169,7 +170,7 @@ func TestAuth_Login_Success_Text_PlaintextWarn(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -190,7 +191,7 @@ func TestAuth_Login_SearchProbeWarn_Text(t *testing.T) {
 	srv := newMockKibanaServerWith(mockKibanaOptions{SearchProbeFail: true})
 	defer srv.Close()
 	setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -210,7 +211,7 @@ func TestAuth_Login_AuthFail(t *testing.T) {
 	srv := newMockKibanaServerWith(mockKibanaOptions{AuthFail: true})
 	defer srv.Close()
 	setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -256,7 +257,7 @@ func TestAuth_Login_KeyringUnavailable(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	setupTestHome(t)
-	out, code := runCLI(t, []string{
+	out, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
@@ -278,11 +279,11 @@ func TestAuth_Login_Interactive_Success(t *testing.T) {
 	setupTestHome(t)
 	stdin := srv.URL + "\nops\nsecret\n"
 	out, code := runCLIWithStdin(t, stdin, []string{"auth", "login", "--format", "text"})
-	if code != ExitOK {
+	if code != ExitBadArgs {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "Logged in as") {
-		t.Fatalf("expected login success: %s", out)
+	if !strings.Contains(out, "provide --host, --user, and --password") {
+		t.Fatalf("expected non-interactive validation: %s", out)
 	}
 }
 
@@ -307,11 +308,11 @@ func TestAuth_Login_Interactive_PasswordStdin(t *testing.T) {
 		"--user", "ops",
 		"--format", "text",
 	})
-	if code != ExitOK {
+	if code != ExitBadArgs {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "Logged in as") {
-		t.Fatalf("expected login success: %s", out)
+	if !strings.Contains(out, "provide --host, --user, and --password") {
+		t.Fatalf("expected non-interactive validation: %s", out)
 	}
 }
 
@@ -321,8 +322,8 @@ func TestAuth_Logout_DryRun_JSON(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, `"dryRun":true`) && !strings.Contains(out, `"dryRun": true`) {
-		t.Fatalf("expected dry-run json: %s", out)
+	if !strings.Contains(out, `"confirm_token"`) || !strings.Contains(out, `"preview"`) {
+		t.Fatalf("expected confirm-token dry-run json: %s", out)
 	}
 }
 
@@ -346,7 +347,7 @@ func TestAuth_Logout_Success_JSON(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(`{"host":"http://x","username":"u","password":"p"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, code := runCLI(t, []string{"auth", "logout", "--json"})
+	out, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -367,7 +368,7 @@ func TestAuth_Logout_Success_Text(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(`{"host":"http://x","username":"u","password":"p"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, code := runCLI(t, []string{"auth", "logout", "--format", "text"})
+	out, code := runConfirmedCLI(t, []string{"auth", "logout", "--format", "text"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -379,7 +380,7 @@ func TestAuth_Logout_Success_Text(t *testing.T) {
 func TestAuth_Logout_DeleteError(t *testing.T) {
 	deleteConfigHook = func() error { return errors.New("delete blocked") }
 	defer func() { deleteConfigHook = nil }()
-	_, code := runCLI(t, []string{"auth", "logout", "--json"})
+	_, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected ExitBadArgs on delete error, got %d", code)
 	}
@@ -397,7 +398,7 @@ func TestAuth_Logout_DeleteError_UnixPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfgPath, "nested"), []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, code := runCLI(t, []string{"auth", "logout", "--json"})
+	_, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected ExitBadArgs on delete error, got %d", code)
 	}
@@ -462,7 +463,7 @@ func TestAuth_Status_Configured_Text_File(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
-	_, code := runCLI(t, []string{
+	_, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",

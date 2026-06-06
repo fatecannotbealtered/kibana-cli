@@ -21,7 +21,7 @@ import (
 
 func TestUpdate_CheckUpToDate_JSON(t *testing.T) {
 	setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.0.3", nil)
+	srv := newUpdateReleaseServer(t, "v1.1.0", nil)
 	defer srv.Close()
 	withUpdateHooks(t, srv.URL, "", "linux", "amd64")
 
@@ -40,7 +40,7 @@ func TestUpdate_CheckUpToDate_JSON(t *testing.T) {
 
 func TestUpdate_CheckAvailable_JSON(t *testing.T) {
 	setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
 	withUpdateHooks(t, srv.URL, "", "linux", "amd64")
 
@@ -52,14 +52,14 @@ func TestUpdate_CheckAvailable_JSON(t *testing.T) {
 	if !strings.Contains(j, `"status":"update_available"`) && !strings.Contains(j, `"status": "update_available"`) {
 		t.Fatalf("unexpected: %s", j)
 	}
-	if !strings.Contains(j, `"targetVersion":"1.0.4"`) && !strings.Contains(j, `"targetVersion": "1.0.4"`) {
+	if !strings.Contains(j, `"targetVersion":"1.1.1"`) && !strings.Contains(j, `"targetVersion": "1.1.1"`) {
 		t.Fatalf("expected target version: %s", j)
 	}
 }
 
 func TestUpdate_NPMInstallUsesPackageManager(t *testing.T) {
 	home := setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
 	pkgRoot := filepath.Join(home, "node_modules", "@fatecannotbealtered-", "kibana-cli")
 	exe := filepath.Join(pkgRoot, "bin", "kibana-cli")
@@ -83,7 +83,7 @@ func TestUpdate_NPMInstallUsesPackageManager(t *testing.T) {
 
 func TestUpdate_GoInstallUsesPackageManager(t *testing.T) {
 	home := setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
 	gobin := filepath.Join(home, "go-bin")
 	exe := filepath.Join(gobin, "kibana-cli")
@@ -98,14 +98,14 @@ func TestUpdate_GoInstallUsesPackageManager(t *testing.T) {
 	if !strings.Contains(j, `"installMethod":"go"`) && !strings.Contains(j, `"installMethod": "go"`) {
 		t.Fatalf("expected go install method: %s", j)
 	}
-	if !strings.Contains(j, `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.4`) {
+	if !strings.Contains(j, `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.1`) {
 		t.Fatalf("expected go install command: %s", j)
 	}
 }
 
 func TestUpdate_DryRunStandaloneBinary(t *testing.T) {
 	home := setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
 	exe := filepath.Join(home, "bin", "kibana-cli")
 	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
@@ -115,17 +115,17 @@ func TestUpdate_DryRunStandaloneBinary(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	j := lastJSONLine(out)
-	if !strings.Contains(j, `"status":"dry_run"`) && !strings.Contains(j, `"status": "dry_run"`) {
+	if !strings.Contains(j, `"confirm_token"`) || !strings.Contains(j, `"preview"`) {
 		t.Fatalf("unexpected: %s", j)
 	}
-	if !strings.Contains(j, `kibana-cli-1.0.4-linux-amd64.tar.gz`) {
+	if !strings.Contains(j, `kibana-cli-1.1.1-linux-amd64.tar.gz`) {
 		t.Fatalf("missing planned asset: %s", j)
 	}
 }
 
 func TestUpdate_WindowsManualUpdateRequired(t *testing.T) {
 	home := setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
 	exe := filepath.Join(home, "bin", "kibana-cli.exe")
 	withUpdateHooks(t, srv.URL, exe, "windows", "arm64")
@@ -138,7 +138,7 @@ func TestUpdate_WindowsManualUpdateRequired(t *testing.T) {
 	if !strings.Contains(j, `"manual_update_required"`) {
 		t.Fatalf("expected manual update: %s", j)
 	}
-	if !strings.Contains(j, `kibana-cli-1.0.4-windows-amd64.zip`) {
+	if !strings.Contains(j, `kibana-cli-1.1.1-windows-amd64.zip`) {
 		t.Fatalf("expected windows amd64 fallback asset: %s", j)
 	}
 }
@@ -154,7 +154,7 @@ func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 	}
 	withUpdateHooks(t, "", exe, "linux", "amd64")
 	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
-	assetName, err := releaseAssetName("1.0.4")
+	assetName, err := releaseAssetName("1.1.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,11 +162,11 @@ func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 		assetName:       archive,
 		"checksums.txt": checksumLine(assetName, archive),
 	}
-	srv := newUpdateReleaseServer(t, "v1.0.4", assets)
+	srv := newUpdateReleaseServer(t, "v1.1.1", assets)
 	defer srv.Close()
 	updateGitHubAPIBase = srv.URL
 
-	out, code := runCLI(t, []string{"update", "--version", "v1.0.4", "--json"})
+	out, code := runConfirmedCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -197,10 +197,10 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 
 	t.Run("missingAsset", func(t *testing.T) {
 		home := setupTestHome(t)
-		srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+		srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 		defer srv.Close()
 		withUpdateHooks(t, srv.URL, filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
-		out, code := runCLI(t, []string{"update", "--json"})
+		out, code := runConfirmedCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "release asset not found") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -209,14 +209,14 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 	t.Run("missingChecksum", func(t *testing.T) {
 		home := setupTestHome(t)
 		withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
-		assetName, err := releaseAssetName("1.0.4")
+		assetName, err := releaseAssetName("1.1.1")
 		if err != nil {
 			t.Fatal(err)
 		}
-		srv := newUpdateReleaseServer(t, "v1.0.4", map[string][]byte{assetName: []byte("archive")})
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{assetName: []byte("archive")})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runCLI(t, []string{"update", "--json"})
+		out, code := runConfirmedCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "checksums.txt") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -224,7 +224,7 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 
 	t.Run("emptyExecutablePath", func(t *testing.T) {
 		setupTestHome(t)
-		srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+		srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 		defer srv.Close()
 		withUpdateHooks(t, srv.URL, "", "linux", "amd64")
 		updateExecutablePath = func() (string, error) { return "", nil }
@@ -236,7 +236,7 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 
 	t.Run("unsupportedPlatform", func(t *testing.T) {
 		home := setupTestHome(t)
-		srv := newUpdateReleaseServer(t, "v1.0.4", nil)
+		srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 		defer srv.Close()
 		withUpdateHooks(t, srv.URL, filepath.Join(home, "bin", "kibana-cli"), "plan9", "amd64")
 		out, code := runCLI(t, []string{"update", "--json"})
@@ -251,11 +251,11 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		home := setupTestHome(t)
 		withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
 		archive := makeTarGz(t, "kibana-cli", []byte("new"))
-		assetName, err := releaseAssetName("1.0.4")
+		assetName, err := releaseAssetName("1.1.1")
 		if err != nil {
 			t.Fatal(err)
 		}
-		srv := newUpdateReleaseServer(t, "v1.0.4", map[string][]byte{
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
 			assetName:       archive,
 			"checksums.txt": checksumLine(assetName, []byte("different")),
 		})
@@ -271,11 +271,11 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		home := setupTestHome(t)
 		withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
 		archive := makeTarGz(t, "other", []byte("new"))
-		assetName, err := releaseAssetName("1.0.4")
+		assetName, err := releaseAssetName("1.1.1")
 		if err != nil {
 			t.Fatal(err)
 		}
-		srv := newUpdateReleaseServer(t, "v1.0.4", map[string][]byte{
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
 			assetName:       archive,
 			"checksums.txt": checksumLine(assetName, archive),
 		})
@@ -292,17 +292,17 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
 		updateReplaceBinary = func(string, []byte) error { return errors.New("replace denied") }
 		archive := makeTarGz(t, "kibana-cli", []byte("new"))
-		assetName, err := releaseAssetName("1.0.4")
+		assetName, err := releaseAssetName("1.1.1")
 		if err != nil {
 			t.Fatal(err)
 		}
-		srv := newUpdateReleaseServer(t, "v1.0.4", map[string][]byte{
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
 			assetName:       archive,
 			"checksums.txt": checksumLine(assetName, archive),
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runCLI(t, []string{"update", "--json"})
+		out, code := runConfirmedCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "replace denied") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -312,11 +312,11 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 func TestUpdate_AssetDownloadHTTPError(t *testing.T) {
 	home := setupTestHome(t)
 	withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
-	assetName, err := releaseAssetName("1.0.4")
+	assetName, err := releaseAssetName("1.1.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := newUpdateReleaseServerWithBrokenDownload(t, "v1.0.4", assetName)
+	srv := newUpdateReleaseServerWithBrokenDownload(t, "v1.1.1", assetName)
 	defer srv.Close()
 	updateGitHubAPIBase = srv.URL
 	out, code := runCLI(t, []string{"update", "--json"})
@@ -376,13 +376,13 @@ func TestUpdateHelpers(t *testing.T) {
 	if compareVersions("1.2.0", "1.1.9") <= 0 {
 		t.Fatal("version compare failed")
 	}
-	if !updateAvailable("dev", "1.0.4", false) {
+	if !updateAvailable("dev", "1.1.1", false) {
 		t.Fatal("dev build should be updateable")
 	}
-	if updateAvailable("1.0.4", "1.0.2", false) {
+	if updateAvailable("1.1.1", "1.1.0", false) {
 		t.Fatal("older latest should not update")
 	}
-	if updateAvailable("1.0.4", "", false) {
+	if updateAvailable("1.1.1", "", false) {
 		t.Fatal("empty target should not update")
 	}
 	gopath := t.TempDir()
@@ -423,16 +423,16 @@ func TestUpdateHelpers(t *testing.T) {
 	if _, ok := parseVersionParts("1.x"); ok {
 		t.Fatal("expected invalid version part to fail")
 	}
-	if _, err := releaseAssetName("1.0.4"); err != nil {
+	if _, err := releaseAssetName("1.1.1"); err != nil {
 		t.Fatalf("release asset: %v", err)
 	}
 	updateGOOS = func() string { return "plan9" }
-	if _, err := releaseAssetName("1.0.4"); err == nil {
+	if _, err := releaseAssetName("1.1.1"); err == nil {
 		t.Fatal("expected unsupported platform")
 	}
 	updateGOOS = func() string { return "linux" }
 	updateGOARCH = func() string { return "386" }
-	if _, err := releaseAssetName("1.0.4"); err == nil {
+	if _, err := releaseAssetName("1.1.1"); err == nil {
 		t.Fatal("expected unsupported arch")
 	}
 	if _, ok := findReleaseAsset([]updateAsset{{Name: "x"}}, "x"); ok {
@@ -454,7 +454,7 @@ func TestUpdateHelpers(t *testing.T) {
 
 func TestUpdateArchiveAndReplaceHelpers(t *testing.T) {
 	zipData := makeZip(t, "nested/kibana-cli.exe", []byte("zip-bin"))
-	got, err := extractReleaseBinary(zipData, "kibana-cli-1.0.4-windows-amd64.zip", "kibana-cli.exe")
+	got, err := extractReleaseBinary(zipData, "kibana-cli-1.1.1-windows-amd64.zip", "kibana-cli.exe")
 	if err != nil || string(got) != "zip-bin" {
 		t.Fatalf("zip extract got=%q err=%v", got, err)
 	}
@@ -516,7 +516,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 		version = origVersion
 	})
 	updateRepo = "fatecannotbealtered/kibana-cli"
-	version = "1.0.3"
+	version = "1.1.0"
 	if apiBase != "" {
 		updateGitHubAPIBase = apiBase
 	}

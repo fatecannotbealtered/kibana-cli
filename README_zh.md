@@ -12,15 +12,15 @@
 
 团队往往只有 **Kibana 地址** 可读日志。`kibana-cli` 把高频 **search / agg** 封装成默认 JSON、Agent 友好的契约，沿用 [`jira-cli`](https://github.com/fatecannotbealtered/jira-cli) 与 [`gitlab-cli`](https://github.com/fatecannotbealtered/gitlab-cli) 的约定：
 
-- **默认 JSON 契约** — bootstrap、校验、API 错误共用 `AgentStatus` 信封（全部 stdout）
+- **默认 JSON 契约** — 所有 JSON 响应都是单个 envelope，包含 `ok`、`schema_version`、`data` 或 `error`、`meta`（全部 stdout）
 - **`field-map.yaml`**（可选）— 跨索引统一逻辑服务名；`index_rules` 见 `field-map.example.yaml`
 - **`--data-view`** — 用 Kibana 数据视图 ID 解析索引模式
-- **`--dry-run`** — 预览 search/agg 查询体与写操作，**不发起任何 Kibana API 请求**（含 `--data-view`：预览中使用占位索引，不解析 Saved Objects）
+- **`--dry-run` + `--confirm`** — 写操作先预览并返回确认 token；search/agg dry-run 不发起 Kibana API 请求（含 `--data-view`：预览中使用占位索引）
 - **`update`** — 检查 GitHub Releases；独立二进制在校验 checksum 后自更新，npm / Go 管理的安装返回对应包管理命令
 - **`--force`** — 在 `config init` 时覆盖已有 `field-map.yaml`
 - **`--insecure` / `--timeout`**
-- **机器可读错误** — `ok`、`status`、`errorCode`、`statusCode`、`hint`、`exitCode`
-- **语义化退出码**（`0`/`2`/`3`/`4`/`5`/`6`/`7`）
+- **机器可读错误** — `error.code`、`error.message`、`error.details`、`error.retryable`
+- **语义化退出码**（`0`-`8`）
 - **`SKILL.md`** — `npx skills add fatecannotbealtered/kibana-cli`
 
 ## 安装
@@ -37,7 +37,7 @@ npm install -g @fatecannotbealtered-/kibana-cli
 # 安装 CLI Skill（必需）— 复制到你支持的 skills 目录下
 npx skills add fatecannotbealtered/kibana-cli -y -g
 
-# 配置（CI/Agent 推荐环境变量；也可 kibana-cli auth login 交互登录）
+# 配置（CI/Agent 推荐环境变量；也可用 auth login 的 dry-run/confirm 流程）
 export KIBANA_CLI_HOST=https://kibana.example.com
 export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
@@ -55,12 +55,13 @@ $env:KIBANA_CLI_PASSWORD = "..."
 kibana-cli context
 ```
 
-CLI 包提供 `kibana-cli` 命令；Skill 会让兼容的 AI 编程助手知道如何安全地调用它。如果你是正在协助用户安装的 AI Agent，请执行同一组步骤，并在遇到交互式浏览器或终端提示时让用户配合完成。
+CLI 包提供 `kibana-cli` 命令；Skill 会让兼容的 AI 编程助手知道如何安全地调用它。
 
-更习惯交互式登录？凭据默认写入**操作系统凭据库**：
+更习惯保存登录？凭据默认写入**操作系统凭据库**。写操作非交互执行，必须先 dry-run 再 confirm：
 
 ```bash
-kibana-cli auth login --host https://kibana.example.com --user dev_ro
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --dry-run
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --confirm <confirm_token>
 kibana-cli context
 ```
 
@@ -68,7 +69,7 @@ kibana-cli context
 
 ```bash
 # Go install
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.0
 ```
 
 或从 [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cli/releases) 下载二进制文件并添加到 PATH。
@@ -77,17 +78,19 @@ go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3
 
 ```bash
 kibana-cli update --check
-kibana-cli update
+kibana-cli update --dry-run
+kibana-cli update --confirm <confirm_token>
 ```
 
-`update` 会检查 GitHub Releases。独立 Unix 二进制会在通过 `checksums.txt` SHA256 校验后原地替换；如果 CLI 由 npm 或 Go 管理，则不会直接修改包管理器管理的文件，而是返回应执行的命令，例如 `npm install -g @fatecannotbealtered-/kibana-cli@1.0.3` 或 `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3`。
+`update` 会检查 GitHub Releases。独立 Unix 二进制会在通过 `checksums.txt` SHA256 校验并携带 `--confirm` 后原地替换；如果 CLI 由 npm 或 Go 管理，则不会直接修改包管理器管理的文件，而是返回应执行的命令，例如 `npm install -g @fatecannotbealtered-/kibana-cli@1.1.0` 或 `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.0`。
 
 ## 鉴权
 
 **仅支持 HTTP Basic**。CI/Agent 优先用环境变量，避免在 argv 传 `--password`。
 
 ```bash
-kibana-cli auth login --host https://kibana.example.com --user dev_ro
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --dry-run
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --confirm <confirm_token>
 kibana-cli context
 kibana-cli auth status
 ```
@@ -108,12 +111,14 @@ kibana-cli auth status
 | 码 | 含义 |
 |----|------|
 | 0 | 成功 |
-| 2 | 参数错误 / 校验失败 / 未配置 |
-| 3 | 鉴权失败 |
-| 4 | 未找到 |
-| 5 | 无权限 |
-| 6 | 限流 |
-| 7 | 网络 / 服务端错误 |
+| 1 | 通用错误 |
+| 2 | 参数 / 用法错误 |
+| 3 | 资源不存在 |
+| 4 | 鉴权 / 权限失败 |
+| 5 | 需要确认 token |
+| 6 | 前置条件冲突 |
+| 7 | 可重试瞬时错误（网络 / 限流 / 服务端） |
+| 8 | 超时 |
 
 ## 命令
 
@@ -137,16 +142,18 @@ kibana-cli update --check
 
 输出标志：`--format json|text|raw`（默认 `json`）、`--compact`（仅影响 JSON）、`--quiet`（只压制 text 的辅助输出）、`--json`（兼容别名，等价于 `--format json`）。`--fields` 只作用于 JSON 输出；命令不支持某种格式时会明确报参数错误。
 
-其他全局标志：`--dry-run`、`--force`（`config init` 覆盖已有 field-map）、`--timeout`、`--insecure`（或 `KIBANA_CLI_INSECURE=1` / `true`）。
+其他全局标志：`--dry-run`、`--confirm`、`--force`（`config init` 覆盖已有 field-map）、`--timeout`、`--insecure`（或 `KIBANA_CLI_INSECURE=1` / `true`）。
 
 ### Agent 工作流
 
 ```text
-kibana-cli context                 # 鉴权 + 日志检索可达性（先读 ok）
+kibana-cli context                 # 鉴权 + 日志检索可达性（先读顶层 ok）
 kibana-cli patterns fields         # 字段发现
 kibana-cli search ...              # 查日志
 kibana-cli agg ...                 # 聚合统计
 ```
+
+JSON 输出中，成功数据在 `data`；失败详情在 `error.details`。
 
 ## License
 

@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+const SchemaVersion = "1.0"
+
 // JSONCompact switches PrintJSON from pretty output to single-line JSON.
 var JSONCompact bool
 
@@ -29,16 +31,73 @@ func PrintJSON(v any) {
 type ErrorCode string
 
 const (
-	ErrConfig     ErrorCode = "CONFIG_ERROR"
-	ErrAuth       ErrorCode = "AUTH_REQUIRED"
-	ErrForbidden  ErrorCode = "FORBIDDEN"
-	ErrNotFound   ErrorCode = "NOT_FOUND"
-	ErrRateLimit  ErrorCode = "RATE_LIMITED"
-	ErrServer     ErrorCode = "SERVER_ERROR"
-	ErrValidation ErrorCode = "VALIDATION_ERROR"
-	ErrNetwork    ErrorCode = "NETWORK_ERROR"
-	ErrUnknown    ErrorCode = "UNKNOWN_ERROR"
+	ErrConfig          ErrorCode = "E_CONFIG"
+	ErrAuth            ErrorCode = "E_AUTH"
+	ErrForbidden       ErrorCode = "E_FORBIDDEN"
+	ErrNotFound        ErrorCode = "E_NOT_FOUND"
+	ErrRateLimit       ErrorCode = "E_RATE_LIMIT"
+	ErrServer          ErrorCode = "E_SERVER"
+	ErrValidation      ErrorCode = "E_VALIDATION"
+	ErrNetwork         ErrorCode = "E_NETWORK"
+	ErrTimeout         ErrorCode = "E_TIMEOUT"
+	ErrConfirmRequired ErrorCode = "E_CONFIRM_REQUIRED"
+	ErrConflict        ErrorCode = "E_PRECONDITION_CONFLICT"
+	ErrUnknown         ErrorCode = "E_UNKNOWN"
 )
+
+type Envelope struct {
+	OK            bool           `json:"ok"`
+	SchemaVersion string         `json:"schema_version"`
+	Data          any            `json:"data,omitempty"`
+	Error         *EnvelopeError `json:"error,omitempty"`
+	Meta          EnvelopeMeta   `json:"meta"`
+}
+
+type EnvelopeMeta struct {
+	DurationMS int64 `json:"duration_ms"`
+}
+
+type EnvelopeError struct {
+	Code      ErrorCode      `json:"code"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details"`
+	Retryable bool           `json:"retryable"`
+}
+
+func SuccessEnvelope(data any, durationMs int64) Envelope {
+	return Envelope{
+		OK:            true,
+		SchemaVersion: SchemaVersion,
+		Data:          data,
+		Meta:          EnvelopeMeta{DurationMS: durationMs},
+	}
+}
+
+func FailureEnvelope(code ErrorCode, message string, details map[string]any, durationMs int64) Envelope {
+	if details == nil {
+		details = map[string]any{}
+	}
+	return Envelope{
+		OK:            false,
+		SchemaVersion: SchemaVersion,
+		Error: &EnvelopeError{
+			Code:      code,
+			Message:   message,
+			Details:   details,
+			Retryable: RetryableForErrorCode(code),
+		},
+		Meta: EnvelopeMeta{DurationMS: durationMs},
+	}
+}
+
+func RetryableForErrorCode(code ErrorCode) bool {
+	switch code {
+	case ErrRateLimit, ErrServer, ErrNetwork, ErrTimeout:
+		return true
+	default:
+		return false
+	}
+}
 
 func ErrorCodeFromStatus(statusCode int) ErrorCode {
 	switch statusCode {
@@ -79,6 +138,12 @@ func HintForErrorCode(code ErrorCode) string {
 		return "Check command arguments and query syntax"
 	case ErrNetwork:
 		return "Check KIBANA_CLI_HOST (Kibana base URL) and network connectivity"
+	case ErrTimeout:
+		return "Increase --timeout or retry after checking network latency"
+	case ErrConfirmRequired:
+		return "Run with --dry-run, review the preview, then pass the returned --confirm token"
+	case ErrConflict:
+		return "Re-run --dry-run and retry with the new confirm token"
 	default:
 		return ""
 	}
@@ -86,33 +151,30 @@ func HintForErrorCode(code ErrorCode) string {
 
 // PrintErrorJSONWithCode writes a unified Agent error envelope to stdout (--json contract).
 func PrintErrorJSONWithCode(msg string, statusCode int, code ErrorCode) {
-	payload := map[string]any{
-		"ok":        false,
+	details := map[string]any{
 		"status":    "api_error",
-		"message":   msg,
-		"error":     msg,
 		"errorCode": code,
 		"exitCode":  exitCodeForHTTP(statusCode),
 	}
 	if statusCode > 0 {
-		payload["statusCode"] = statusCode
+		details["statusCode"] = statusCode
 	}
 	if hint := HintForErrorCode(code); hint != "" {
-		payload["hint"] = hint
+		details["hint"] = hint
 	}
-	PrintJSON(payload)
+	PrintJSON(FailureEnvelope(code, msg, details, 0))
 }
 
 func exitCodeForHTTP(statusCode int) int {
 	switch {
 	case statusCode == 401:
-		return 3
-	case statusCode == 403:
-		return 5
-	case statusCode == 404:
 		return 4
+	case statusCode == 403:
+		return 4
+	case statusCode == 404:
+		return 3
 	case statusCode == 429:
-		return 6
+		return 7
 	case statusCode >= 500:
 		return 7
 	default:

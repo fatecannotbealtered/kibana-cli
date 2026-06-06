@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-07
+
+### Added
+
+- Unified Agent JSON envelope for all JSON output: `ok`, `schema_version`, `data` / `error`, and `meta.duration_ms`.
+- Stable `E_*` error codes with `error.retryable` and command-specific failure data under `error.details`.
+- Global `--confirm <token>` for write commands. Write commands now use `--dry-run` previews with `confirm_token` before mutation.
+- Machine-readable `reference` output with command specs, flags, write markers, and raw-format support metadata.
+- `doctor` checks now include actionable `checks[]` diagnostics.
+
+### Changed
+
+- **BREAKING:** JSON consumers must read success payloads from `data` and failures from `error` / `error.details`; the old flat AgentStatus-style JSON is no longer the primary contract.
+- **BREAKING:** Exit codes now follow the Agent CLI table: `0` success, `1` general error, `2` usage error, `3` not found, `4` auth/permission, `5` confirmation required, `6` precondition conflict, `7` retryable transient error, `8` timeout.
+- **BREAKING:** `auth login`, `auth logout`, `config init`, and standalone binary `update` require dry-run / confirm-token flow before writing.
+- **BREAKING:** `auth login` is non-interactive; pass credentials with flags or environment variables.
+- Updated README, README_zh, SECURITY, and the bundled Agent skill for the new contract.
+
 ## [1.0.3] - 2026-06-05
 
 ### Added
@@ -77,6 +95,7 @@ First release: **Kibana-only log query CLI** for humans and AI Agents.
 - `KIBANA_CLI_USER` / `KIBANA_CLI_PASSWORD`
 - Optional: `KIBANA_CLI_KIBANA_VERSION`, `KIBANA_CLI_TIMEOUT`, `KIBANA_CLI_INSECURE`, `KIBANA_CLI_ALLOWED_INDEX_PREFIXES`
 
+[1.1.0]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.1.0
 [1.0.3]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.3
 [1.0.2]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.2
 [1.0.1]: https://github.com/fatecannotbealtered/kibana-cli/releases/tag/v1.0.1

@@ -131,7 +131,7 @@ func resolveTermsField(terms string, resolved fieldmap.ResolvedSearch, fm *field
 
 func printAggResult(result *kibanaclient.AggResult) error {
 	if jsonMode {
-		output.PrintJSON(map[string]any{
+		printJSONSuccess(map[string]any{
 			"ok":      true,
 			"field":   result.Field,
 			"total":   result.Total,

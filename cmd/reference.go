@@ -20,10 +20,10 @@ var referenceCmd = &cobra.Command{
 		lines = append(lines, fmt.Sprintf("Version: %s", rootCmd.Version), "")
 		walkCommands(rootCmd, &lines, "")
 		if jsonMode {
-			output.PrintJSON(map[string]any{
-				"ok":      true,
-				"format":  "markdown",
-				"content": strings.Join(lines, "\n"),
+			printJSONSuccess(map[string]any{
+				"schema_version": output.SchemaVersion,
+				"commands":       collectCommandSpecs(rootCmd, ""),
+				"markdown":       strings.Join(lines, "\n"),
 			})
 			return nil
 		}
@@ -32,6 +32,23 @@ var referenceCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+type commandSpec struct {
+	Name        string     `json:"name"`
+	Use         string     `json:"use"`
+	Short       string     `json:"short,omitempty"`
+	Write       bool       `json:"write"`
+	RawFormat   bool       `json:"raw_format"`
+	Flags       []flagSpec `json:"flags,omitempty"`
+	Subcommands []string   `json:"subcommands,omitempty"`
+}
+
+type flagSpec struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Usage    string `json:"usage"`
+	Required bool   `json:"required,omitempty"`
 }
 
 func init() {
@@ -65,4 +82,46 @@ func walkCommands(cmd *cobra.Command, lines *[]string, prefix string) {
 		}
 		walkCommands(child, lines, name+" ")
 	}
+}
+
+func collectCommandSpecs(cmd *cobra.Command, prefix string) []commandSpec {
+	if cmd.Hidden {
+		return nil
+	}
+	name := strings.TrimSpace(prefix + cmd.Use)
+	spec := commandSpec{
+		Name:      name,
+		Use:       cmd.Use,
+		Short:     cmd.Short,
+		Write:     isWriteCommand(cmd),
+		RawFormat: commandSupportsFormat(cmd, FormatRaw),
+	}
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+		spec.Flags = append(spec.Flags, flagSpec{
+			Name:     f.Name,
+			Type:     f.Value.Type(),
+			Usage:    f.Usage,
+			Required: f.Annotations != nil && len(f.Annotations[cobra.BashCompOneRequiredFlag]) > 0,
+		})
+	})
+	children := cmd.Commands()
+	sort.Slice(children, func(i, j int) bool { return children[i].Name() < children[j].Name() })
+	var specs []commandSpec
+	for _, child := range children {
+		if child.Name() == "help" || child.Name() == "completion" || child.Hidden {
+			continue
+		}
+		spec.Subcommands = append(spec.Subcommands, strings.TrimSpace(name+" "+child.Use))
+	}
+	specs = append(specs, spec)
+	for _, child := range children {
+		if child.Name() == "help" || child.Name() == "completion" {
+			continue
+		}
+		specs = append(specs, collectCommandSpecs(child, name+" ")...)
+	}
+	return specs
 }

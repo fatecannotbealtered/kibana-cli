@@ -22,7 +22,8 @@ func TestOutputFormat_DefaultJSONWithoutJsonFlag(t *testing.T) {
 	if err := json.Unmarshal([]byte(lastJSONLine(out)), &payload); err != nil {
 		t.Fatalf("default output should be json: %v out=%s", err, out)
 	}
-	if payload["ok"] != true || payload["hits"] == nil {
+	data := envelopeData(t, out)
+	if payload["ok"] != true || data["hits"] == nil {
 		t.Fatalf("unexpected payload: %s", out)
 	}
 }
@@ -58,7 +59,8 @@ func TestOutputFormat_QuietDoesNotSuppressDefaultJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(lastJSONLine(out)), &payload); err != nil {
 		t.Fatalf("quiet default output should still be json: %v out=%s", err, out)
 	}
-	if payload["status"] != AgentStatusNotConfigured {
+	details := envelopeErrorDetails(t, out)
+	if details["status"] != AgentStatusNotConfigured {
 		t.Fatalf("unexpected payload: %s", out)
 	}
 }

@@ -57,7 +57,7 @@ the release checksums.txt file.`,
 func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for updates without changing files")
-	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. 1.0.3 or v1.0.3)")
+	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. 1.1.0 or v1.1.0)")
 }
 
 type updateRelease struct {
@@ -145,14 +145,6 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		printUpdateResult(result)
 		return nil
 	}
-	if dryRun {
-		result.Status = "dry_run"
-		result.Message = "update planned but not installed"
-		result.DryRun = true
-		result.Asset, _ = releaseAssetName(targetVersion)
-		printUpdateResult(result)
-		return nil
-	}
 	if installMethod == "npm" || installMethod == "go" {
 		result.Status = "package_manager_required"
 		result.Message = "kibana-cli is managed by a package manager; run the suggested command to update"
@@ -173,6 +165,20 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	assetName, err := releaseAssetName(targetVersion)
 	if err != nil {
 		return failValidation(err.Error())
+	}
+	result.Asset = assetName
+	updatePreview := map[string]any{
+		"path":           installPath,
+		"currentVersion": version,
+		"targetVersion":  targetVersion,
+		"asset":          assetName,
+	}
+	if dryRun {
+		result.DryRun = true
+		skipped, err := writePlan("update binary", updatePreview, nil)
+		if err != nil || skipped {
+			return err
+		}
 	}
 	asset, ok := findReleaseAsset(release.Assets, assetName)
 	if !ok {
@@ -202,6 +208,10 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return failValidation(err.Error())
 	}
+	skipped, err := writePlan("update binary", updatePreview, nil)
+	if err != nil || skipped {
+		return err
+	}
 	markWrite(cmd)
 	if err := updateReplaceBinary(installPath, binaryData); err != nil {
 		return failConfig("failed to replace executable: " + err.Error())
@@ -209,7 +219,6 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 
 	result.Status = "updated"
 	result.Message = fmt.Sprintf("updated kibana-cli from %s to %s", version, targetVersion)
-	result.Asset = assetName
 	result.ChecksumVerified = true
 	printUpdateResult(result)
 	return nil
@@ -299,7 +308,7 @@ func handleUpdateError(err error) error {
 
 func printUpdateResult(result updateResult) {
 	if jsonMode {
-		output.PrintJSON(result)
+		printJSONSuccess(result)
 		return
 	}
 	switch result.Status {

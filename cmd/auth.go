@@ -3,7 +3,6 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"os"
 	"strings"
 	"syscall"
 
@@ -36,14 +35,14 @@ var (
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Save Kibana credentials",
-	Long: `Save credentials interactively or pass flags for non-interactive use.
+	Long: `Save credentials non-interactively.
 
 Prefer environment variables in CI/agents:
   export KIBANA_CLI_HOST=... KIBANA_CLI_USER=... KIBANA_CLI_PASSWORD=...
 
 Examples:
-  kibana-cli auth login
-  kibana-cli auth login --host https://kibana.example.com --user dev_ro`,
+  kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...'
+  kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --dry-run`,
 	RunE: runAuthLogin,
 }
 
@@ -75,33 +74,8 @@ func runAuthLogin(_ *cobra.Command, _ []string) error {
 	user := strings.TrimSpace(authLoginUserFlag)
 	password := authLoginPasswordFlag
 
-	if host != "" && user != "" && password != "" {
-		return finishLogin(host, user, password)
-	}
-
-	reader := bufio.NewReader(os.Stdin)
-	if host == "" {
-		fmt.Println()
-		output.AuxBold("  kibana-cli Login")
-		output.AuxGray("  ────────────────────────────────────────")
-		fmt.Println()
-		fmt.Print("  Kibana URL (e.g. https://kibana.example.com): ")
-		line, _ := reader.ReadString('\n')
-		host = strings.TrimSpace(line)
-	}
-	if err := config.ValidateKibanaHost(host); err != nil {
-		return failValidation(err.Error())
-	}
-	host = strings.TrimRight(host, "/")
-
-	if user == "" {
-		fmt.Print("  Username: ")
-		line, _ := reader.ReadString('\n')
-		user = strings.TrimSpace(line)
-	}
-	if password == "" {
-		fmt.Print("  Password: ")
-		_, password = readPasswordPair(reader, user)
+	if host == "" || user == "" || password == "" {
+		return failValidation("provide --host, --user, and --password (or use KIBANA_CLI_USER/KIBANA_CLI_PASSWORD)")
 	}
 
 	return finishLogin(host, user, password)
@@ -116,8 +90,17 @@ func finishLogin(host, user, password string) error {
 		return failValidation("provide --user and --password (or use KIBANA_CLI_USER/KIBANA_CLI_PASSWORD)")
 	}
 	cfg := &config.Config{Host: host, Username: user, Password: password}
-	if dryRunOutput("save credentials", map[string]any{"host": host, "authMode": cfg.AuthMode()}) {
-		return nil
+	store := config.CredentialStoreKeyring
+	if authLoginPlaintextFlag {
+		store = config.CredentialStoreFile
+	}
+	skipped, err := writePlan(
+		"save credentials",
+		map[string]any{"host": host, "username": user, "authMode": cfg.AuthMode(), "credentialStore": store},
+		map[string]any{"host": host, "username": user, "authMode": cfg.AuthMode(), "credentialStore": store, "passwordHash": secretHash(password)},
+	)
+	if err != nil || skipped {
+		return err
 	}
 	client := kibanaclient.NewClient(cfg)
 	vr, err := client.Validate(apiCtx())
@@ -129,15 +112,11 @@ func finishLogin(host, user, password string) error {
 		return failAuth(msg)
 	}
 	cfg.KibanaVersion = vr.KibanaVersion
-	store := config.CredentialStoreKeyring
-	if authLoginPlaintextFlag {
-		store = config.CredentialStoreFile
-	}
 	if err := config.Save(cfg, config.SaveOptions{Plaintext: authLoginPlaintextFlag}); err != nil {
 		return failConfig("failed to save config: " + err.Error())
 	}
 	if jsonMode {
-		output.PrintJSON(map[string]any{
+		printJSONSuccess(map[string]any{
 			"ok":              true,
 			"status":          "ok",
 			"host":            host,
@@ -187,8 +166,9 @@ func readPasswordPair(reader *bufio.Reader, user string) (string, string) {
 var deleteConfigHook func() error
 
 func runAuthLogout(_ *cobra.Command, _ []string) error {
-	if dryRunOutput("delete credentials", map[string]any{"path": config.FilePath()}) {
-		return nil
+	skipped, err := writePlan("delete credentials", map[string]any{"path": config.FilePath()}, nil)
+	if err != nil || skipped {
+		return err
 	}
 	del := config.Delete
 	if deleteConfigHook != nil {
@@ -198,7 +178,7 @@ func runAuthLogout(_ *cobra.Command, _ []string) error {
 		return failConfig(err.Error())
 	}
 	if jsonMode {
-		output.PrintJSON(map[string]any{"ok": true, "status": "logged_out"})
+		printJSONSuccess(map[string]any{"ok": true, "status": "logged_out"})
 		return nil
 	}
 	output.Success("Logged out. Config removed.")
@@ -227,7 +207,7 @@ func runAuthStatus(_ *cobra.Command, _ []string) error {
 			emitAgentFailure(st)
 			return ErrSilent
 		}
-		output.PrintJSON(result)
+		printJSONSuccess(result)
 		return nil
 	}
 	fmt.Println()

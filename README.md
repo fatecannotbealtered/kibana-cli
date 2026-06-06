@@ -12,15 +12,15 @@
 
 Many teams only expose a **Kibana URL** for log access. `kibana-cli` wraps high-intensity **search** and **agg** with an Agent-friendly JSON-by-default contract, following [`jira-cli`](https://github.com/fatecannotbealtered/jira-cli) and [`gitlab-cli`](https://github.com/fatecannotbealtered/gitlab-cli):
 
-- **Default JSON contract** — same `AgentStatus` envelope for bootstrap, validation, and API errors (all on stdout)
+- **Default JSON contract** — every JSON response is a single envelope with `ok`, `schema_version`, `data` or `error`, and `meta` (all on stdout)
 - **`field-map.yaml`** (optional) — logical service names across heterogeneous indices; `index_rules` in `field-map.example.yaml`
 - **`--data-view`** — resolve index pattern from a Kibana data view id
-- **`--dry-run`** — preview search/agg query bodies and write actions with **no Kibana API calls** (including `--data-view` index resolution, which uses a placeholder index in the preview)
+- **`--dry-run` + `--confirm`** — preview write actions with a confirm token; search/agg dry-runs do not call Kibana (including `--data-view`, which uses a placeholder index in the preview)
 - **`update`** — check GitHub Releases and update standalone binaries after checksum verification; package-manager installs get the correct `npm` / `go install` command
 - **`--force`** — overwrite existing `field-map.yaml` on `config init`
 - **`--insecure` / `--timeout`**
-- **Machine-readable error envelopes** — `ok`, `status`, `errorCode`, `statusCode`, `hint`, `exitCode`
-- **Semantic exit codes** (`0`/`2`/`3`/`4`/`5`/`6`/`7`)
+- **Machine-readable error envelopes** — `error.code`, `error.message`, `error.details`, and `error.retryable`
+- **Semantic exit codes** (`0`-`8`)
 - **`SKILL.md`** — `npx skills add fatecannotbealtered/kibana-cli`
 
 ## Install
@@ -37,7 +37,7 @@ npm install -g @fatecannotbealtered-/kibana-cli
 # Install CLI Skill (required) — copies into your agent-supported skills directory
 npx skills add fatecannotbealtered/kibana-cli -y -g
 
-# Configure (env vars for CI/agents; or use auth login for interactive setup)
+# Configure (env vars for CI/agents; or use auth login with dry-run/confirm)
 export KIBANA_CLI_HOST=https://kibana.example.com
 export KIBANA_CLI_USER=dev_ro
 export KIBANA_CLI_PASSWORD='...'
@@ -55,19 +55,20 @@ $env:KIBANA_CLI_PASSWORD = "..."
 kibana-cli context
 ```
 
-The CLI package provides the `kibana-cli` binary; the Skill package teaches compatible AI coding assistants how to use it safely. If you are an AI Agent helping a user set this up, run the same steps and ask the user to complete any interactive browser or terminal prompts.
+The CLI package provides the `kibana-cli` binary; the Skill package teaches compatible AI coding assistants how to use it safely.
 
-Prefer interactive login? Credentials are stored in the **OS credential store** by default:
+Prefer saved login? Credentials are stored in the **OS credential store** by default. Writes are non-interactive and require dry-run confirmation:
 
 ```bash
-kibana-cli auth login --host https://kibana.example.com --user dev_ro
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --dry-run
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --confirm <confirm_token>
 kibana-cli context
 ```
 
 ### Alternative: Go install
 
 ```bash
-go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3
+go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.0
 ```
 
 ### Alternative: Download binary
@@ -78,17 +79,19 @@ Download from [GitHub Releases](https://github.com/fatecannotbealtered/kibana-cl
 
 ```bash
 kibana-cli update --check
-kibana-cli update
+kibana-cli update --dry-run
+kibana-cli update --confirm <confirm_token>
 ```
 
-`update` checks GitHub Releases. Standalone Unix binaries are replaced in place only after `checksums.txt` SHA256 verification. If the CLI is managed by npm or Go, it does not mutate those managed files and returns the exact command to run, for example `npm install -g @fatecannotbealtered-/kibana-cli@1.0.3` or `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.0.3`.
+`update` checks GitHub Releases. Standalone Unix binaries are replaced in place only after `checksums.txt` SHA256 verification and `--confirm`. If the CLI is managed by npm or Go, it does not mutate those managed files and returns the exact command to run, for example `npm install -g @fatecannotbealtered-/kibana-cli@1.1.0` or `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.0`.
 
 ## Authentication
 
 **HTTP Basic only** (Kibana username/password). Prefer env vars in CI/agents — avoid `--password` on argv.
 
 ```bash
-kibana-cli auth login --host https://kibana.example.com --user dev_ro
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --dry-run
+kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --confirm <confirm_token>
 kibana-cli context
 kibana-cli auth status
 ```
@@ -109,12 +112,14 @@ Secrets default to the **OS credential store**; `config.json` has no plaintext p
 | Code | Meaning |
 |------|---------|
 | 0 | OK |
-| 2 | Bad args / validation / not configured |
-| 3 | Auth failed |
-| 4 | Not found |
-| 5 | Forbidden |
-| 6 | Rate limited |
-| 7 | Network / server error |
+| 1 | General error |
+| 2 | Bad args / usage error |
+| 3 | Resource not found |
+| 4 | Auth / permission failure |
+| 5 | Confirmation required |
+| 6 | Precondition conflict |
+| 7 | Retryable transient error (network / rate limit / server) |
+| 8 | Timeout |
 
 ## Commands
 
@@ -138,16 +143,18 @@ Optional `~/.kibana-cli/field-map.yaml` (`kibana-cli config init`). Profiles and
 
 Output flags: `--format json|text|raw` (default `json`), `--compact` (JSON only), `--quiet` (suppresses auxiliary text output only), and `--json` as a compatibility alias for `--format json`. `--fields` only affects JSON output, and unsupported formats return an explicit parameter error.
 
-Other global flags: `--dry-run`, `--force` (overwrite `field-map.yaml` on `config init`), `--timeout`, `--insecure` (or `KIBANA_CLI_INSECURE=1` / `true`).
+Other global flags: `--dry-run`, `--confirm`, `--force` (overwrite `field-map.yaml` on `config init`), `--timeout`, `--insecure` (or `KIBANA_CLI_INSECURE=1` / `true`).
 
 ### Agent workflow
 
 ```text
-kibana-cli context              # auth + log search reachability (read ok first)
+kibana-cli context              # auth + log search reachability (read top-level ok first)
 kibana-cli patterns fields      # discover fields on an index pattern
 kibana-cli search ...           # primary: query logs
 kibana-cli agg ...              # count by level / service
 ```
+
+For JSON output, read top-level `ok` first. Success data is under `data`; failure details are under `error.details`.
 
 ## License
 

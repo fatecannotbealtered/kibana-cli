@@ -106,6 +106,7 @@ func TestSearch_DryRun_DataView_SkipsResolve(t *testing.T) {
 	if err := json.Unmarshal([]byte(j), &payload); err != nil {
 		t.Fatalf("json parse: %v out=%s", err, out)
 	}
+	payload = envelopeData(t, out)
 	if idx, _ := payload["index"].(string); idx != "<data-view:dv-1>" {
 		t.Fatalf("index=%q want placeholder json=%s", idx, j)
 	}
@@ -137,21 +138,23 @@ func TestMainProcess_ExitCode(t *testing.T) {
 
 func assertAgentJSON(t *testing.T, out string, wantOK bool, wantStatus string, wantExit int) {
 	t.Helper()
-	j := lastJSONLine(out)
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(j), &payload); err != nil {
-		t.Fatalf("json parse: %v out=%s", err, out)
-	}
+	payload := envelopePayload(t, out)
 	ok, _ := payload["ok"].(bool)
 	if ok != wantOK {
-		t.Fatalf("ok=%v want %v json=%s", ok, wantOK, j)
+		t.Fatalf("ok=%v want %v json=%s", ok, wantOK, lastJSONLine(out))
 	}
-	if status, _ := payload["status"].(string); status != wantStatus {
-		t.Fatalf("status=%q want %q json=%s", status, wantStatus, j)
+	var fields map[string]any
+	if wantOK {
+		fields = envelopeData(t, out)
+	} else {
+		fields = envelopeErrorDetails(t, out)
 	}
-	exitF, ok := payload["exitCode"].(float64)
+	if status, _ := fields["status"].(string); status != wantStatus {
+		t.Fatalf("status=%q want %q json=%s", status, wantStatus, lastJSONLine(out))
+	}
+	exitF, ok := fields["exitCode"].(float64)
 	if !ok || int(exitF) != wantExit {
-		t.Fatalf("exitCode=%v want %d json=%s", payload["exitCode"], wantExit, j)
+		t.Fatalf("exitCode=%v want %d json=%s", fields["exitCode"], wantExit, lastJSONLine(out))
 	}
 }
 

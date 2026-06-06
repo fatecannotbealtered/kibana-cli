@@ -40,8 +40,9 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 	if _, err := os.Stat(path); err == nil && !forceMode {
 		return failValidation("field-map already exists: " + path + " (use --force to overwrite)")
 	}
-	if dryRunOutput("write field-map.yaml", map[string]any{"path": path}) {
-		return nil
+	skipped, err := writePlan("write field-map.yaml", map[string]any{"path": path, "force": forceMode}, nil)
+	if err != nil || skipped {
+		return err
 	}
 	if err := os.MkdirAll(config.Dir(), 0700); err != nil {
 		return failConfig(err.Error())
@@ -50,7 +51,7 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 		return failConfig(err.Error())
 	}
 	if jsonMode {
-		output.PrintJSON(map[string]any{"ok": true, "status": "ok", "path": path})
+		printJSONSuccess(map[string]any{"ok": true, "status": "ok", "path": path})
 		return nil
 	}
 	output.Success("Created " + path)
@@ -75,15 +76,14 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 			ExitCode:  ExitNotFound,
 		}
 		if jsonMode {
-			output.PrintJSON(map[string]any{
-				"ok":        false,
+			output.PrintJSON(output.FailureEnvelope(output.ErrNotFound, msg, map[string]any{
+				"status":    "not_found",
 				"exists":    false,
 				"path":      fieldmap.FilePath(),
-				"message":   msg,
 				"hint":      st.Hint,
 				"errorCode": st.ErrorCode,
 				"exitCode":  st.ExitCode,
-			})
+			}, elapsedDurationMs()))
 		} else {
 			output.Warn(msg)
 		}
@@ -91,7 +91,7 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		return ErrSilent
 	}
 	if jsonMode {
-		output.PrintJSON(map[string]any{"ok": true, "path": fieldmap.FilePath(), "fieldMap": m})
+		printJSONSuccess(map[string]any{"ok": true, "path": fieldmap.FilePath(), "fieldMap": m})
 		return nil
 	}
 	fmt.Println()

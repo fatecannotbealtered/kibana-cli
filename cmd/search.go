@@ -175,7 +175,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 				payload["diagnostics"] = probes
 			}
 		}
-		output.PrintJSON(payload)
+		printJSONSuccess(payload)
 		return nil
 	}
 	if len(result.Hits) == 0 {

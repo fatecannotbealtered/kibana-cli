@@ -28,7 +28,7 @@ func TestRoot_Version(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out, "1.0.3") && !strings.Contains(out, "kibana-cli") {
+	if !strings.Contains(out, "1.1.0") && !strings.Contains(out, "kibana-cli") {
 		t.Fatalf("version output: %q", out)
 	}
 }
@@ -54,7 +54,7 @@ func TestAuth_Logout_RemovesConfig(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(`{"host":"http://x","username":"u","password":"p"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, code := runCLI(t, []string{"auth", "logout", "--json"})
+	_, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
 	if code != ExitOK {
 		t.Fatal(code)
 	}
@@ -124,9 +124,10 @@ func TestSearch_Mock_JSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(jsonLine), &payload); err != nil {
 		t.Fatalf("json: %v out=%s", err, out)
 	}
-	hits, _ := payload["hits"].([]any)
+	data := envelopeData(t, out)
+	hits, _ := data["hits"].([]any)
 	if len(hits) != 1 {
-		t.Fatalf("hits=%v", payload["hits"])
+		t.Fatalf("hits=%v", data["hits"])
 	}
 }
 

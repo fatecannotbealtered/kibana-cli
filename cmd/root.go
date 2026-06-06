@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,16 +22,21 @@ import (
 
 // Exit codes for machine-readable error classification.
 const (
-	ExitOK        = 0
-	ExitBadArgs   = 2
-	ExitAuth      = 3
-	ExitNotFound  = 4
-	ExitForbidden = 5
-	ExitRateLimit = 6
-	ExitNetwork   = 7
+	ExitOK              = 0
+	ExitGeneral         = 1
+	ExitBadArgs         = 2
+	ExitNotFound        = 3
+	ExitAuth            = 4
+	ExitForbidden       = 4
+	ExitConfirmRequired = 5
+	ExitConflict        = 6
+	ExitRateLimit       = 7
+	ExitNetwork         = 7
+	ExitTimeout         = 8
 )
 
 const defaultTimeoutSeconds = 60
+const confirmTokenTTL = 15 * time.Minute
 
 const (
 	FormatJSON = "json"
@@ -38,7 +46,7 @@ const (
 
 var ErrSilent = errors.New("")
 
-var version = "1.0.3"
+var version = "1.1.0"
 
 var (
 	jsonMode       bool
@@ -48,6 +56,7 @@ var (
 	forceMode      bool
 	quietMode      bool
 	dryRun         bool
+	confirmToken   string
 	insecureTLS    bool
 	timeoutSeconds int
 )
@@ -113,6 +122,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&forceMode, "force", false, "Overwrite existing field-map.yaml on config init")
 	rootCmd.PersistentFlags().BoolVar(&quietMode, "quiet", false, "Suppress auxiliary text output")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview planned action without executing (writes and read queries)")
+	rootCmd.PersistentFlags().StringVar(&confirmToken, "confirm", "", "Confirm token returned by --dry-run for write commands")
 	rootCmd.PersistentFlags().BoolVar(&insecureTLS, "insecure", false, "Skip TLS certificate verification (corporate/self-signed CA)")
 	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "HTTP request timeout in seconds")
 
@@ -149,10 +159,8 @@ func ExecuteContext(ctx context.Context) error {
 
 func exitCodeForStatus(status int) int {
 	switch {
-	case status == 401:
+	case status == 401 || status == 403:
 		return ExitAuth
-	case status == 403:
-		return ExitForbidden
 	case status == 404:
 		return ExitNotFound
 	case status == 429:
@@ -174,11 +182,73 @@ func dryRunOutput(action string, detail map[string]any) bool {
 		}
 		detail["action"] = action
 		detail["dryRun"] = true
-		output.PrintJSON(detail)
+		printJSONSuccess(detail)
 	} else {
 		output.Info("[dry-run] " + action)
 	}
 	return true
+}
+
+func writePlan(action string, preview, tokenDetail map[string]any) (bool, error) {
+	if preview == nil {
+		preview = map[string]any{}
+	}
+	if tokenDetail == nil {
+		tokenDetail = preview
+	}
+	token := confirmTokenFor(action, tokenDetail)
+	if dryRun {
+		if jsonMode {
+			printJSONSuccess(map[string]any{
+				"preview": map[string]any{
+					"action":  action,
+					"changes": []map[string]any{preview},
+				},
+				"confirm_token": token,
+				"expires_at":    time.Now().UTC().Add(confirmTokenTTL).Format(time.RFC3339),
+			})
+		} else {
+			output.Info("[dry-run] " + action)
+			output.AuxGray("  confirm: " + token)
+		}
+		return true, nil
+	}
+	if strings.TrimSpace(confirmToken) == "" {
+		return false, failConfirmRequired(action, preview, token)
+	}
+	if strings.TrimSpace(confirmToken) != token {
+		return false, failConflict("confirm token is invalid or stale", map[string]any{
+			"action": action,
+		})
+	}
+	return false, nil
+}
+
+func confirmTokenFor(action string, detail map[string]any) string {
+	payload := map[string]any{
+		"schema_version": output.SchemaVersion,
+		"command":        commandPathForToken(),
+		"action":         action,
+		"detail":         detail,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		b = []byte(action)
+	}
+	sum := sha256.Sum256(b)
+	return "ct_" + hex.EncodeToString(sum[:])[:24]
+}
+
+func commandPathForToken() string {
+	if activeCmd != nil {
+		return activeCmd.CommandPath()
+	}
+	return rootCmd.CommandPath()
+}
+
+func secretHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 func applyOutputFormat(cmd *cobra.Command) error {

@@ -15,7 +15,7 @@ Email a description and reproduction steps to the maintainer:
 ## What this CLI handles
 
 - User-supplied **HTTP Basic** credentials for Kibana.
-- **Default (`auth login`)**: password in the **OS credential store**. `config.json` holds `host`, `username`, and `credentialStore: keyring` only.
+- **Default (`auth login` with `--dry-run` / `--confirm`)**: password in the **OS credential store**. `config.json` holds `host`, `username`, and `credentialStore: keyring` only.
 - **`auth login --plaintext`**: password in `~/.kibana-cli/config.json` (`0600`, directory `0700`) — discouraged.
 - **Environment variables** (`KIBANA_CLI_*`): never written to disk by the CLI.
 - Credentials are **never logged**: audit entries redact `--password`, `-p`, `--pass`.
@@ -23,8 +23,9 @@ Email a description and reproduction steps to the maintainer:
 - Host URLs must not embed credentials (`https://user:pass@host` is rejected).
 - Optional **`KIBANA_CLI_ALLOWED_INDEX_PREFIXES`** restricts which index patterns search/agg may target; the pattern must **start with** one of the comma-separated prefixes.
 - **`--dry-run`** on search/agg previews query bodies without any Kibana API calls (no `_search`/agg and no Saved Objects resolution for `--data-view`).
+- Write commands are non-interactive and require `--dry-run` followed by a matching `--confirm` token before mutating local files or binaries.
 - Free-text `--query` searches **across all fields** by default (full Lucene `query_string`); `--precise` narrows it to `match_phrase` on the configured message field(s).
-- **`update`** checks GitHub Releases, downloads release archives and `checksums.txt`, and verifies SHA256 before replacing standalone binaries. npm / Go managed installs are not modified in place; the command reports the package-manager command to run.
+- **`update`** checks GitHub Releases, downloads release archives and `checksums.txt`, and verifies SHA256 before replacing standalone binaries with `--confirm`. npm / Go managed installs are not modified in place; the command reports the package-manager command to run.
 
 ## Audit environment
 

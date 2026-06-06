@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -23,6 +25,7 @@ func resetCLIState(t *testing.T) {
 	forceMode = false
 	quietMode = false
 	dryRun = false
+	confirmToken = ""
 	insecureTLS = false
 	timeoutSeconds = defaultTimeoutSeconds
 	lastExit = 0
@@ -135,6 +138,88 @@ func runCLIWithStdin(t *testing.T, stdin string, args []string) (stdout string, 
 	os.Stdin = orig
 	_ = r.Close()
 	return stdout, exitCode
+}
+
+func runConfirmedCLI(t *testing.T, args []string) (stdout string, exitCode int) {
+	t.Helper()
+	return runCLI(t, append(append([]string{}, args...), "--confirm", dryRunConfirmToken(t, args)))
+}
+
+func runConfirmedCLIWithEnv(t *testing.T, env map[string]string, args []string) (stdout string, exitCode int) {
+	t.Helper()
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+	return runConfirmedCLI(t, args)
+}
+
+func dryRunConfirmToken(t *testing.T, args []string) string {
+	t.Helper()
+	out, code := runCLI(t, dryRunArgs(args))
+	if code != ExitOK {
+		t.Fatalf("dry-run exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	token, _ := data["confirm_token"].(string)
+	if token == "" {
+		t.Fatalf("missing confirm token: %s", out)
+	}
+	return token
+}
+
+func dryRunArgs(args []string) []string {
+	out := make([]string, 0, len(args)+3)
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--dry-run", "--json":
+			continue
+		case "--format", "--confirm":
+			i++
+			continue
+		default:
+			if strings.HasPrefix(arg, "--format=") || strings.HasPrefix(arg, "--confirm=") || strings.HasPrefix(arg, "--json=") {
+				continue
+			}
+			out = append(out, arg)
+		}
+	}
+	out = append(out, "--dry-run", "--format", "json")
+	return out
+}
+
+func envelopePayload(t *testing.T, out string) map[string]any {
+	t.Helper()
+	j := lastJSONLine(out)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(j), &payload); err != nil {
+		t.Fatalf("json parse: %v out=%s", err, out)
+	}
+	return payload
+}
+
+func envelopeData(t *testing.T, out string) map[string]any {
+	t.Helper()
+	payload := envelopePayload(t, out)
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing data: %s", out)
+	}
+	return data
+}
+
+func envelopeErrorDetails(t *testing.T, out string) map[string]any {
+	t.Helper()
+	payload := envelopePayload(t, out)
+	errObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing error: %s", out)
+	}
+	details, ok := errObj["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing error.details: %s", out)
+	}
+	return details
 }
 
 func captureStdout(t *testing.T, fn func()) string {

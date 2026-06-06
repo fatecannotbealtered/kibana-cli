@@ -48,7 +48,7 @@ func TestClassifySearchProbeError(t *testing.T) {
 		{name: "server", statusCode: 502, wantCode: output.ErrServer, wantExit: ExitNetwork},
 		{name: "dial", detail: "dial tcp: connection refused", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
 		{name: "context canceled", detail: "context canceled", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
-		{name: "deadline exceeded", detail: "context deadline exceeded", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
+		{name: "deadline exceeded", detail: "context deadline exceeded", wantCode: output.ErrTimeout, wantExit: ExitTimeout},
 		{name: "unexpected eof", detail: "unexpected EOF", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
 		{name: "unknown detail", detail: "index probe returned empty body", wantCode: output.ErrUnknown, wantExit: ExitNetwork},
 	}

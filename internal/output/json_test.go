@@ -117,10 +117,10 @@ func Test_exitCodeForHTTP(t *testing.T) {
 		status int
 		want   int
 	}{
-		{401, 3},
-		{403, 5},
-		{404, 4},
-		{429, 6},
+		{401, 4},
+		{403, 4},
+		{404, 3},
+		{429, 7},
 		{500, 7},
 		{400, 2},
 		{422, 2},
@@ -148,8 +148,7 @@ func TestPrintErrorJSONWithCode(t *testing.T) {
 			statusCode: 401,
 			code:       ErrAuth,
 			wantKeys: map[string]any{
-				"ok": false, "status": "api_error", "statusCode": float64(401),
-				"errorCode": string(ErrAuth), "exitCode": float64(3),
+				"ok": false,
 			},
 		},
 		{
@@ -158,7 +157,7 @@ func TestPrintErrorJSONWithCode(t *testing.T) {
 			statusCode: 0,
 			code:       ErrNetwork,
 			wantKeys: map[string]any{
-				"ok": false, "exitCode": float64(7),
+				"ok": false,
 			},
 		},
 		{
@@ -167,7 +166,7 @@ func TestPrintErrorJSONWithCode(t *testing.T) {
 			statusCode: 0,
 			code:       ErrUnknown,
 			wantKeys: map[string]any{
-				"ok": false, "exitCode": float64(7),
+				"ok": false,
 			},
 		},
 	}
@@ -185,21 +184,40 @@ func TestPrintErrorJSONWithCode(t *testing.T) {
 					t.Fatalf("%s: got %v want %v full=%v", k, payload[k], want, payload)
 				}
 			}
-			if payload["message"] != tt.msg || payload["error"] != tt.msg {
-				t.Fatalf("message fields: %v", payload)
+			if payload["schema_version"] != SchemaVersion {
+				t.Fatalf("schema_version: %v", payload)
+			}
+			errObj, ok := payload["error"].(map[string]any)
+			if !ok {
+				t.Fatalf("missing error object: %v", payload)
+			}
+			if errObj["message"] != tt.msg || errObj["code"] != string(tt.code) {
+				t.Fatalf("error fields: %v", payload)
+			}
+			if gotRetryable, _ := errObj["retryable"].(bool); gotRetryable != RetryableForErrorCode(tt.code) {
+				t.Fatalf("retryable=%v want %v", gotRetryable, RetryableForErrorCode(tt.code))
+			}
+			details, ok := errObj["details"].(map[string]any)
+			if !ok {
+				t.Fatalf("missing details: %v", payload)
+			}
+			if details["status"] != "api_error" || details["errorCode"] != string(tt.code) {
+				t.Fatalf("details: %v", details)
 			}
 			hint := HintForErrorCode(tt.code)
 			if hint != "" {
-				if payload["hint"] != hint {
-					t.Fatalf("hint=%v want %q", payload["hint"], hint)
+				if details["hint"] != hint {
+					t.Fatalf("hint=%v want %q", details["hint"], hint)
 				}
-			} else if _, ok := payload["hint"]; ok {
+			} else if _, ok := details["hint"]; ok {
 				t.Fatalf("unexpected hint: %v", payload["hint"])
 			}
 			if tt.statusCode <= 0 {
-				if _, ok := payload["statusCode"]; ok {
+				if _, ok := details["statusCode"]; ok {
 					t.Fatal("statusCode should be omitted")
 				}
+			} else if details["statusCode"] != float64(tt.statusCode) {
+				t.Fatalf("statusCode=%v", details["statusCode"])
 			}
 		})
 	}

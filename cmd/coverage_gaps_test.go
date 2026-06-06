@@ -207,7 +207,7 @@ func TestRunConfigInit_WriteBlocked(t *testing.T) {
 	if err := os.MkdirAll(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	_, code := runCLI(t, []string{"config", "init", "--force", "--json"})
+	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("expected write failure exit %d", code)
 	}
@@ -353,7 +353,7 @@ func TestRunBootstrapCheck_MustLoadHostValidation(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
-	_, code := runCLI(t, []string{
+	_, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",

@@ -127,7 +127,7 @@ func TestAudit_LogOnWriteCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, code := runCLI(t, []string{"auth", "logout", "--json"})
+	_, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
 	if code != ExitOK {
 		t.Fatal(code)
 	}

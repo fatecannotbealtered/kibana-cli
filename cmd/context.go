@@ -55,7 +55,21 @@ func runContext(_ *cobra.Command, _ []string) error {
 
 func printContext(result *contextResult) {
 	if jsonMode {
-		output.PrintJSON(result)
+		if result.OK {
+			printJSONSuccess(result)
+			return
+		}
+		msg := result.Message
+		if msg == "" {
+			msg = result.Error
+		}
+		output.PrintJSON(output.FailureEnvelope(result.ErrorCode, msg, map[string]any{
+			"status":    result.Status,
+			"hint":      result.Hint,
+			"exitCode":  result.ExitCode,
+			"errorCode": result.ErrorCode,
+			"kibana":    result.Kibana,
+		}, elapsedDurationMs()))
 		return
 	}
 	fmt.Println()
