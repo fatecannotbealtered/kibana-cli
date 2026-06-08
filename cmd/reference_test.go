@@ -47,3 +47,30 @@ func TestWalkCommands_IncludesLongAndFlags(t *testing.T) {
 		t.Fatal("hidden flag should not appear")
 	}
 }
+
+func TestReference_AgentSpecFields(t *testing.T) {
+	out, code := runCLI(t, []string{"reference", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	for _, key := range []string{"tool", "version", "exit_codes", "error_codes", "security", "commands"} {
+		if _, ok := data[key]; !ok {
+			t.Fatalf("reference missing %s: %s", key, out)
+		}
+	}
+	if data["tool"] != toolName || data["version"] != version {
+		t.Fatalf("tool/version mismatch: %v/%v", data["tool"], data["version"])
+	}
+	if !strings.Contains(lastJSONLine(out), `"path":"kibana-cli changelog"`) &&
+		!strings.Contains(lastJSONLine(out), `"path": "kibana-cli changelog"`) {
+		t.Fatalf("reference missing changelog command: %s", out)
+	}
+	if !strings.Contains(lastJSONLine(out), `"E_CONFLICT"`) {
+		t.Fatalf("reference missing spec error codes: %s", out)
+	}
+	if !strings.Contains(lastJSONLine(out), `"risk_tier":"T1"`) &&
+		!strings.Contains(lastJSONLine(out), `"risk_tier": "T1"`) {
+		t.Fatalf("reference missing security tier: %s", out)
+	}
+}

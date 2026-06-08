@@ -122,6 +122,9 @@ func TestLogWritesJSONL(t *testing.T) {
 	if e.Cmd != "auth login" || e.Exit != 0 || e.Ms != 10 {
 		t.Fatalf("entry %+v", e)
 	}
+	if !strings.HasSuffix(e.Ts, "Z") {
+		t.Fatalf("audit timestamp must be UTC: %s", e.Ts)
+	}
 }
 
 func TestLogMarshalFailure(t *testing.T) {

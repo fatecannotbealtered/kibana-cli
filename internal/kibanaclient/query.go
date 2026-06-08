@@ -15,6 +15,7 @@ type SearchOptions struct {
 	To            string
 	TimeField     string
 	Size          int
+	Offset        int
 	SortDesc      bool
 	ServiceValue  string
 	ServiceFields []string

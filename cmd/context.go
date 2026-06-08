@@ -35,7 +35,11 @@ type contextKibana struct {
 
 type contextResult struct {
 	AgentStatus
-	Kibana *contextKibana `json:"kibana"`
+	Tool            string         `json:"tool"`
+	Version         string         `json:"version"`
+	SecurityTier    string         `json:"securityTier"`
+	SkillMinVersion string         `json:"skillMinVersion"`
+	Kibana          *contextKibana `json:"kibana"`
 }
 
 func runContext(_ *cobra.Command, _ []string) error {
@@ -45,7 +49,14 @@ func runContext(_ *cobra.Command, _ []string) error {
 	if out.ConfigError != "" {
 		k.AuthError = out.ConfigError
 	}
-	result := &contextResult{AgentStatus: out.AgentStatus, Kibana: k}
+	result := &contextResult{
+		AgentStatus:     out.AgentStatus,
+		Tool:            toolName,
+		Version:         version,
+		SecurityTier:    securityTier,
+		SkillMinVersion: skillMinVersion,
+		Kibana:          k,
+	}
 	printContext(result)
 	if !result.OK {
 		return ErrSilent
@@ -64,11 +75,15 @@ func printContext(result *contextResult) {
 			msg = result.Error
 		}
 		output.PrintJSON(output.FailureEnvelope(result.ErrorCode, msg, map[string]any{
-			"status":    result.Status,
-			"hint":      result.Hint,
-			"exitCode":  result.ExitCode,
-			"errorCode": result.ErrorCode,
-			"kibana":    result.Kibana,
+			"status":          result.Status,
+			"hint":            result.Hint,
+			"exitCode":        result.ExitCode,
+			"errorCode":       result.ErrorCode,
+			"tool":            result.Tool,
+			"version":         result.Version,
+			"securityTier":    result.SecurityTier,
+			"skillMinVersion": result.SkillMinVersion,
+			"kibana":          result.Kibana,
 		}, elapsedDurationMs()))
 		return
 	}

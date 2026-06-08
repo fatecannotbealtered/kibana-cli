@@ -19,7 +19,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - run: go mod tidy
+      - name: npm package audit
+        run: |
+          npm audit --audit-level=high --omit=dev
+          npm pack --dry-run
       - name: Check formatting
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)"
@@ -69,7 +76,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-npm:
-    needs: ci
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -24,7 +24,7 @@ func TestContext_TableSuccess(t *testing.T) {
 func TestContext_TableNotConfigured(t *testing.T) {
 	setupTestHome(t)
 	out, code := runCLI(t, []string{"context", "--format", "text"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	if !strings.Contains(out, "not configured") && !strings.Contains(out, "Context") {

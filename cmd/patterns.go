@@ -36,11 +36,15 @@ func init() {
 	rootCmd.AddCommand(patternsCmd)
 	patternsCmd.AddCommand(patternsListCmd)
 	patternsCmd.AddCommand(patternsFieldsCmd)
+	addLimitOffsetFlags(patternsListCmd, 100, "Max index patterns to return")
+	patternsListCmd.Flags().String("fields", "", "Comma-separated JSON data fields to include")
 	patternsFieldsCmd.Flags().String("index", "", "Index pattern title (required)")
+	addLimitOffsetFlags(patternsFieldsCmd, 100, "Max fields to return")
+	patternsFieldsCmd.Flags().String("fields", "", "Comma-separated JSON data fields to include")
 	_ = patternsFieldsCmd.MarkFlagRequired("index")
 }
 
-func runPatternsList(_ *cobra.Command, _ []string) error {
+func runPatternsList(cmd *cobra.Command, _ []string) error {
 	client, _, err := newKibanaClient()
 	if err != nil {
 		return err
@@ -49,17 +53,30 @@ func runPatternsList(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return handleAPIError(err, jsonMode)
 	}
+	limit, _ := cmd.Flags().GetInt("limit")
+	offset, err := requireOffset(cmd)
+	if err != nil {
+		return err
+	}
+	page, meta, pageErr := paginateSlice(patterns, limit, offset)
+	if pageErr != nil {
+		return failValidation(pageErr.Error())
+	}
 	if jsonMode {
-		printJSONSuccess(map[string]any{"ok": true, "patterns": patterns, "count": len(patterns)})
+		payload := map[string]any{"patterns": page, "_untrusted": []string{"patterns"}}
+		for k, v := range meta {
+			payload[k] = v
+		}
+		printJSONSuccess(projectTopLevelFields(payload, getFieldsFlag(cmd)))
 		return nil
 	}
-	if len(patterns) == 0 {
+	if len(page) == 0 {
 		output.Info("No index patterns found.")
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ID\tTITLE")
-	for _, p := range patterns {
+	for _, p := range page {
 		_, _ = fmt.Fprintf(w, "%s\t%s\n", p.ID, p.Title)
 	}
 	_ = w.Flush()
@@ -80,25 +97,37 @@ func runPatternsFields(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return handleAPIError(err, jsonMode)
 	}
+	limit, _ := cmd.Flags().GetInt("limit")
+	offset, err := requireOffset(cmd)
+	if err != nil {
+		return err
+	}
+	page, meta, pageErr := paginateSlice(fields, limit, offset)
+	if pageErr != nil {
+		return failValidation(pageErr.Error())
+	}
 	if jsonMode {
-		printJSONSuccess(map[string]any{
-			"ok":     true,
-			"index":  index,
-			"count":  len(fields),
-			"fields": fields,
-		})
+		payload := map[string]any{
+			"index":      index,
+			"fields":     page,
+			"_untrusted": []string{"fields"},
+		}
+		for k, v := range meta {
+			payload[k] = v
+		}
+		printJSONSuccess(projectTopLevelFields(payload, getFieldsFlag(cmd)))
 		return nil
 	}
-	if len(fields) == 0 {
+	if len(page) == 0 {
 		output.Info("No fields returned for " + index)
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "NAME\tTYPE\tSEARCHABLE\tAGGREGATABLE")
-	for _, f := range fields {
+	for _, f := range page {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%v\t%v\n", f.Name, f.Type, f.Searchable, f.Aggregatable)
 	}
 	_ = w.Flush()
-	output.AuxGray(fmt.Sprintf("  %d fields on %s", len(fields), index))
+	output.AuxGray(fmt.Sprintf("  %d of %d fields on %s", len(page), len(fields), index))
 	return nil
 }

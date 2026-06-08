@@ -57,7 +57,8 @@ the release checksums.txt file.`,
 func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for updates without changing files")
-	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. 1.1.0 or v1.1.0)")
+	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. X.Y.Z or vX.Y.Z)")
+	markWrite(updateCmd)
 }
 
 type updateRelease struct {
@@ -72,20 +73,21 @@ type updateAsset struct {
 }
 
 type updateResult struct {
-	OK               bool   `json:"ok"`
 	Status           string `json:"status"`
 	Message          string `json:"message"`
-	CurrentVersion   string `json:"currentVersion"`
-	TargetVersion    string `json:"targetVersion"`
-	LatestVersion    string `json:"latestVersion,omitempty"`
-	UpdateAvailable  bool   `json:"updateAvailable"`
-	InstallMethod    string `json:"installMethod"`
+	PreviousVersion  string `json:"previous_version,omitempty"`
+	CurrentVersion   string `json:"current_version"`
+	TargetVersion    string `json:"target_version"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	UpdateAvailable  bool   `json:"update_available"`
+	InstallMethod    string `json:"install_method"`
 	Path             string `json:"path,omitempty"`
 	Asset            string `json:"asset,omitempty"`
 	URL              string `json:"url,omitempty"`
 	Command          string `json:"command,omitempty"`
-	DryRun           bool   `json:"dryRun,omitempty"`
-	ChecksumVerified bool   `json:"checksumVerified,omitempty"`
+	Hint             string `json:"hint,omitempty"`
+	DryRun           bool   `json:"dry_run,omitempty"`
+	ChecksumVerified bool   `json:"checksum_verified,omitempty"`
 }
 
 type updateHTTPError struct {
@@ -121,7 +123,6 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	available := updateAvailable(currentVersion, targetVersion, targetFlag != "")
 
 	result := updateResult{
-		OK:              true,
 		Status:          "up_to_date",
 		Message:         "kibana-cli is already up to date",
 		CurrentVersion:  version,
@@ -168,17 +169,15 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	}
 	result.Asset = assetName
 	updatePreview := map[string]any{
-		"path":           installPath,
-		"currentVersion": version,
-		"targetVersion":  targetVersion,
-		"asset":          assetName,
+		"path":            installPath,
+		"current_version": version,
+		"target_version":  targetVersion,
+		"asset":           assetName,
 	}
-	if dryRun {
-		result.DryRun = true
-		skipped, err := writePlan("update binary", updatePreview, nil)
-		if err != nil || skipped {
-			return err
-		}
+	result.DryRun = dryRun
+	skipped, err := writePlan("update binary", updatePreview, nil)
+	if err != nil || skipped {
+		return err
 	}
 	asset, ok := findReleaseAsset(release.Assets, assetName)
 	if !ok {
@@ -208,17 +207,15 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return failValidation(err.Error())
 	}
-	skipped, err := writePlan("update binary", updatePreview, nil)
-	if err != nil || skipped {
-		return err
-	}
-	markWrite(cmd)
 	if err := updateReplaceBinary(installPath, binaryData); err != nil {
 		return failConfig("failed to replace executable: " + err.Error())
 	}
 
 	result.Status = "updated"
 	result.Message = fmt.Sprintf("updated kibana-cli from %s to %s", version, targetVersion)
+	result.PreviousVersion = version
+	result.CurrentVersion = targetVersion
+	result.Hint = fmt.Sprintf("run \"kibana-cli changelog --since %s\" before continuing", normalizeReleaseVersion(result.PreviousVersion))
 	result.ChecksumVerified = true
 	printUpdateResult(result)
 	return nil
@@ -323,6 +320,9 @@ func printUpdateResult(result updateResult) {
 	}
 	if result.Command != "" {
 		output.Gray("  " + result.Command)
+	}
+	if result.Hint != "" {
+		output.Gray("  " + result.Hint)
 	}
 	if result.URL != "" {
 		output.Gray("  " + result.URL)

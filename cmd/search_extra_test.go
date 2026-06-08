@@ -214,6 +214,34 @@ func TestSearch_Profile_TimeField_Fields(t *testing.T) {
 	}
 }
 
+func TestSearch_LimitOffsetJSON(t *testing.T) {
+	srv := newMockKibanaServerWith(mockKibanaOptions{SearchTotalGte: true})
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, searchExtraFieldMap)
+	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
+		"search", "--index", "logs-*", "--limit", "1", "--offset", "2", "--json",
+	})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["limit"] != float64(1) || data["offset"] != float64(2) || data["has_more"] != true {
+		t.Fatalf("unexpected page metadata: %s", out)
+	}
+	if data["next_offset"] != float64(3) {
+		t.Fatalf("missing next_offset: %s", out)
+	}
+}
+
+func TestSearch_InvalidOffset(t *testing.T) {
+	setupTestHome(t)
+	_, code := runCLI(t, []string{"search", "--index", "logs-*", "--offset", "-1", "--json"})
+	if code != ExitBadArgs {
+		t.Fatalf("got exit %d", code)
+	}
+}
+
 func TestSearch_DataView_Mock(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()

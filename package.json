@@ -34,10 +34,15 @@
     "scripts/install.js",
     "scripts/run.js",
     "skills/",
+    "AGENTS.md",
+    "README_zh.md",
     "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
+    "NOTICE.md",
     "SECURITY.md",
-    "docs/COMPATIBILITY.md"
+    "docs/COMPATIBILITY.md",
+    "docs/E2E.md"
   ],
   "os": ["darwin", "linux", "win32"],
   "cpu": ["x64", "arm64"],

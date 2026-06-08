@@ -35,13 +35,13 @@ const (
 	ErrAuth            ErrorCode = "E_AUTH"
 	ErrForbidden       ErrorCode = "E_FORBIDDEN"
 	ErrNotFound        ErrorCode = "E_NOT_FOUND"
-	ErrRateLimit       ErrorCode = "E_RATE_LIMIT"
+	ErrRateLimit       ErrorCode = "E_RATE_LIMITED"
 	ErrServer          ErrorCode = "E_SERVER"
 	ErrValidation      ErrorCode = "E_VALIDATION"
 	ErrNetwork         ErrorCode = "E_NETWORK"
 	ErrTimeout         ErrorCode = "E_TIMEOUT"
-	ErrConfirmRequired ErrorCode = "E_CONFIRM_REQUIRED"
-	ErrConflict        ErrorCode = "E_PRECONDITION_CONFLICT"
+	ErrConfirmRequired ErrorCode = "E_CONFIRMATION_REQUIRED"
+	ErrConflict        ErrorCode = "E_CONFLICT"
 	ErrUnknown         ErrorCode = "E_UNKNOWN"
 )
 

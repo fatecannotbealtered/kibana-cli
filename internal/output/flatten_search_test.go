@@ -147,3 +147,47 @@ func TestFlattenSearchHits_traceEnrichment(t *testing.T) {
 		})
 	}
 }
+
+func TestFlattenSearchHits_untrustedMarkers(t *testing.T) {
+	hits := []kibanaclient.SearchHit{{
+		Index: "logs-1",
+		ID:    "1",
+		Source: map[string]any{
+			"@timestamp": "2026-06-08T00:00:00Z",
+			"msg":        "[aabbccdd00112233445566778899aabb, 00cfa11a2dfa446a920d59a76aa56df1] hello",
+			"level":      "INFO",
+		},
+	}}
+	out := FlattenSearchHits(hits, []string{"msg", "traceId"})
+	if len(out) != 1 {
+		t.Fatal("missing hit")
+	}
+	tags, ok := out[0]["_untrusted"].([]string)
+	if !ok || len(tags) == 0 {
+		t.Fatalf("missing _untrusted tags: %#v", out[0])
+	}
+	if _, ok := out[0]["traceId"].(string); !ok {
+		t.Fatalf("expected traceId enrichment: %#v", out[0])
+	}
+}
+
+func TestFlattenSearchHits_InjectedTraceRemainsUntrusted(t *testing.T) {
+	hits := []kibanaclient.SearchHit{{
+		Index: "logs-1",
+		ID:    "1",
+		Source: map[string]any{
+			"msg": bracketMsg,
+		},
+	}}
+	out := FlattenSearchHits(hits, []string{"msg"})
+	tags, ok := out[0]["_untrusted"].([]string)
+	if !ok {
+		t.Fatalf("missing _untrusted tags: %#v", out[0])
+	}
+	for _, tag := range tags {
+		if tag == "traceId" {
+			return
+		}
+	}
+	t.Fatalf("injected traceId must remain untrusted: %#v", out[0])
+}

@@ -111,8 +111,8 @@ func TestConfig_Init_MkdirError(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth, got %d", code)
 	}
 }
 
@@ -127,8 +127,8 @@ func TestConfig_Init_WriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth, got %d", code)
 	}
 }
 

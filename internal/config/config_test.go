@@ -43,7 +43,7 @@ func overrideHome(t *testing.T) func() {
 func TestSaveAndLoadBasic(t *testing.T) {
 	defer overrideHome(t)()
 	want := &Config{Host: "https://kibana.example.com", Username: "ops", Password: "secret"}
-	if err := Save(want, SaveOptions{Plaintext: true}); err != nil {
+	if err := Save(want, SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := Load()
@@ -57,7 +57,7 @@ func TestSaveAndLoadBasic(t *testing.T) {
 
 func TestLoadRejectsPartialEnvAuth(t *testing.T) {
 	defer overrideHome(t)()
-	if err := Save(&Config{Host: "https://file.example.com", Username: "fileuser", Password: "filepass"}, SaveOptions{Plaintext: true}); err != nil {
+	if err := Save(&Config{Host: "https://file.example.com", Username: "fileuser", Password: "filepass"}, SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
@@ -87,7 +87,7 @@ func TestLoadRejectsPartialEnvAuth(t *testing.T) {
 
 func TestEnvCLIOverridesFile(t *testing.T) {
 	defer overrideHome(t)()
-	_ = Save(&Config{Host: "https://file.example.com", Username: "a", Password: "p"}, SaveOptions{Plaintext: true})
+	_ = Save(&Config{Host: "https://file.example.com", Username: "a", Password: "p"}, SaveOptions{})
 	_ = os.Setenv("KIBANA_CLI_HOST", "https://cli.example.com")
 	_ = os.Setenv("KIBANA_CLI_USER", "env")
 	_ = os.Setenv("KIBANA_CLI_PASSWORD", "envpass")
@@ -121,7 +121,7 @@ func TestMustLoadValidation(t *testing.T) {
 	if _, err := MustLoad(); err == nil {
 		t.Fatal("expected error")
 	}
-	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
 	if _, err := MustLoad(); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestMustLoadValidation(t *testing.T) {
 
 func TestSaveCreatesDirMode(t *testing.T) {
 	defer overrideHome(t)()
-	if err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{Plaintext: true}); err != nil {
+	if err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.GOOS == "windows" {
@@ -156,7 +156,7 @@ func TestIsConfigured(t *testing.T) {
 	if IsConfigured() {
 		t.Fatal("expected false")
 	}
-	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
 	if !IsConfigured() {
 		t.Fatal("expected true")
 	}
@@ -319,7 +319,7 @@ func TestSaveMkdirFailsWhenHomeIsFile(t *testing.T) {
 		}
 	}()
 	keyring.MockInit()
-	err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
 	if err == nil || !strings.Contains(err.Error(), "creating config dir") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestSaveWriteFailsWhenConfigPathIsDirectory(t *testing.T) {
 	if err := os.Mkdir(FilePath(), 0700); err != nil {
 		t.Fatal(err)
 	}
-	err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
 	if err == nil || !strings.Contains(err.Error(), "writing config") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -410,9 +410,6 @@ func TestCredentialStoreLabel(t *testing.T) {
 	if CredentialStoreLabel(&Config{CredentialStore: CredentialStoreKeyring}) != CredentialStoreKeyring {
 		t.Fatal("expected keyring")
 	}
-	if CredentialStoreLabel(&Config{Password: "x"}) != CredentialStoreFile {
-		t.Fatal("expected file")
-	}
 	if CredentialStoreLabel(&Config{}) != "" {
 		t.Fatal("expected empty")
 	}
@@ -426,7 +423,9 @@ func TestAuthMode(t *testing.T) {
 
 func TestAuthSourceFileAndKeyring(t *testing.T) {
 	defer overrideHome(t)()
-	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	if err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u"}); err != nil {
+		t.Fatal(err)
+	}
 	if AuthSource() != "file" {
 		t.Fatalf("file: got %s", AuthSource())
 	}
@@ -451,23 +450,36 @@ func TestMustLoadErrors(t *testing.T) {
 		t.Fatal("expected load error")
 	}
 	_ = os.Unsetenv("KIBANA_CLI_USER")
-	_ = Save(&Config{Host: "https://kibana.example.com/", Username: " ", Password: "p"}, SaveOptions{Plaintext: true})
+	_ = Save(&Config{Host: "https://kibana.example.com/", Username: " ", Password: "p"}, SaveOptions{})
 	if _, err := MustLoad(); err == nil {
 		t.Fatal("expected empty username error")
 	}
-	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: ""}, SaveOptions{Plaintext: true})
+	if err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := MustLoad(); err == nil {
 		t.Fatal("expected empty password error")
 	}
-	_ = Save(&Config{Host: "not-a-url", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	_ = Save(&Config{Host: "not-a-url", Username: "u", Password: "p"}, SaveOptions{})
 	if _, err := MustLoad(); err == nil {
 		t.Fatal("expected host validation error")
 	}
 }
 
+func TestLoadRejectsPlaintextPasswordInConfig(t *testing.T) {
+	defer overrideHome(t)()
+	if err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u", Password: "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "plaintext password") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestMustLoadTrimsHostSlash(t *testing.T) {
 	defer overrideHome(t)()
-	_ = Save(&Config{Host: "https://kibana.example.com/", Username: "u", Password: "p"}, SaveOptions{Plaintext: true})
+	_ = Save(&Config{Host: "https://kibana.example.com/", Username: "u", Password: "p"}, SaveOptions{})
 	got, err := MustLoad()
 	if err != nil {
 		t.Fatal(err)

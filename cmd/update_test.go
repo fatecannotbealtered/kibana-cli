@@ -33,8 +33,8 @@ func TestUpdate_CheckUpToDate_JSON(t *testing.T) {
 	if !strings.Contains(j, `"status":"up_to_date"`) && !strings.Contains(j, `"status": "up_to_date"`) {
 		t.Fatalf("unexpected: %s", j)
 	}
-	if !strings.Contains(j, `"updateAvailable":false`) && !strings.Contains(j, `"updateAvailable": false`) {
-		t.Fatalf("expected updateAvailable=false: %s", j)
+	if !strings.Contains(j, `"update_available":false`) && !strings.Contains(j, `"update_available": false`) {
+		t.Fatalf("expected update_available=false: %s", j)
 	}
 }
 
@@ -52,7 +52,7 @@ func TestUpdate_CheckAvailable_JSON(t *testing.T) {
 	if !strings.Contains(j, `"status":"update_available"`) && !strings.Contains(j, `"status": "update_available"`) {
 		t.Fatalf("unexpected: %s", j)
 	}
-	if !strings.Contains(j, `"targetVersion":"1.1.1"`) && !strings.Contains(j, `"targetVersion": "1.1.1"`) {
+	if !strings.Contains(j, `"target_version":"1.1.1"`) && !strings.Contains(j, `"target_version": "1.1.1"`) {
 		t.Fatalf("expected target version: %s", j)
 	}
 }
@@ -95,7 +95,7 @@ func TestUpdate_GoInstallUsesPackageManager(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	j := lastJSONLine(out)
-	if !strings.Contains(j, `"installMethod":"go"`) && !strings.Contains(j, `"installMethod": "go"`) {
+	if !strings.Contains(j, `"install_method":"go"`) && !strings.Contains(j, `"install_method": "go"`) {
 		t.Fatalf("expected go install method: %s", j)
 	}
 	if !strings.Contains(j, `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.1`) {
@@ -120,6 +120,23 @@ func TestUpdate_DryRunStandaloneBinary(t *testing.T) {
 	}
 	if !strings.Contains(j, `kibana-cli-1.1.1-linux-amd64.tar.gz`) {
 		t.Fatalf("missing planned asset: %s", j)
+	}
+}
+
+func TestUpdate_StandaloneRequiresConfirmBeforeDownload(t *testing.T) {
+	home := setupTestHome(t)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
+	defer srv.Close()
+	exe := filepath.Join(home, "bin", "kibana-cli")
+	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
+
+	out, code := runCLI(t, []string{"update", "--json"})
+	if code != ExitConfirmRequired {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if !strings.Contains(lastJSONLine(out), `"code":"E_CONFIRMATION_REQUIRED"`) &&
+		!strings.Contains(lastJSONLine(out), `"code": "E_CONFIRMATION_REQUIRED"`) {
+		t.Fatalf("expected confirmation envelope: %s", out)
 	}
 }
 
@@ -177,9 +194,17 @@ func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 	if string(data) != "new-binary" {
 		t.Fatalf("binary not replaced: %q", data)
 	}
-	if !strings.Contains(lastJSONLine(out), `"checksumVerified":true`) &&
-		!strings.Contains(lastJSONLine(out), `"checksumVerified": true`) {
-		t.Fatalf("expected checksumVerified: %s", out)
+	if !strings.Contains(lastJSONLine(out), `"checksum_verified":true`) &&
+		!strings.Contains(lastJSONLine(out), `"checksum_verified": true`) {
+		t.Fatalf("expected checksum_verified: %s", out)
+	}
+	dataMap := envelopeData(t, out)
+	if dataMap["previous_version"] != "1.1.0" || dataMap["current_version"] != "1.1.1" {
+		t.Fatalf("unexpected update versions: %s", out)
+	}
+	hint, _ := dataMap["hint"].(string)
+	if !strings.Contains(hint, "changelog --since 1.1.0") {
+		t.Fatalf("missing changelog hint: %s", out)
 	}
 }
 
@@ -229,7 +254,7 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 		withUpdateHooks(t, srv.URL, "", "linux", "amd64")
 		updateExecutablePath = func() (string, error) { return "", nil }
 		out, code := runCLI(t, []string{"update", "--json"})
-		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "could not determine current executable path") {
+		if code != ExitAuth || !strings.Contains(lastJSONLine(out), "could not determine current executable path") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
 	})
@@ -261,7 +286,7 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runCLI(t, []string{"update", "--json"})
+		out, code := runConfirmedCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "checksum verification failed") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -281,7 +306,7 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runCLI(t, []string{"update", "--json"})
+		out, code := runConfirmedCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "not found in release archive") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -303,7 +328,7 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
 		out, code := runConfirmedCLI(t, []string{"update", "--json"})
-		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "replace denied") {
+		if code != ExitAuth || !strings.Contains(lastJSONLine(out), "replace denied") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
 	})
@@ -319,7 +344,7 @@ func TestUpdate_AssetDownloadHTTPError(t *testing.T) {
 	srv := newUpdateReleaseServerWithBrokenDownload(t, "v1.1.1", assetName)
 	defer srv.Close()
 	updateGitHubAPIBase = srv.URL
-	out, code := runCLI(t, []string{"update", "--json"})
+	out, code := runConfirmedCLI(t, []string{"update", "--json"})
 	j := lastJSONLine(out)
 	if code != ExitNotFound || (!strings.Contains(j, `"statusCode":404`) && !strings.Contains(j, `"statusCode": 404`)) {
 		t.Fatalf("exit %d out=%s", code, out)

@@ -26,6 +26,9 @@ func TestOutputFormat_DefaultJSONWithoutJsonFlag(t *testing.T) {
 	if payload["ok"] != true || data["hits"] == nil {
 		t.Fatalf("unexpected payload: %s", out)
 	}
+	if _, ok := data["ok"]; ok {
+		t.Fatalf("business data must not duplicate envelope ok: %s", out)
+	}
 }
 
 func TestOutputFormat_CompactJSON(t *testing.T) {
@@ -52,7 +55,7 @@ func TestOutputFormat_QuietDoesNotSuppressDefaultJSON(t *testing.T) {
 	t.Setenv("KIBANA_CLI_PASSWORD", "")
 
 	out, code := runCLI(t, []string{"context", "--quiet"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	var payload map[string]any

@@ -78,6 +78,9 @@ func Load() (*Config, error) {
 		if jsonErr := json.Unmarshal(data, cfg); jsonErr != nil {
 			return nil, fmt.Errorf("parsing config %s: %w", FilePath(), jsonErr)
 		}
+		if cfg.Password != "" {
+			return nil, fmt.Errorf("plaintext password in %s is not supported; run kibana-cli auth login or use KIBANA_CLI_PASSWORD", FilePath())
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
@@ -97,24 +100,18 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// SaveOptions controls credential persistence.
-type SaveOptions struct {
-	Plaintext bool
-}
+// SaveOptions is reserved for future non-secret persistence options.
+type SaveOptions struct{}
 
 // Save persists configuration (keyring by default).
-func Save(cfg *Config, opts SaveOptions) error {
-	store := CredentialStoreFile
-	if !opts.Plaintext {
-		if !KeyringAvailable() {
-			return errors.New("OS credential store unavailable; use environment variables or --plaintext")
-		}
-		if err := saveSecretToKeyring(cfg); err != nil {
-			return fmt.Errorf("saving to OS credential store: %w", err)
-		}
-		store = CredentialStoreKeyring
+func Save(cfg *Config, _ SaveOptions) error {
+	if !KeyringAvailable() {
+		return errors.New("OS credential store unavailable; use environment variables or configure the OS credential store")
 	}
-	disk := cfg.onDiskCopy(store)
+	if err := saveSecretToKeyring(cfg); err != nil {
+		return fmt.Errorf("saving to OS credential store: %w", err)
+	}
+	disk := cfg.onDiskCopy()
 	if err := writeConfigFile(disk); err != nil {
 		return err
 	}
@@ -209,9 +206,6 @@ func CredentialStoreLabel(cfg *Config) string {
 	}
 	if cfg.usesKeyringStore() {
 		return CredentialStoreKeyring
-	}
-	if cfg.Password != "" {
-		return CredentialStoreFile
 	}
 	return ""
 }

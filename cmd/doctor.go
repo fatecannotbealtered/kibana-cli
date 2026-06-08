@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -22,6 +23,10 @@ func init() {
 
 type doctorResult struct {
 	AgentStatus
+	Tool            string        `json:"tool"`
+	Version         string        `json:"version"`
+	SkillMinVersion string        `json:"skillMinVersion"`
+	SecurityTier    string        `json:"securityTier"`
 	Checks          []doctorCheck `json:"checks"`
 	ConfigExists    bool          `json:"configExists"`
 	AuthValid       bool          `json:"authValid"`
@@ -45,6 +50,10 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	out, _ := runBootstrapCheck()
 	result := &doctorResult{
 		AgentStatus:     out.AgentStatus,
+		Tool:            toolName,
+		Version:         version,
+		SkillMinVersion: skillMinVersion,
+		SecurityTier:    securityTier,
 		ConfigExists:    out.ConfigExists,
 		AuthValid:       out.AuthValid,
 		LatencyMs:       out.LatencyMs,
@@ -67,6 +76,16 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 }
 
 func buildDoctorChecks(result *doctorResult) []doctorCheck {
+	versionCheck := doctorCheck{Check: "version", Status: "pass"}
+	if !versionMeetsMin(result.Version, result.SkillMinVersion) {
+		versionCheck.Status = "fail"
+		versionCheck.Fix = "upgrade kibana-cli to " + result.SkillMinVersion + " or newer"
+	}
+	securityCheck := doctorCheck{Check: "security_tier", Status: "pass"}
+	if result.SecurityTier == "" {
+		securityCheck.Status = "fail"
+		securityCheck.Fix = "set the tool security tier in reference and SECURITY.md"
+	}
 	configCheck := doctorCheck{Check: "config", Status: "pass"}
 	if !result.ConfigExists {
 		configCheck.Status = "fail"
@@ -82,7 +101,19 @@ func buildDoctorChecks(result *doctorResult) []doctorCheck {
 		searchCheck.Status = "fail"
 		searchCheck.Fix = "check index read privileges and Console Proxy availability"
 	}
-	return []doctorCheck{configCheck, authCheck, searchCheck}
+	return []doctorCheck{versionCheck, securityCheck, configCheck, authCheck, searchCheck}
+}
+
+func versionMeetsMin(current, min string) bool {
+	current = normalizeReleaseVersion(current)
+	min = normalizeReleaseVersion(min)
+	if current == "" || min == "" {
+		return false
+	}
+	if strings.EqualFold(current, "dev") {
+		return true
+	}
+	return compareVersions(current, min) >= 0
 }
 
 func printDoctor(result *doctorResult) {
@@ -102,6 +133,10 @@ func printDoctor(result *doctorResult) {
 			"errorCode": result.ErrorCode,
 			"checks":    result.Checks,
 			"diagnostics": map[string]any{
+				"tool":            result.Tool,
+				"version":         result.Version,
+				"skillMinVersion": result.SkillMinVersion,
+				"securityTier":    result.SecurityTier,
 				"configExists":    result.ConfigExists,
 				"authValid":       result.AuthValid,
 				"latencyMs":       result.LatencyMs,

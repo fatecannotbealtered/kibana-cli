@@ -25,7 +25,7 @@ func TestRunBootstrapCheck_PartialEnv(t *testing.T) {
 	if out.Status != AgentStatusConfigError {
 		t.Fatalf("status=%s", out.Status)
 	}
-	if lastExit != ExitBadArgs || out.ConfigError == "" {
+	if lastExit != ExitAuth || out.ConfigError == "" {
 		t.Fatalf("exit=%d configError=%q", lastExit, out.ConfigError)
 	}
 }
@@ -46,7 +46,7 @@ func TestRunBootstrapCheck_NotConfigured(t *testing.T) {
 	if out.Status != AgentStatusNotConfigured {
 		t.Fatalf("status=%s", out.Status)
 	}
-	if lastExit != ExitBadArgs {
+	if lastExit != ExitAuth {
 		t.Fatalf("exit=%d", lastExit)
 	}
 }
@@ -72,7 +72,7 @@ func TestRunBootstrapCheck_InvalidConfigFile(t *testing.T) {
 	if out.Status != AgentStatusConfigError {
 		t.Fatalf("status=%s msg=%s", out.Status, out.Message)
 	}
-	if lastExit != ExitBadArgs {
+	if lastExit != ExitAuth {
 		t.Fatalf("exit=%d", lastExit)
 	}
 }
@@ -220,7 +220,7 @@ func TestDoctor_TextMode_NotConfigured(t *testing.T) {
 	setupTestHome(t)
 	t.Setenv("KIBANA_CLI_HOST", "")
 	out, code := runCLI(t, []string{"doctor", "--format", "text"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d", code)
 	}
 	if !strings.Contains(out, "Doctor") {

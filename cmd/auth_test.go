@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,25 +21,6 @@ func TestAuth_Help_ListsSubcommands(t *testing.T) {
 	}
 }
 
-func TestReadPasswordPair_ReaderFallback(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = orig }()
-	go func() {
-		_, _ = io.WriteString(w, "from-reader\n")
-		_ = w.Close()
-	}()
-	reader := bufio.NewReader(r)
-	user, pass := readPasswordPair(reader, "ops")
-	if user != "ops" || pass != "from-reader" {
-		t.Fatalf("user=%q pass=%q", user, pass)
-	}
-}
-
 func TestAuth_Login_DryRun_JSON(t *testing.T) {
 	out, code := runCLI(t, []string{
 		"auth", "login",
@@ -55,6 +34,23 @@ func TestAuth_Login_DryRun_JSON(t *testing.T) {
 	}
 	if !strings.Contains(out, `"confirm_token"`) || !strings.Contains(out, `"preview"`) {
 		t.Fatalf("expected confirm-token dry-run json: %s", out)
+	}
+}
+
+func TestAuth_Login_DryRun_EnvFallback(t *testing.T) {
+	t.Setenv("KIBANA_CLI_HOST", "https://kibana.example.com")
+	t.Setenv("KIBANA_CLI_USER", "ops")
+	t.Setenv("KIBANA_CLI_PASSWORD", "secret")
+	out, code := runCLI(t, []string{"auth", "login", "--dry-run", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	preview := data["preview"].(map[string]any)
+	changes := preview["changes"].([]any)
+	change := changes[0].(map[string]any)
+	if change["host"] != "https://kibana.example.com" || change["username"] != "ops" {
+		t.Fatalf("env fallback not in preview: %s", out)
 	}
 }
 
@@ -96,9 +92,6 @@ func TestAuth_Login_Success_JSON_Keyring(t *testing.T) {
 		t.Fatalf("json: %v line=%s", err, j)
 	}
 	data := envelopeData(t, out)
-	if data["ok"] != true {
-		t.Fatalf("ok=%v in %s", data["ok"], j)
-	}
 	if data["username"] != "agent" {
 		t.Fatalf("username=%v in %s", data["username"], j)
 	}
@@ -134,55 +127,6 @@ func TestAuth_Login_Success_Text_Keyring(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in: %s", want, out)
 		}
-	}
-}
-
-func TestAuth_Login_Success_Plaintext_JSON(t *testing.T) {
-	keyring.MockInit()
-	srv := newMockKibanaServer()
-	defer srv.Close()
-	home := setupTestHome(t)
-	out, code := runConfirmedCLI(t, []string{
-		"auth", "login",
-		"--host", srv.URL,
-		"--user", "ops",
-		"--password", "secret",
-		"--plaintext", "--json",
-	})
-	if code != ExitOK {
-		t.Fatalf("exit %d: %s", code, out)
-	}
-	j := lastJSONLine(out)
-	if !strings.Contains(j, `"credentialStore":"file"`) && !strings.Contains(j, `"credentialStore": "file"`) {
-		t.Fatalf("expected file store: %s", j)
-	}
-	raw, err := os.ReadFile(filepath.Join(home, ".kibana-cli", "config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), "secret") {
-		t.Fatal("plaintext login should persist password in config.json")
-	}
-}
-
-func TestAuth_Login_Success_Text_PlaintextWarn(t *testing.T) {
-	keyring.MockInit()
-	srv := newMockKibanaServer()
-	defer srv.Close()
-	setupTestHome(t)
-	out, code := runConfirmedCLI(t, []string{
-		"auth", "login",
-		"--host", srv.URL,
-		"--user", "ops",
-		"--password", "secret",
-		"--plaintext",
-		"--format", "text",
-	})
-	if code != ExitOK {
-		t.Fatalf("exit %d: %s", code, out)
-	}
-	if !strings.Contains(out, "plaintext config.json") {
-		t.Fatalf("expected plaintext warning: %s", out)
 	}
 }
 
@@ -264,7 +208,7 @@ func TestAuth_Login_KeyringUnavailable(t *testing.T) {
 		"--password", "secret",
 		"--json",
 	})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d want config error: %s", code, out)
 	}
 	if !strings.Contains(out, "credential store") && !strings.Contains(out, "OS credential") {
@@ -381,8 +325,8 @@ func TestAuth_Logout_DeleteError(t *testing.T) {
 	deleteConfigHook = func() error { return errors.New("delete blocked") }
 	defer func() { deleteConfigHook = nil }()
 	_, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs on delete error, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth on delete error, got %d", code)
 	}
 }
 
@@ -399,8 +343,8 @@ func TestAuth_Logout_DeleteError_UnixPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code := runConfirmedCLI(t, []string{"auth", "logout", "--json"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs on delete error, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth on delete error, got %d", code)
 	}
 }
 
@@ -410,8 +354,8 @@ func TestAuth_Status_NoConfig_JSON(t *testing.T) {
 	t.Setenv("KIBANA_CLI_USER", "")
 	t.Setenv("KIBANA_CLI_PASSWORD", "")
 	_, code := runCLI(t, []string{"auth", "status", "--json"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth, got %d", code)
 	}
 }
 
@@ -421,8 +365,8 @@ func TestAuth_Status_NoConfig_Text(t *testing.T) {
 	t.Setenv("KIBANA_CLI_USER", "")
 	t.Setenv("KIBANA_CLI_PASSWORD", "")
 	_, code := runCLI(t, []string{"auth", "status", "--format", "text"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth, got %d", code)
 	}
 }
 
@@ -436,8 +380,8 @@ func TestAuth_Status_LoadError(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code := runCLI(t, []string{"auth", "status", "--json"})
-	if code != ExitBadArgs {
-		t.Fatalf("expected ExitBadArgs, got %d", code)
+	if code != ExitAuth {
+		t.Fatalf("expected ExitAuth, got %d", code)
 	}
 }
 
@@ -458,17 +402,16 @@ func TestAuth_Status_Configured_JSON_Env(t *testing.T) {
 	}
 }
 
-func TestAuth_Status_Configured_Text_File(t *testing.T) {
+func TestAuth_Status_Configured_Text_Keyring(t *testing.T) {
 	keyring.MockInit()
 	srv := newMockKibanaServer()
 	defer srv.Close()
-	home := setupTestHome(t)
+	setupTestHome(t)
 	_, code := runConfirmedCLI(t, []string{
 		"auth", "login",
 		"--host", srv.URL,
 		"--user", "ops",
 		"--password", "secret",
-		"--plaintext",
 		"--format", "text",
 	})
 	if code != ExitOK {
@@ -484,5 +427,4 @@ func TestAuth_Status_Configured_Text_File(t *testing.T) {
 	if !strings.Contains(out, "Configured") {
 		t.Fatalf("expected configured status: %s", out)
 	}
-	_ = home
 }

@@ -47,7 +47,7 @@ func Log(cmdPath string, args []string, exitCode int, durationMs int64) {
 	}
 	maybeCleanup(dir)
 	e := entry{
-		Ts:   time.Now().Format(time.RFC3339Nano),
+		Ts:   time.Now().UTC().Format(time.RFC3339Nano),
 		Cmd:  cmdPath,
 		Args: sanitizeArgs(args),
 		Exit: exitCode,

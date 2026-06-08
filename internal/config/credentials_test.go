@@ -59,10 +59,10 @@ func TestDeleteKeyringSecrets(t *testing.T) {
 	}
 }
 
-func TestOnDiskCopyFileStore(t *testing.T) {
+func TestOnDiskCopyKeyringStore(t *testing.T) {
 	in := &Config{Host: "https://kibana.example.com", Username: "u", Password: "p", KibanaVersion: "8.0"}
-	out := in.onDiskCopy(CredentialStoreFile)
-	if out.Password != "p" || out.CredentialKind != "" {
-		t.Fatalf("file copy: %+v", out)
+	out := in.onDiskCopy()
+	if out.Password != "" || out.CredentialKind != "basic" || out.CredentialStore != CredentialStoreKeyring {
+		t.Fatalf("disk copy: %+v", out)
 	}
 }

@@ -25,10 +25,10 @@ func TestAgentContract_NotConfigured(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if exitCode != ExitBadArgs {
-		t.Fatalf("exit %d want %d: %s", exitCode, ExitBadArgs, out)
+	if exitCode != ExitAuth {
+		t.Fatalf("exit %d want %d: %s", exitCode, ExitAuth, out)
 	}
-	assertAgentJSON(t, string(out), false, AgentStatusNotConfigured, ExitBadArgs)
+	assertAgentJSON(t, string(out), false, AgentStatusNotConfigured, ExitAuth)
 }
 
 func filteredEnv(home string, overrides map[string]string) []string {

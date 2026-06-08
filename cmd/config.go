@@ -51,7 +51,7 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 		return failConfig(err.Error())
 	}
 	if jsonMode {
-		printJSONSuccess(map[string]any{"ok": true, "status": "ok", "path": path})
+		printJSONSuccess(map[string]any{"status": "ok", "path": path})
 		return nil
 	}
 	output.Success("Created " + path)
@@ -91,7 +91,7 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		return ErrSilent
 	}
 	if jsonMode {
-		printJSONSuccess(map[string]any{"ok": true, "path": fieldmap.FilePath(), "fieldMap": m})
+		printJSONSuccess(map[string]any{"path": fieldmap.FilePath(), "fieldMap": m})
 		return nil
 	}
 	fmt.Println()

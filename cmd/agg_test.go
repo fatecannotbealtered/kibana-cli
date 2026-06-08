@@ -41,12 +41,34 @@ func TestPrintAggResult_Table(t *testing.T) {
 			Total:   10,
 			TookMs:  3,
 			Buckets: []kibanaclient.AggBucket{{Key: "ERROR", Count: 2}},
-		}); err != nil {
+		}, nil, 10); err != nil {
 			t.Fatal(err)
 		}
 	})
 	if !strings.Contains(out, "KEY") || !strings.Contains(out, "ERROR") {
 		t.Fatalf("table output: %q", out)
+	}
+}
+
+func TestAgg_JSONFieldsProjection(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	out, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--fields", "field,total", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["field"] == nil || data["total"] == nil || data["buckets"] != nil {
+		t.Fatalf("unexpected projection: %s", out)
+	}
+	if _, ok := data["_untrusted"]; ok {
+		t.Fatalf("unexpected _untrusted marker for omitted buckets: %s", out)
 	}
 }
 
@@ -84,6 +106,10 @@ func TestAgg_ProfileServiceTerms(t *testing.T) {
 	if !strings.Contains(lastJSONLine(out), `"buckets"`) {
 		t.Fatalf("unexpected: %s", out)
 	}
+	data := envelopeData(t, out)
+	if _, ok := data["_untrusted"]; !ok {
+		t.Fatalf("missing _untrusted marker: %s", out)
+	}
 }
 
 func TestAgg_DryRun(t *testing.T) {
@@ -99,7 +125,7 @@ func TestAgg_DryRun(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, `"dryRun"`) {
+	if !strings.Contains(out, `"dry_run"`) {
 		t.Fatalf("expected dry-run: %s", out)
 	}
 }
@@ -130,6 +156,25 @@ func TestAgg_BucketsTooLow(t *testing.T) {
 	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--buckets", "0", "--json"})
 	if code != ExitBadArgs {
 		t.Fatalf("got exit %d", code)
+	}
+}
+
+func TestAgg_LimitFlag(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	out, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--limit", "5", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["limit"] != float64(5) {
+		t.Fatalf("limit not reported: %s", out)
 	}
 }
 

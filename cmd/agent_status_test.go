@@ -15,7 +15,7 @@ func TestAgentReady(t *testing.T) {
 
 func TestAgentNotConfiguredExitCode(t *testing.T) {
 	st := agentNotConfigured()
-	if st.ExitCode != ExitBadArgs || st.ErrorCode != output.ErrConfig {
+	if st.ExitCode != ExitAuth || st.ErrorCode != output.ErrConfig {
 		t.Fatalf("%+v", st)
 	}
 }

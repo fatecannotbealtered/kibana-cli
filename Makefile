@@ -2,7 +2,7 @@ BINARY_NAME := kibana-cli
 MODULE      := github.com/fatecannotbealtered/kibana-cli
 CMD_PATH    := ./cmd/kibana-cli
 BIN_DIR     := bin
-VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "1.0.1")
+VERSION     ?= $(shell node -p "require('./package.json').version" 2>/dev/null || echo "1.1.0")
 LDFLAGS     := -s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=$(VERSION)
 
 .PHONY: build test test-all coverage vet fmt clean check-clean help

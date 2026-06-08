@@ -41,7 +41,7 @@ func TestFailConfig(t *testing.T) {
 	resetCLIState(t)
 	jsonMode = true
 	err := failConfig("invalid config file")
-	if !errors.Is(err, ErrSilent) || lastExit != ExitBadArgs {
+	if !errors.Is(err, ErrSilent) || lastExit != ExitAuth {
 		t.Fatalf("err=%v exit=%d", err, lastExit)
 	}
 }
@@ -117,7 +117,7 @@ func TestNewKibanaClient_PartialEnv(t *testing.T) {
 	_, code := runCLIWithEnv(t, map[string]string{
 		"KIBANA_CLI_HOST": "http://example.com",
 	}, []string{"patterns", "list", "--json"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d want partial-env config error", code)
 	}
 }

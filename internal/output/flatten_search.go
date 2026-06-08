@@ -20,6 +20,7 @@ func FlattenSearchHits(hits []kibanaclient.SearchHit, fields []string) []map[str
 			m[k] = v
 		}
 		enrichTraceFromMsg(m)
+		m["_untrusted"] = untrustedFields(m)
 		if len(fields) > 0 {
 			m = filterSearchHit(m, fields)
 		}
@@ -30,13 +31,36 @@ func FlattenSearchHits(hits []kibanaclient.SearchHit, fields []string) []map[str
 
 func filterSearchHit(m map[string]any, fields []string) map[string]any {
 	out := FilterMap(m, fields)
-	if _, ok := out["traceId"]; ok {
-		return out
+	if _, ok := out["traceId"]; !ok {
+		if tid, ok := m["traceId"].(string); ok && tid != "" {
+			out["traceId"] = tid
+			if sid, ok := m["spanId"].(string); ok {
+				out["spanId"] = sid
+			}
+		}
 	}
-	if tid, ok := m["traceId"].(string); ok && tid != "" {
-		out["traceId"] = tid
-		if sid, ok := m["spanId"].(string); ok {
-			out["spanId"] = sid
+	if tags, ok := m["_untrusted"].([]string); ok && len(tags) > 0 {
+		out["_untrusted"] = filterUntrustedTags(out, tags)
+	}
+	return out
+}
+
+func untrustedFields(m map[string]any) []string {
+	var fields []string
+	for key := range m {
+		if key == "_untrusted" || key == "_index" || key == "_id" {
+			continue
+		}
+		fields = append(fields, key)
+	}
+	return fields
+}
+
+func filterUntrustedTags(projected map[string]any, tags []string) []string {
+	var out []string
+	for _, tag := range tags {
+		if _, ok := projected[tag]; ok {
+			out = append(out, tag)
 		}
 	}
 	return out

@@ -22,7 +22,16 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - run: go mod tidy
+
+      - name: npm package audit
+        run: |
+          npm audit --audit-level=high --omit=dev
+          npm pack --dry-run
 
       - name: Check formatting
         if: runner.os == 'Linux'
@@ -50,12 +59,14 @@ jobs:
       - name: Smoke test (Unix)
         if: runner.os != 'Windows'
         run: |
-          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=1.0.1" -o kibana-cli-test ./cmd/kibana-cli
+          VERSION=$(node -p "require('./package.json').version")
+          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=${VERSION}" -o kibana-cli-test ./cmd/kibana-cli
           ./kibana-cli-test --version
           ./kibana-cli-test reference | head -5
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         run: |
-          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=1.0.1" -o kibana-cli-test.exe ./cmd/kibana-cli
+          $version = node -p "require('./package.json').version"
+          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=$version" -o kibana-cli-test.exe ./cmd/kibana-cli
           .\kibana-cli-test.exe --version

@@ -43,6 +43,7 @@ func init() {
 	searchCmd.Flags().String("to", "now", "Range end")
 	searchCmd.Flags().String("time-field", "", "Timestamp field (default from profile or @timestamp)")
 	searchCmd.Flags().Int("size", 50, "Max hits (1-1000)")
+	addLimitOffsetFlags(searchCmd, 50, "Max hits to return (1-1000)")
 	searchCmd.Flags().String("fields", "", "Comma-separated fields in JSON output")
 	searchCmd.Flags().StringArray("field", nil, "Exact term filter key=value (repeatable)")
 }
@@ -60,13 +61,10 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	level, _ := cmd.Flags().GetString("level")
 	traceID, _ := cmd.Flags().GetString("trace-id")
 
-	client, _, err := newKibanaClient()
+	var client *kibanaclient.Client
+	index, err := resolveSearchIndex(cmd, &client)
 	if err != nil {
 		return err
-	}
-	index, err := resolveIndexFromFlags(cmd, client)
-	if err != nil {
-		return handleAPIError(err, jsonMode)
 	}
 
 	resolved, err := fieldmap.ResolveSearchOptions(fm, profile, index, service, level)
@@ -87,7 +85,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		resolved.TraceIDFields = fieldmap.UniqueStrings(tf)
 	}
 
-	size, sizeCapped, err := requireSize(cmd)
+	limit, offset, limitCapped, err := requireSearchPage(cmd)
 	if err != nil {
 		return err
 	}
@@ -116,7 +114,8 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		From:          from,
 		To:            to,
 		TimeField:     resolved.TimeField,
-		Size:          size,
+		Size:          limit,
+		Offset:        offset,
 		SortDesc:      true,
 		ServiceValue:  service,
 		ServiceFields: resolved.ServiceFields,
@@ -132,9 +131,16 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		"index":   resolved.Index,
 		"profile": resolved.Profile,
 		"query":   kibanaclient.BuildQuery(opts),
-		"size":    size,
+		"limit":   limit,
+		"offset":  offset,
 	}) {
 		return nil
+	}
+	if client == nil {
+		client, _, err = newKibanaClient()
+		if err != nil {
+			return err
+		}
 	}
 	result, err := client.Search(apiCtx(), opts)
 	if err != nil {
@@ -150,20 +156,31 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		}
 		hits := output.FlattenSearchHits(result.Hits, project)
 		payload := map[string]any{
-			"ok":      true,
 			"tookMs":  result.TookMs,
 			"total":   result.Total,
 			"index":   resolved.Index,
 			"profile": resolved.Profile,
 			"hits":    hits,
-			"size":    size,
+			"count":   len(hits),
+			"limit":   limit,
+			"offset":  offset,
+		}
+		hasMore := int64(offset+len(hits)) < result.Total
+		if result.TotalRelation == "gte" && len(hits) == limit {
+			hasMore = true
+		}
+		payload["has_more"] = hasMore
+		if hasMore {
+			payload["next_offset"] = offset + len(hits)
+		} else {
+			payload["next_offset"] = nil
 		}
 		if result.TotalRelation != "" {
 			payload["totalRelation"] = result.TotalRelation
 		}
-		if sizeCapped {
-			payload["sizeCapped"] = true
-			payload["sizeMax"] = sizeMax
+		if limitCapped {
+			payload["limit_capped"] = true
+			payload["limit_max"] = sizeMax
 		}
 		if resolved.TraceMode != "" {
 			payload["traceMode"] = resolved.TraceMode
@@ -201,6 +218,30 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	}
 	output.AuxGray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, resolved.Index, result.TookMs))
 	return nil
+}
+
+func resolveSearchIndex(cmd *cobra.Command, clientRef **kibanaclient.Client) (string, error) {
+	index, _ := cmd.Flags().GetString("index")
+	dataView, _ := cmd.Flags().GetString("data-view")
+	if strings.TrimSpace(dataView) == "" {
+		return index, nil
+	}
+	if dryRun {
+		if strings.TrimSpace(index) != "" {
+			output.AuxWarn("--data-view overrides --index")
+		}
+		return dataViewDryRunIndex(strings.TrimSpace(dataView)), nil
+	}
+	client, _, err := newKibanaClient()
+	if err != nil {
+		return "", err
+	}
+	*clientRef = client
+	resolved, err := resolveIndexFromFlags(cmd, client)
+	if err != nil {
+		return "", handleAPIError(err, jsonMode)
+	}
+	return resolved, nil
 }
 
 func mustStringArrayFlag(cmd *cobra.Command, name string) []string {

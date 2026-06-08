@@ -19,6 +19,9 @@ func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult,
 		"size":             opts.Size,
 		"track_total_hits": true,
 	}
+	if opts.Offset > 0 {
+		body["from"] = opts.Offset
+	}
 	if opts.SortDesc {
 		body["sort"] = []any{map[string]any{opts.TimeField: map[string]string{"order": "desc"}}}
 	}

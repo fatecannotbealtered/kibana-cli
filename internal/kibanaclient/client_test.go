@@ -88,7 +88,7 @@ func TestProxy_Search(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	res, err := c.Search(context.Background(), SearchOptions{Index: "logs-*", Size: 1})
+	res, err := c.Search(context.Background(), SearchOptions{Index: "logs-*", Size: 1, Offset: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +97,9 @@ func TestProxy_Search(t *testing.T) {
 	}
 	if searchBody["track_total_hits"] != true {
 		t.Fatalf("search body missing track_total_hits: %v", searchBody)
+	}
+	if searchBody["from"] != float64(5) {
+		t.Fatalf("search body missing offset: %v", searchBody)
 	}
 }
 

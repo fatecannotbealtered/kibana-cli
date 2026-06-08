@@ -44,7 +44,7 @@ func TestDryRunOutput_Modes(t *testing.T) {
 			t.Fatal("expected true")
 		}
 	})
-	if !strings.Contains(out, `"dryRun":true`) && !strings.Contains(out, `"dryRun": true`) {
+	if !strings.Contains(out, `"dry_run":true`) && !strings.Contains(out, `"dry_run": true`) {
 		t.Fatalf("json dry-run: %s", out)
 	}
 
@@ -81,7 +81,7 @@ func TestNewKibanaClient_NotConfigured(t *testing.T) {
 	if !errors.Is(err, ErrSilent) || client != nil || cfg != nil {
 		t.Fatalf("client=%v cfg=%v err=%v", client, cfg, err)
 	}
-	if lastExit != ExitBadArgs {
+	if lastExit != ExitAuth {
 		t.Fatalf("exit=%d", lastExit)
 	}
 }
@@ -98,7 +98,7 @@ func TestNewKibanaClient_ConfigError(t *testing.T) {
 	lastExit = 0
 
 	_, _, err := newKibanaClient()
-	if !errors.Is(err, ErrSilent) || lastExit != ExitBadArgs {
+	if !errors.Is(err, ErrSilent) || lastExit != ExitAuth {
 		t.Fatalf("err=%v exit=%d", err, lastExit)
 	}
 }
@@ -147,11 +147,49 @@ func TestAudit_LogOnWriteCommand(t *testing.T) {
 	}
 }
 
+func TestAudit_LogOnFailedWriteCommand(t *testing.T) {
+	home := setupTestHome(t)
+	auditDir := filepath.Join(home, ".kibana-cli", "audit-failed")
+	audit.SetDirForTest(auditDir)
+	defer audit.SetDirForTest("")
+
+	_, code := runCLI(t, []string{"config", "init", "--json"})
+	if code != ExitConfirmRequired {
+		t.Fatalf("exit %d", code)
+	}
+	files, err := audit.Files()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected audit log file after failed write command")
+	}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"exit":5`) || !strings.Contains(string(data), `"cmd":"kibana-cli config init"`) {
+		t.Fatalf("audit entry: %s", data)
+	}
+}
+
 func TestSetExitCode_Max(t *testing.T) {
 	lastExit = ExitOK
 	setExitCode(ExitAuth)
 	setExitCode(ExitBadArgs)
 	if lastExit != ExitAuth {
 		t.Fatalf("got %d", lastExit)
+	}
+}
+
+func TestExecuteContext_UsageErrorJSONEnvelope(t *testing.T) {
+	out, code := runCLI(t, []string{"search", "--not-a-real-flag"})
+	if code != ExitBadArgs {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	payload := envelopePayload(t, out)
+	errObj, _ := payload["error"].(map[string]any)
+	if errObj["code"] != string(output.ErrValidation) || errObj["retryable"] != false {
+		t.Fatalf("unexpected error envelope: %s", out)
 	}
 }

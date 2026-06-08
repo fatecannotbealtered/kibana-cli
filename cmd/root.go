@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	project "github.com/fatecannotbealtered/kibana-cli"
 	"github.com/fatecannotbealtered/kibana-cli/internal/audit"
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
@@ -44,9 +45,15 @@ const (
 	FormatRaw  = "raw"
 )
 
+const (
+	toolName        = "kibana-cli"
+	skillMinVersion = "1.1.0"
+	securityTier    = "T1"
+)
+
 var ErrSilent = errors.New("")
 
-var version = "1.1.0"
+var version = "dev"
 
 var (
 	jsonMode       bool
@@ -102,10 +109,25 @@ func resolveBuildVersion(v string) string {
 	if v != "dev" {
 		return v
 	}
+	if pkgVersion := packageJSONVersion(); pkgVersion != "" {
+		return pkgVersion
+	}
 	if info, ok := readBuildInfo(); ok && info.Main.Version != "" {
-		return info.Main.Version
+		if info.Main.Version != "(devel)" {
+			return info.Main.Version
+		}
 	}
 	return v
+}
+
+func packageJSONVersion() string {
+	var raw struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(project.PackageJSON), &raw); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(raw.Version)
 }
 
 func init() {
@@ -138,10 +160,6 @@ func init() {
 	}
 
 	rootCmd.PersistentPostRunE = func(cmd *cobra.Command, _ []string) error {
-		if !isWriteCommand(cmd) {
-			return nil
-		}
-		audit.Log(cmd.CommandPath(), os.Args[1:], lastExit, time.Since(cmdStartTime).Milliseconds())
 		return nil
 	}
 }
@@ -154,7 +172,21 @@ func Execute() error {
 func ExecuteContext(ctx context.Context) error {
 	lastExit = 0
 	cmdStartTime = time.Now()
-	return rootCmd.ExecuteContext(ctx)
+	activeCmd = nil
+	defer auditWriteAttempt()
+	err := rootCmd.ExecuteContext(ctx)
+	if err != nil && !errors.Is(err, ErrSilent) {
+		return failValidation(err.Error())
+	}
+	return err
+}
+
+func auditWriteAttempt() {
+	cmd := activeCmd
+	if cmd == nil || !isWriteCommand(cmd) {
+		return
+	}
+	audit.Log(cmd.CommandPath(), os.Args[1:], lastExit, time.Since(cmdStartTime).Milliseconds())
 }
 
 func exitCodeForStatus(status int) int {
@@ -181,7 +213,7 @@ func dryRunOutput(action string, detail map[string]any) bool {
 			detail = map[string]any{}
 		}
 		detail["action"] = action
-		detail["dryRun"] = true
+		detail["dry_run"] = true
 		printJSONSuccess(detail)
 	} else {
 		output.Info("[dry-run] " + action)
@@ -196,7 +228,8 @@ func writePlan(action string, preview, tokenDetail map[string]any) (bool, error)
 	if tokenDetail == nil {
 		tokenDetail = preview
 	}
-	token := confirmTokenFor(action, tokenDetail)
+	expiresAt := time.Now().UTC().Add(confirmTokenTTL).Truncate(time.Second)
+	token := confirmTokenForExpiry(action, tokenDetail, expiresAt)
 	if dryRun {
 		if jsonMode {
 			printJSONSuccess(map[string]any{
@@ -205,7 +238,7 @@ func writePlan(action string, preview, tokenDetail map[string]any) (bool, error)
 					"changes": []map[string]any{preview},
 				},
 				"confirm_token": token,
-				"expires_at":    time.Now().UTC().Add(confirmTokenTTL).Format(time.RFC3339),
+				"expires_at":    expiresAt.Format(time.RFC3339),
 			})
 		} else {
 			output.Info("[dry-run] " + action)
@@ -216,27 +249,105 @@ func writePlan(action string, preview, tokenDetail map[string]any) (bool, error)
 	if strings.TrimSpace(confirmToken) == "" {
 		return false, failConfirmRequired(action, preview, token)
 	}
-	if strings.TrimSpace(confirmToken) != token {
-		return false, failConflict("confirm token is invalid or stale", map[string]any{
-			"action": action,
-		})
+	if err := validateConfirmToken(action, tokenDetail, strings.TrimSpace(confirmToken)); err != nil {
+		return false, failConflict(err.Error(), map[string]any{"action": action})
 	}
 	return false, nil
 }
 
 func confirmTokenFor(action string, detail map[string]any) string {
+	return confirmTokenForExpiry(action, detail, time.Now().UTC().Add(confirmTokenTTL).Truncate(time.Second))
+}
+
+func confirmTokenForExpiry(action string, detail map[string]any, expiresAt time.Time) string {
 	payload := map[string]any{
-		"schema_version": output.SchemaVersion,
-		"command":        commandPathForToken(),
-		"action":         action,
-		"detail":         detail,
+		"schema_version":     output.SchemaVersion,
+		"command":            commandPathForToken(),
+		"args":               operationArgsForToken(),
+		"action":             action,
+		"detail":             detail,
+		"actor":              actorForToken(detail),
+		"permission_context": "local_write",
+		"expires_at":         expiresAt.Format(time.RFC3339),
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		b = []byte(action)
 	}
 	sum := sha256.Sum256(b)
-	return "ct_" + hex.EncodeToString(sum[:])[:24]
+	return fmt.Sprintf("ct_%d_%s", expiresAt.Unix(), hex.EncodeToString(sum[:])[:24])
+}
+
+func validateConfirmToken(action string, detail map[string]any, token string) error {
+	parts := strings.Split(token, "_")
+	if len(parts) != 3 || parts[0] != "ct" {
+		return errors.New("confirm token is invalid or stale")
+	}
+	unix, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || unix <= 0 {
+		return errors.New("confirm token is invalid or stale")
+	}
+	expiresAt := time.Unix(unix, 0).UTC()
+	if time.Now().UTC().After(expiresAt) {
+		return errors.New("confirm token has expired")
+	}
+	if token != confirmTokenForExpiry(action, detail, expiresAt) {
+		return errors.New("confirm token is invalid or stale")
+	}
+	return nil
+}
+
+func operationArgsForToken() []string {
+	args := append([]string{}, os.Args[1:]...)
+	if activeCmd != nil {
+		args = activeCmd.Flags().Args()
+	}
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--dry-run", "--json", "--compact", "--quiet":
+			continue
+		case "--confirm", "--format":
+			i++
+			continue
+		default:
+			if strings.HasPrefix(arg, "--confirm=") ||
+				strings.HasPrefix(arg, "--format=") ||
+				strings.HasPrefix(arg, "--json=") ||
+				strings.HasPrefix(arg, "--compact=") ||
+				strings.HasPrefix(arg, "--quiet=") {
+				continue
+			}
+			out = append(out, arg)
+		}
+	}
+	return out
+}
+
+func actorForToken(detail map[string]any) map[string]any {
+	actor := map[string]any{}
+	if host, _ := detail["host"].(string); host != "" {
+		actor["host"] = host
+	}
+	if user, _ := detail["username"].(string); user != "" {
+		actor["username"] = user
+	}
+	if len(actor) == 0 {
+		if cfg, err := config.Load(); err == nil {
+			if cfg.Host != "" {
+				actor["host"] = cfg.Host
+			}
+			if cfg.Username != "" {
+				actor["username"] = cfg.Username
+			}
+			actor["authSource"] = config.AuthSource()
+		}
+	}
+	if len(actor) == 0 {
+		actor["scope"] = "local"
+	}
+	return actor
 }
 
 func commandPathForToken() string {
@@ -409,5 +520,41 @@ func splitCSV(s string) []string {
 		cur += string(r)
 	}
 	out = append(out, strings.TrimSpace(cur))
+	return out
+}
+
+func projectTopLevelFields(payload map[string]any, fields []string) map[string]any {
+	if len(fields) == 0 {
+		return payload
+	}
+	out := map[string]any{}
+	selected := map[string]bool{}
+	for _, field := range fields {
+		selected[field] = true
+		if v, ok := payload[field]; ok {
+			out[field] = v
+		}
+	}
+	if selected["_untrusted"] {
+		if v, ok := payload["_untrusted"]; ok {
+			out["_untrusted"] = v
+		}
+		return out
+	}
+	if raw, ok := payload["_untrusted"].([]string); ok {
+		var kept []string
+		for _, tag := range raw {
+			top := tag
+			if i := strings.Index(top, "."); i >= 0 {
+				top = top[:i]
+			}
+			if selected[top] {
+				kept = append(kept, tag)
+			}
+		}
+		if len(kept) > 0 {
+			out["_untrusted"] = kept
+		}
+	}
 	return out
 }

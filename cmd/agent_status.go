@@ -13,7 +13,7 @@ const (
 
 // AgentStatus is the machine-readable summary every Agent should read first.
 type AgentStatus struct {
-	OK         bool             `json:"ok"`
+	OK         bool             `json:"-"`
 	Status     string           `json:"status"`
 	Message    string           `json:"message"`
 	Error      string           `json:"error,omitempty"`
@@ -33,7 +33,7 @@ func agentNotConfigured() AgentStatus {
 		Error:     msg,
 		Hint:      output.HintForErrorCode(code),
 		ErrorCode: code,
-		ExitCode:  ExitBadArgs,
+		ExitCode:  ExitAuth,
 	}
 }
 
@@ -47,7 +47,7 @@ func agentConfigError(detail string) AgentStatus {
 		Error:     msg,
 		Hint:      output.HintForErrorCode(code),
 		ErrorCode: code,
-		ExitCode:  ExitBadArgs,
+		ExitCode:  ExitAuth,
 	}
 }
 
@@ -61,7 +61,7 @@ func agentConfigErrorDetail(detail string) AgentStatus {
 		Error:     detail,
 		Hint:      output.HintForErrorCode(code),
 		ErrorCode: code,
-		ExitCode:  ExitBadArgs,
+		ExitCode:  ExitAuth,
 	}
 }
 

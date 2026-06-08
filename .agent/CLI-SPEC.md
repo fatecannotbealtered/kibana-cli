@@ -6,7 +6,7 @@ This document defines the machine contract a CLI must honor when called by an AI
 ## 1. Core rules
 
 1. stdout is the contract: emit a single valid JSON document by default; no logs, progress, prompts, or color codes mixed in.
-2. stderr is the side channel: progress, warnings, debug, and error explanations all go to stderr.
+2. stderr is the side channel: progress, warnings, debug, and human-readable explanations all go to stderr.
 3. Machine-first: default `--format json`; `text` is for humans only; `raw` is for raw bytes, logs, diffs passed through verbatim.
 4. Non-interactive safe: write operations must not wait on keyboard input; use `--dry-run` + `--confirm <token>`.
 5. Deterministic: same input produces the same output structure; field names, field order, and schema version stay stable.
@@ -79,9 +79,9 @@ Conventions:
 
 ## 4. stdout / stderr rules
 
-- In `json` mode, stdout may contain only one JSON document, or NDJSON for explicitly streaming commands.
-- stderr may carry progress, warnings, diagnostics, error envelopes.
-- On error, stdout should be empty and the error envelope goes to stderr.
+- In `json` mode, stdout must contain exactly one JSON document, or NDJSON for explicitly streaming commands.
+- stderr may carry progress, warnings, and human-readable diagnostics.
+- On error in `json` mode, stdout contains the same single failure envelope shape as success output; stderr may carry only human-readable diagnostics.
 - `--quiet` may only suppress non-error info on stderr.
 - No banners, prompts, progress bars, or color codes before/after the JSON on stdout.
 - stdout / stderr are always **UTF-8 encoded, no BOM**, newline `\n`, so agents parse reliably across platforms (especially Windows).

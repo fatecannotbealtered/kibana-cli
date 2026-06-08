@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -35,13 +33,13 @@ func TestResolveBuildVersion(t *testing.T) {
 	if got := resolveBuildVersion("1.2.3"); got != "1.2.3" {
 		t.Fatalf("got %q", got)
 	}
-	t.Run("fromBuildInfo", func(t *testing.T) {
+	t.Run("packageJSONBeatsBuildInfo", func(t *testing.T) {
 		orig := readBuildInfo
 		readBuildInfo = func() (*debug.BuildInfo, bool) {
 			return &debug.BuildInfo{Main: debug.Module{Version: "v9.9.9"}}, true
 		}
 		defer func() { readBuildInfo = orig }()
-		if got := resolveBuildVersion("dev"); got != "v9.9.9" {
+		if got := resolveBuildVersion("dev"); got != "1.1.0" {
 			t.Fatalf("got %q", got)
 		}
 	})
@@ -49,7 +47,17 @@ func TestResolveBuildVersion(t *testing.T) {
 		orig := readBuildInfo
 		readBuildInfo = func() (*debug.BuildInfo, bool) { return nil, false }
 		defer func() { readBuildInfo = orig }()
-		if got := resolveBuildVersion("dev"); got != "dev" {
+		if got := resolveBuildVersion("dev"); got != "1.1.0" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("develUsesPackageJSON", func(t *testing.T) {
+		orig := readBuildInfo
+		readBuildInfo = func() (*debug.BuildInfo, bool) {
+			return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true
+		}
+		defer func() { readBuildInfo = orig }()
+		if got := resolveBuildVersion("dev"); got != "1.1.0" {
 			t.Fatalf("got %q", got)
 		}
 	})
@@ -61,46 +69,6 @@ func TestApplyTimeoutFromEnv_ExplicitZeroUsesDefault(t *testing.T) {
 	activeCmd = rootCmd
 	if got := applyTimeoutFromEnv(rootCmd); got != defaultTimeoutSeconds {
 		t.Fatalf("got %d want %d", got, defaultTimeoutSeconds)
-	}
-}
-
-func TestReadPasswordPair_NonTTY(t *testing.T) {
-	r := bufio.NewReader(strings.NewReader("secret\n"))
-	user, pass := readPasswordPair(r, "ops")
-	if user != "ops" || pass != "secret" {
-		t.Fatalf("user=%q pass=%q", user, pass)
-	}
-}
-
-func TestReadPasswordPair_TTY(t *testing.T) {
-	origTTY := stdinIsTerminal
-	origRead := readStdinPassword
-	defer func() {
-		stdinIsTerminal = origTTY
-		readStdinPassword = origRead
-	}()
-	stdinIsTerminal = func(int) bool { return true }
-	readStdinPassword = func(int) ([]byte, error) { return []byte("hunter2"), nil }
-	r := bufio.NewReader(strings.NewReader("\n"))
-	user, pass := readPasswordPair(r, "ops")
-	if user != "ops" || pass != "hunter2" {
-		t.Fatalf("user=%q pass=%q", user, pass)
-	}
-}
-
-func TestReadPasswordPair_TTYReadError(t *testing.T) {
-	origTTY := stdinIsTerminal
-	origRead := readStdinPassword
-	defer func() {
-		stdinIsTerminal = origTTY
-		readStdinPassword = origRead
-	}()
-	stdinIsTerminal = func(int) bool { return true }
-	readStdinPassword = func(int) ([]byte, error) { return nil, errors.New("tty read failed") }
-	r := bufio.NewReader(strings.NewReader("fallback\n"))
-	user, pass := readPasswordPair(r, "ops")
-	if user != "ops" || pass != "fallback" {
-		t.Fatalf("user=%q pass=%q", user, pass)
 	}
 }
 
@@ -184,7 +152,7 @@ func TestDryRunOutput_JSONNilDetail(t *testing.T) {
 			t.Fatal("expected true")
 		}
 	})
-	if !strings.Contains(out, `"dryRun":true`) && !strings.Contains(out, `"dryRun": true`) {
+	if !strings.Contains(out, `"dry_run":true`) && !strings.Contains(out, `"dry_run": true`) {
 		t.Fatalf("out=%s", out)
 	}
 }
@@ -208,7 +176,7 @@ func TestRunConfigInit_WriteBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code := runConfirmedCLI(t, []string{"config", "init", "--force", "--json"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("expected write failure exit %d", code)
 	}
 }
@@ -236,7 +204,7 @@ func TestRunContext_ConfigErrorOnKibana(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, code := runCLI(t, []string{"context", "--json"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	j := lastJSONLine(out)
@@ -248,7 +216,7 @@ func TestRunContext_ConfigErrorOnKibana(t *testing.T) {
 func TestRunDoctor_NotConfiguredSetsErrorJSON(t *testing.T) {
 	setupTestHome(t)
 	out, code := runCLI(t, []string{"doctor", "--json"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d", code)
 	}
 	j := lastJSONLine(out)
@@ -343,7 +311,7 @@ func TestRunAgg_NotConfigured(t *testing.T) {
 	_ = aggCmd.Flags().Set("terms", "level")
 	lastExit = 0
 	err := runAgg(aggCmd, nil)
-	if err == nil || lastExit != ExitBadArgs {
+	if err == nil || lastExit != ExitAuth {
 		t.Fatalf("err=%v exit=%d", err, lastExit)
 	}
 }
@@ -436,8 +404,8 @@ func TestSearch_InvalidIndexAndFieldAndAPICases(t *testing.T) {
 	if !strings.Contains(lastJSONLine(out), `"totalRelation"`) {
 		t.Fatalf("expected totalRelation: %s", out)
 	}
-	if !strings.Contains(lastJSONLine(out), `"sizeCapped"`) {
-		t.Fatalf("expected sizeCapped: %s", out)
+	if !strings.Contains(lastJSONLine(out), `"limit_capped"`) {
+		t.Fatalf("expected limit_capped: %s", out)
 	}
 
 	srv3 := newMockKibanaServerWith(mockKibanaOptions{
@@ -530,7 +498,7 @@ func TestContext_ConfigLoadError(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, code := runCLI(t, []string{"context"})
-	if code != ExitBadArgs {
+	if code != ExitAuth {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	if !strings.Contains(out, "Context") {

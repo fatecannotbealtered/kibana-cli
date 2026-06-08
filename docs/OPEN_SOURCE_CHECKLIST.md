@@ -16,12 +16,18 @@ Use before the first public `git push`.
 - [ ] `NOTICE.md` (trademark notice)
 - [ ] `SECURITY.md` (public security contact)
 - [ ] `docs/COMPATIBILITY.md`
+- [ ] `docs/E2E.md`
+- [ ] `AGENTS.md` and `.agent/`
+- [ ] `skills/kibana-cli/SKILL.md`
+- [ ] `CODE_OF_CONDUCT.md`
 
 ## Before push
 
 ```bash
 make check-clean
 go test ./...
+kibana-cli reference --compact
+kibana-cli changelog --since <previous_version> --compact
 ```
 
 ## After publish

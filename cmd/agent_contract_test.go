@@ -53,6 +53,10 @@ func TestAgentContract_Ready(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	assertAgentJSON(t, out, true, AgentStatusReady, ExitOK)
+	data := envelopeData(t, out)
+	if data["tool"] != toolName || data["version"] != version || data["securityTier"] != securityTier {
+		t.Fatalf("missing context identity fields: %s", out)
+	}
 }
 
 func TestValidationError_JSONEnvelope(t *testing.T) {
@@ -83,7 +87,7 @@ func TestSearch_DryRun_JSON(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, `"dryRun": true`) && !strings.Contains(out, `"dryRun":true`) {
+	if !strings.Contains(out, `"dry_run": true`) && !strings.Contains(out, `"dry_run":true`) {
 		t.Fatalf("expected dry-run json: %s", out)
 	}
 }
@@ -128,7 +132,7 @@ func TestMainProcess_ExitCode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected non-zero exit")
 	}
-	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != ExitBadArgs {
+	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != ExitAuth {
 		t.Fatalf("exit code %v output %s", err, out)
 	}
 	if !strings.Contains(string(out), AgentStatusNotConfigured) {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
@@ -37,6 +38,8 @@ func init() {
 	aggCmd.Flags().String("to", "now", "Time range end")
 	aggCmd.Flags().String("time-field", "", "Timestamp field")
 	aggCmd.Flags().Int("buckets", 10, "Max buckets (1-100)")
+	aggCmd.Flags().Int("limit", 10, "Max aggregation buckets to return (1-100)")
+	aggCmd.Flags().String("fields", "", "Comma-separated JSON data fields to include")
 	_ = aggCmd.MarkFlagRequired("terms")
 }
 
@@ -50,13 +53,10 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 	level, _ := cmd.Flags().GetString("level")
 	terms, _ := cmd.Flags().GetString("terms")
 
-	client, _, err := newKibanaClient()
+	var client *kibanaclient.Client
+	index, err := resolveAggIndex(cmd, &client)
 	if err != nil {
 		return err
-	}
-	index, err := resolveIndexFromFlags(cmd, client)
-	if err != nil {
-		return handleAPIError(err, jsonMode)
 	}
 
 	resolved, err := fieldmap.ResolveSearchOptions(fm, profile, index, service, level)
@@ -68,9 +68,9 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 	}
 	termsField := resolveTermsField(terms, resolved, fm, profile)
 
-	buckets, _ := cmd.Flags().GetInt("buckets")
-	if buckets < 1 || buckets > 100 {
-		return failValidation("--buckets must be 1-100")
+	buckets, err := requireBucketLimit(cmd)
+	if err != nil {
+		return err
 	}
 	from, _ := cmd.Flags().GetString("from")
 	to, _ := cmd.Flags().GetString("to")
@@ -104,12 +104,42 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 	}) {
 		return nil
 	}
+	if client == nil {
+		client, _, err = newKibanaClient()
+		if err != nil {
+			return err
+		}
+	}
 
 	result, err := client.Terms(apiCtx(), aggOpts)
 	if err != nil {
 		return handleAPIError(err, jsonMode)
 	}
-	return printAggResult(result)
+	return printAggResult(result, getFieldsFlag(cmd), buckets)
+}
+
+func resolveAggIndex(cmd *cobra.Command, clientRef **kibanaclient.Client) (string, error) {
+	index, _ := cmd.Flags().GetString("index")
+	dataView, _ := cmd.Flags().GetString("data-view")
+	if strings.TrimSpace(dataView) == "" {
+		return index, nil
+	}
+	if dryRun {
+		if strings.TrimSpace(index) != "" {
+			output.AuxWarn("--data-view overrides --index")
+		}
+		return dataViewDryRunIndex(strings.TrimSpace(dataView)), nil
+	}
+	client, _, err := newKibanaClient()
+	if err != nil {
+		return "", err
+	}
+	*clientRef = client
+	resolved, err := resolveIndexFromFlags(cmd, client)
+	if err != nil {
+		return "", handleAPIError(err, jsonMode)
+	}
+	return resolved, nil
 }
 
 func resolveTermsField(terms string, resolved fieldmap.ResolvedSearch, fm *fieldmap.Map, profile string) string {
@@ -129,15 +159,20 @@ func resolveTermsField(terms string, resolved fieldmap.ResolvedSearch, fm *field
 	}
 }
 
-func printAggResult(result *kibanaclient.AggResult) error {
+func printAggResult(result *kibanaclient.AggResult, fields []string, limit int) error {
 	if jsonMode {
-		printJSONSuccess(map[string]any{
-			"ok":      true,
-			"field":   result.Field,
-			"total":   result.Total,
-			"tookMs":  result.TookMs,
-			"buckets": result.Buckets,
-		})
+		payload := map[string]any{
+			"field":       result.Field,
+			"total":       result.Total,
+			"tookMs":      result.TookMs,
+			"buckets":     result.Buckets,
+			"count":       len(result.Buckets),
+			"limit":       limit,
+			"has_more":    false,
+			"next_offset": nil,
+			"_untrusted":  []string{"buckets"},
+		}
+		printJSONSuccess(projectTopLevelFields(payload, fields))
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

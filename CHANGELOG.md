@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added `changelog [--since]`, derived from the embedded `CHANGELOG.md`, so Agents can refresh their knowledge after self-update.
+- `reference` now reports tool/version, supported formats, exit codes, error codes, command params, output-schema summaries, permission tiers, and the T1 security boundary.
+- `context` and `doctor` now report tool version, Skill minimum version, and security tier.
+- `doctor` now checks whether the running binary meets the Skill's declared minimum version.
+- Search hits now include `_untrusted` markers for returned log fields, including trace identifiers derived from log messages.
+- Query commands now expose Agent-friendly pagination controls: `search --limit --offset`, `patterns list|fields --limit --offset`, and `agg --limit` for top-N buckets.
+- Successful standalone binary updates now return `previous_version`, the new `current_version`, and a hint to run `changelog --since <previous_version>`.
+
+### Changed
+
+- **BREAKING:** Config and not-configured failures now use exit code `4`, aligning `E_CONFIG` with the Agent CLI spec.
+- **BREAKING:** Error code names now match the Agent CLI spec: `E_RATE_LIMITED`, `E_CONFIRMATION_REQUIRED`, and `E_CONFLICT`.
+- **BREAKING:** Write confirmation tokens now include an expiry timestamp and are bound to operation context.
+- **BREAKING:** `auth login --plaintext` was removed; plaintext passwords in `config.json` are rejected.
+- **BREAKING:** npm install no longer supports skipping checksum verification.
+- Clarified the `.agent/CLI-SPEC.md` stdout/stderr contract: JSON-mode success and failure both emit one envelope on stdout; stderr is only a side channel for human-readable diagnostics.
+- Write-command audit entries now include failed write attempts and UTC timestamps.
+- `auth login` now falls back to `KIBANA_CLI_HOST`, `KIBANA_CLI_USER`, and `KIBANA_CLI_PASSWORD` when matching flags are omitted.
+- Release publishing now waits for release artifacts before publishing the npm wrapper.
+
 ## [1.1.0] - 2026-06-07
 
 ### Added

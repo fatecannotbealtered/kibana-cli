@@ -1,16 +1,14 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
+	"os"
 	"strings"
-	"syscall"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
 	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var authCmd = &cobra.Command{
@@ -26,10 +24,9 @@ Use the Kibana site root URL only (e.g. https://kibana.example.com), not a Disco
 }
 
 var (
-	authLoginHostFlag      string
-	authLoginUserFlag      string
-	authLoginPasswordFlag  string
-	authLoginPlaintextFlag bool
+	authLoginHostFlag     string
+	authLoginUserFlag     string
+	authLoginPasswordFlag string
 )
 
 var authLoginCmd = &cobra.Command{
@@ -64,7 +61,6 @@ func init() {
 	authLoginCmd.Flags().StringVar(&authLoginHostFlag, "host", "", "Kibana base URL (e.g. https://kibana.example.com)")
 	authLoginCmd.Flags().StringVar(&authLoginUserFlag, "user", "", "Username for HTTP Basic auth")
 	authLoginCmd.Flags().StringVar(&authLoginPasswordFlag, "password", "", "Password for HTTP Basic auth (avoid in argv; prefer env)")
-	authLoginCmd.Flags().BoolVar(&authLoginPlaintextFlag, "plaintext", false, "Store password in config.json (not recommended; default uses OS credential store)")
 	markWrite(authLoginCmd)
 	markWrite(authLogoutCmd)
 }
@@ -73,6 +69,15 @@ func runAuthLogin(_ *cobra.Command, _ []string) error {
 	host := strings.TrimSpace(authLoginHostFlag)
 	user := strings.TrimSpace(authLoginUserFlag)
 	password := authLoginPasswordFlag
+	if host == "" {
+		host = strings.TrimSpace(os.Getenv("KIBANA_CLI_HOST"))
+	}
+	if user == "" {
+		user = strings.TrimSpace(os.Getenv("KIBANA_CLI_USER"))
+	}
+	if password == "" {
+		password = os.Getenv("KIBANA_CLI_PASSWORD")
+	}
 
 	if host == "" || user == "" || password == "" {
 		return failValidation("provide --host, --user, and --password (or use KIBANA_CLI_USER/KIBANA_CLI_PASSWORD)")
@@ -91,9 +96,6 @@ func finishLogin(host, user, password string) error {
 	}
 	cfg := &config.Config{Host: host, Username: user, Password: password}
 	store := config.CredentialStoreKeyring
-	if authLoginPlaintextFlag {
-		store = config.CredentialStoreFile
-	}
 	skipped, err := writePlan(
 		"save credentials",
 		map[string]any{"host": host, "username": user, "authMode": cfg.AuthMode(), "credentialStore": store},
@@ -112,12 +114,11 @@ func finishLogin(host, user, password string) error {
 		return failAuth(msg)
 	}
 	cfg.KibanaVersion = vr.KibanaVersion
-	if err := config.Save(cfg, config.SaveOptions{Plaintext: authLoginPlaintextFlag}); err != nil {
+	if err := config.Save(cfg, config.SaveOptions{}); err != nil {
 		return failConfig("failed to save config: " + err.Error())
 	}
 	if jsonMode {
 		printJSONSuccess(map[string]any{
-			"ok":              true,
 			"status":          "ok",
 			"host":            host,
 			"authMode":        cfg.AuthMode(),
@@ -135,31 +136,10 @@ func finishLogin(host, user, password string) error {
 	if !vr.SearchReachable {
 		output.Warn("Log search probe failed — check index read privileges")
 	}
-	if authLoginPlaintextFlag {
-		output.Warn("Password saved in plaintext config.json — prefer OS credential store (default)")
-	} else {
-		output.Success("Password saved in OS credential store (" + config.CredentialStoreKeyring + ")")
-	}
+	output.Success("Password saved in OS credential store (" + config.CredentialStoreKeyring + ")")
 	output.AuxInfo("Config saved to " + config.FilePath())
 	output.AuxGray("  Try: kibana-cli context")
 	return nil
-}
-
-var (
-	stdinIsTerminal   = term.IsTerminal
-	readStdinPassword = term.ReadPassword
-)
-
-func readPasswordPair(reader *bufio.Reader, user string) (string, string) {
-	if stdinIsTerminal(int(syscall.Stdin)) {
-		b, err := readStdinPassword(int(syscall.Stdin))
-		fmt.Println()
-		if err == nil {
-			return user, strings.TrimSpace(string(b))
-		}
-	}
-	line, _ := reader.ReadString('\n')
-	return user, strings.TrimSpace(line)
 }
 
 // deleteConfigHook is set by tests to simulate config.Delete failures.
@@ -178,7 +158,7 @@ func runAuthLogout(_ *cobra.Command, _ []string) error {
 		return failConfig(err.Error())
 	}
 	if jsonMode {
-		printJSONSuccess(map[string]any{"ok": true, "status": "logged_out"})
+		printJSONSuccess(map[string]any{"status": "logged_out"})
 		return nil
 	}
 	output.Success("Logged out. Config removed.")
@@ -193,7 +173,7 @@ func runAuthStatus(_ *cobra.Command, _ []string) error {
 	configured := config.IsConfigured()
 	ok := configured && cfg.Host != "" && config.ValidateKibanaHost(cfg.Host) == nil
 	result := map[string]any{
-		"ok":              ok,
+		"status":          map[bool]string{true: "configured", false: "invalid"}[ok],
 		"configured":      configured,
 		"host":            cfg.Host,
 		"authMode":        cfg.AuthMode(),

@@ -30,8 +30,8 @@ func TestDoctor_NoConfig(t *testing.T) {
 	lastExit = 0
 	rootCmd.SetArgs([]string{"doctor"})
 	_ = rootCmd.Execute()
-	if lastExit != ExitBadArgs {
-		t.Fatalf("expected exit %d, got %d", ExitBadArgs, lastExit)
+	if lastExit != ExitAuth {
+		t.Fatalf("expected exit %d, got %d", ExitAuth, lastExit)
 	}
 }
 
@@ -65,5 +65,19 @@ func TestDoctor_NoConfig_JSON(t *testing.T) {
 	})
 	if !strings.Contains(out, `"configExists"`) {
 		t.Fatalf("unexpected output: %s", out)
+	}
+}
+
+func TestDoctorVersionCheck(t *testing.T) {
+	if !versionMeetsMin("1.1.0", "1.1.0") {
+		t.Fatal("expected equal version to pass")
+	}
+	if versionMeetsMin("1.0.9", "1.1.0") {
+		t.Fatal("expected older version to fail")
+	}
+	result := &doctorResult{Version: "1.0.9", SkillMinVersion: "1.1.0", SecurityTier: securityTier}
+	checks := buildDoctorChecks(result)
+	if len(checks) == 0 || checks[0].Check != "version" || checks[0].Status != "fail" {
+		t.Fatalf("expected failing version check: %+v", checks)
 	}
 }

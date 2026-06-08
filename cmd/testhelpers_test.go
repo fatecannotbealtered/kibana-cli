@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -32,7 +33,7 @@ func resetCLIState(t *testing.T) {
 	activeCmd = nil
 	output.Quiet = false
 	output.JSONCompact = false
-	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd, updateCmd)
+	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd, updateCmd, changelogCmd)
 	resetCommandFlags(rootCmd)
 }
 
@@ -99,7 +100,7 @@ func runCLI(t *testing.T, args []string) (stdout string, exitCode int) {
 	}()
 
 	stdoutCaptured := captureStdout(t, func() {
-		err := rootCmd.Execute()
+		err := ExecuteContext(context.Background())
 		if err != nil && !errors.Is(err, ErrSilent) {
 			t.Fatalf("execute %v: %v", args, err)
 		}
