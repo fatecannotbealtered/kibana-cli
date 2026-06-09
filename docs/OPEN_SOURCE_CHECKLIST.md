@@ -30,6 +30,8 @@ kibana-cli reference --compact
 kibana-cli changelog --since <previous_version> --compact
 ```
 
+- [ ] Functional Contract Coverage is 100%: public README, Skill, `reference`, `--help`, `context`, `doctor`, `changelog`, and `update` behavior has command-level tests.
+
 ## After publish
 
 - Enable GitHub secret scanning
