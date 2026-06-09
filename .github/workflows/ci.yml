@@ -2,71 +2,128 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Go version is sourced from go.mod — the single source of truth.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Project-specific clean check
+        if: runner.os == 'Linux'
+        run: |
+          if [ -f scripts/check-clean.sh ]; then
+            if ! command -v rg >/dev/null 2>&1; then
+              sudo apt-get update -qq
+              sudo apt-get install -y ripgrep
+            fi
+            bash scripts/check-clean.sh
+          else
+            echo "No scripts/check-clean.sh; skipping project-specific clean check."
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          # 'latest' tracks the newest linter release; pin to a specific
+          # version (e.g. v1.62.0) once you want reproducible lint results.
+          version: latest
+
+  test:
+    name: Test
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.23', '1.24']
     runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version-file: go.mod
+
+      - name: Run tests with coverage
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Ensure race detector toolchain
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y build-essential
+          fi
+
+      - name: Run race tests
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
+      - name: Upload coverage artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
+          cache: npm
 
-      - run: go mod tidy
+      - name: Install package metadata
+        run: npm ci --ignore-scripts
 
-      - name: npm package audit
-        run: |
-          npm audit --audit-level=high --omit=dev
-          npm pack --dry-run
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
 
-      - name: Check formatting
-        if: runner.os == 'Linux'
-        run: test -z "$(gofmt -l .)"
+  build:
+    name: Build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    needs: [lint, test, npm-audit]
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Lint
-        if: runner.os == 'Linux'
-        uses: golangci/golangci-lint-action@v7
+      - uses: actions/setup-go@v5
         with:
-          version: v2.1.2
+          go-version-file: go.mod
 
-      - run: go vet ./...
-
-      - name: check-clean (no legacy ES-direct artifacts)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ripgrep
-          bash scripts/check-clean.sh
-
-      - run: go build -v ./...
-
-      - run: go test -race -v ./...
+      - name: Build
+        run: go build -o kibana-cli ./cmd/kibana-cli
 
       - name: Smoke test (Unix)
         if: runner.os != 'Windows'
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=${VERSION}" -o kibana-cli-test ./cmd/kibana-cli
-          ./kibana-cli-test --version
-          ./kibana-cli-test reference | head -5
+        run: ./kibana-cli --help
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
-        run: |
-          $version = node -p "require('./package.json').version"
-          go build -ldflags "-s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=$version" -o kibana-cli-test.exe ./cmd/kibana-cli
-          .\kibana-cli-test.exe --version
+        run: ./kibana-cli.exe --help

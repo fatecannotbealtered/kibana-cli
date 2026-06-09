@@ -2,34 +2,54 @@ BINARY_NAME := kibana-cli
 MODULE      := github.com/fatecannotbealtered/kibana-cli
 CMD_PATH    := ./cmd/kibana-cli
 BIN_DIR     := bin
-VERSION     ?= $(shell node -p "require('./package.json').version" 2>/dev/null || echo "1.1.0")
-LDFLAGS     := -s -w -X github.com/fatecannotbealtered/kibana-cli/cmd.version=$(VERSION)
 
-.PHONY: build test test-all coverage vet fmt clean check-clean help
+# Version from git tag, fallback to dev
+VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS     := -s -w -X $(MODULE)/cmd.version=$(VERSION)
 
+.PHONY: build test vet lint fmt check-fmt check clean install snapshot help
+
+## build: compile the binary into bin/
 build:
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_PATH)
 
-test: fmt vet
+## test: run all unit tests with race detection
+test: vet
 	go test -race ./...
 
-test-all: check-clean test
-
-coverage:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/coverage.ps1
-
-check-clean:
-	@bash scripts/check-clean.sh
-
+## vet: run static analysis
 vet:
 	go vet ./...
 
+## check-fmt: verify formatting (fails if unformatted, Unix only)
+check-fmt:
+	@test -z "$$(gofmt -l .)" || (echo "Run 'make fmt' to fix formatting" && gofmt -l . && exit 1)
+
+## fmt: apply gofmt formatting
 fmt:
-	@test -z "$$(gofmt -l .)" || (echo "Run gofmt -w ." && gofmt -l . && exit 1)
+	gofmt -w .
 
+## check: run formatting check + vet (Unix only)
+check: check-fmt vet
+
+## lint: run golangci-lint (install if missing)
+lint:
+	@which golangci-lint > /dev/null 2>&1 || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	golangci-lint run ./...
+
+## clean: remove build artifacts
 clean:
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) dist
 
+## install: build and install to GOPATH/bin
+install:
+	go install -ldflags "$(LDFLAGS)" $(CMD_PATH)
+
+## snapshot: build a local goreleaser snapshot (no publish)
+snapshot:
+	goreleaser release --snapshot --clean
+
+## help: show this help
 help:
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //'
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //' | column -t -s ':'

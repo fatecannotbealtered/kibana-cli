@@ -4,7 +4,7 @@ Thank you for improving kibana-cli — a **Kibana log query CLI** for AI Agents.
 
 ## Development setup
 
-- Go **1.23+** (see `go.mod`)
+- Go **1.25+** (see `go.mod`)
 
 ```bash
 git clone https://github.com/fatecannotbealtered/kibana-cli.git

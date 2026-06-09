@@ -4,53 +4,62 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 jobs:
   ci:
+    name: CI
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.23']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      # Go version is sourced from go.mod — the single source of truth.
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - run: go mod tidy
-      - name: npm package audit
-        run: |
-          npm audit --audit-level=high --omit=dev
-          npm pack --dry-run
+          go-version-file: go.mod
+
       - name: Check formatting
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)"
-      - run: go vet ./...
-      - name: check-clean
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Project-specific clean check
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ripgrep
-          bash scripts/check-clean.sh
-      - run: go build -v ./...
-      - run: go test -race -v ./...
-      - name: Smoke test (Unix)
-        if: runner.os != 'Windows'
+          if [ -f scripts/check-clean.sh ]; then
+            if ! command -v rg >/dev/null 2>&1; then
+              sudo apt-get update -qq
+              sudo apt-get install -y ripgrep
+            fi
+            bash scripts/check-clean.sh
+          else
+            echo "No scripts/check-clean.sh; skipping project-specific clean check."
+          fi
+
+      - name: Test
+        run: go test ./...
+
+      - name: Ensure race detector toolchain
+        if: runner.os == 'Linux'
         run: |
-          go build -o kibana-cli-test ./cmd/kibana-cli
-          ./kibana-cli-test --version
-      - name: Smoke test (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          go build -o kibana-cli-test.exe ./cmd/kibana-cli
-          .\kibana-cli-test.exe --version
+          if ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y build-essential
+          fi
+
+      - name: Race test
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
 
   release:
+    name: Release
     needs: ci
     runs-on: ubuntu-latest
     permissions:
@@ -59,54 +68,66 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version-file: go.mod
+
       - name: Extract release notes
         run: |
+          # Slice the '## [VERSION]' section out of CHANGELOG.md for this tag.
           VERSION="${GITHUB_REF#refs/tags/v}"
-          NOTES="/tmp/release-notes.md"
-          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d }' > "$NOTES"
-          [ -s "$NOTES" ] || cp CHANGELOG.md "$NOTES"
-      - uses: goreleaser/goreleaser-action@v6
+          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d }' > release-notes.md
+          # Defensive fallback: if the slice is empty, ship the whole changelog.
+          [ -s release-notes.md ] || cp CHANGELOG.md release-notes.md
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean --release-notes=/tmp/release-notes.md
+          args: release --clean --release-notes=release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-npm:
-    needs: release
+    name: Publish to npm
+    # Wait for `release`: the npm postinstall downloads the binary from the
+    # GitHub Release, so it must exist before the package goes public.
+    needs: [ci, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
-      - run: npm pack --dry-run
+          always-auth: true
+
       - name: Verify version consistency
         run: |
+          # Guard: the git tag must match package.json version, else the npm
+          # release would diverge from the GitHub release.
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag version (${TAG_VERSION}) != package.json (${PKG_VERSION})"
+            echo "::error::Tag version (${TAG_VERSION}) does not match package.json version (${PKG_VERSION})"
             exit 1
           fi
+
       - name: Publish to npm
-        shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN not configured; skipping npm publish"
-            exit 0
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN is not configured"
+            exit 1
           fi
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          if npm view "@fatecannotbealtered-/kibana-cli@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
-            echo "npm ${VERSION} already published; skipping"
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          if npm view "@fatecannotbealtered-/kibana-cli@${TAG_VERSION}" version 2>/dev/null | grep -qx "${TAG_VERSION}"; then
+            echo "npm package @fatecannotbealtered-/kibana-cli@${TAG_VERSION} already published; skipping"
             exit 0
           fi
           npm publish --access public

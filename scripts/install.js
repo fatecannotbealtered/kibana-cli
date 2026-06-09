@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 "use strict";
 
+// postinstall downloader for the prebuilt kibana-cli binary.
+// Language-agnostic: the release archive may hold a Go OR Python (e.g. PyInstaller) binary;
+// this script only cares that bin/kibana-cli[.exe] ends up in place.
+
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -11,32 +15,39 @@ const VERSION = require("../package.json").version;
 const REPO = "fatecannotbealtered/kibana-cli";
 const NAME = "kibana-cli";
 
+// Env overrides: skip entirely (offline / source build / CI), or force a re-download.
+const SKIP = process.env["KIBANA_CLI_SKIP_INSTALL"] || process.env.SKIP_INSTALL;
+const FORCE = process.env["KIBANA_CLI_FORCE_INSTALL"];
+
 const PLATFORM_MAP = { darwin: "darwin", linux: "linux", win32: "windows" };
 const ARCH_MAP = { x64: "amd64", arm64: "arm64" };
 
 const platform = PLATFORM_MAP[process.platform];
 let arch = ARCH_MAP[process.arch];
 
+// Windows on ARM64 runs amd64 binaries transparently via emulation; no native arm64 build needed.
 if (process.platform === "win32" && process.arch === "arm64") {
-  console.log("Windows ARM64 detected, falling back to x64 binary (runs via emulation)");
+  console.log("Windows ARM64 detected, falling back to amd64 binary (runs via emulation)");
   arch = "amd64";
-}
-
-if (!platform || !arch) {
-  console.error(`Unsupported platform: ${process.platform}-${process.arch}`);
-  console.error(`\nManually download from:\n  https://github.com/${REPO}/releases`);
-  process.exit(1);
 }
 
 const isWindows = process.platform === "win32";
 const ext = isWindows ? ".zip" : ".tar.gz";
 const archiveName = `${NAME}-${VERSION}-${platform}-${arch}${ext}`;
 const GITHUB_URL = `https://github.com/${REPO}/releases/download/v${VERSION}/${archiveName}`;
+const CHECKSUM_URL = `https://github.com/${REPO}/releases/download/v${VERSION}/checksums.txt`;
 
 const binDir = path.join(__dirname, "..", "bin");
 const dest = path.join(binDir, NAME + (isWindows ? ".exe" : ""));
 
-fs.mkdirSync(binDir, { recursive: true });
+function manualHint() {
+  return (
+    `\nDownload the binary manually and place it at:\n  ${dest}\n` +
+    `Release page:\n  https://github.com/${REPO}/releases/tag/v${VERSION}\n` +
+    `Direct archive:\n  ${GITHUB_URL}\n` +
+    `Then unpack it and (on Unix) run: chmod +x "${dest}"\n`
+  );
+}
 
 function download(url, destPath) {
   const args = [
@@ -58,15 +69,16 @@ function verifyChecksum(filePath, expectedHash) {
 }
 
 function install() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kibana-cli-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `${NAME}-`));
   const archivePath = path.join(tmpDir, archiveName);
-  const checksumURL = `https://github.com/${REPO}/releases/download/v${VERSION}/checksums.txt`;
   const checksumPath = path.join(tmpDir, "checksums.txt");
 
   try {
     console.log(`Downloading ${NAME} v${VERSION} for ${platform}-${arch}...`);
     download(GITHUB_URL, archivePath);
-    download(checksumURL, checksumPath);
+    download(CHECKSUM_URL, checksumPath);
+
+    // Find the SHA256 entry for our archive; missing entry is a hard fail (can't verify integrity).
     let expectedHash = "";
     for (const rawLine of fs.readFileSync(checksumPath, "utf8").split("\n")) {
       const fields = rawLine.trim().split(/\s+/);
@@ -79,7 +91,8 @@ function install() {
       throw new Error(`No checksum entry for ${archiveName} in checksums.txt`);
     }
     verifyChecksum(archivePath, expectedHash);
-    console.log("✔ Checksum verified");
+    console.log("Checksum verified");
+
     if (isWindows) {
       execFileSync("powershell", [
         "-Command",
@@ -88,18 +101,39 @@ function install() {
     } else {
       execFileSync("tar", ["-xzf", archivePath, "-C", tmpDir], { stdio: "ignore" });
     }
+
+    fs.mkdirSync(binDir, { recursive: true });
     fs.copyFileSync(path.join(tmpDir, NAME + (isWindows ? ".exe" : "")), dest);
     if (!isWindows) fs.chmodSync(dest, 0o755);
-    console.log(`✔ ${NAME} v${VERSION} installed successfully`);
+    console.log(`${NAME} v${VERSION} installed successfully`);
   } finally {
+    // Always clean the tmpdir, even on failure.
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+}
+
+// --- entry ---
+
+if (SKIP) {
+  console.log(`Skipping ${NAME} binary install (KIBANA_CLI_SKIP_INSTALL / SKIP_INSTALL set).`);
+  process.exit(0);
+}
+
+if (fs.existsSync(dest) && !FORCE) {
+  console.log(`${NAME} binary already present; skipping download (set KIBANA_CLI_FORCE_INSTALL=1 to redownload).`);
+  process.exit(0);
+}
+
+if (!platform || !arch) {
+  console.error(`Unsupported platform: ${process.platform}-${process.arch}`);
+  console.error(manualHint());
+  process.exit(1);
 }
 
 try {
   install();
 } catch (err) {
   console.error(`Failed to install ${NAME}:`, err.message);
-  console.error(`\nManually download from:\n  https://github.com/${REPO}/releases\n`);
+  console.error(manualHint());
   process.exit(1);
 }

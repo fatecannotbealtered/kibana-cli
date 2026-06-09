@@ -96,7 +96,7 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.0] - 2026-05-24
 
-First release: **Kibana-only log query CLI** for humans and AI Agents.
+First release: **Kibana-only log query CLI** for AI Agents.
 
 ### Features
 

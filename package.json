@@ -1,17 +1,16 @@
 {
   "name": "@fatecannotbealtered-/kibana-cli",
   "version": "1.1.0",
-  "description": "Kibana log query CLI for humans and AI Agents — search and aggregate logs via Kibana Console Proxy",
+  "description": "Kibana log query CLI for AI Agents - search and aggregate logs through Kibana Console Proxy with JSON-by-default output",
   "keywords": [
     "kibana",
     "logs",
     "cli",
     "ai-agent",
     "elk",
-    "devtools",
-    "openclaw"
+    "devtools"
   ],
-  "author": "guosong6886@gmail.com",
+  "author": "Sean Guo",
   "homepage": "https://github.com/fatecannotbealtered/kibana-cli#readme",
   "bugs": {
     "url": "https://github.com/fatecannotbealtered/kibana-cli/issues"
@@ -34,18 +33,28 @@
     "scripts/install.js",
     "scripts/run.js",
     "skills/",
-    "AGENTS.md",
+    "README.md",
     "README_zh.md",
-    "CHANGELOG.md",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md",
+    "*_zh.md",
+    "LICENSE",
     "NOTICE.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "SECURITY.md",
-    "docs/COMPATIBILITY.md",
-    "docs/E2E.md"
+    "CODE_OF_CONDUCT.md",
+    "AGENTS.md",
+    ".agent/",
+    "docs/"
   ],
-  "os": ["darwin", "linux", "win32"],
-  "cpu": ["x64", "arm64"],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "engines": {
     "node": ">=16"
   }
