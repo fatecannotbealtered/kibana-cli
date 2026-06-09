@@ -14,7 +14,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -25,9 +27,11 @@ import (
 )
 
 const (
-	updateNPMPackage      = "@fatecannotbealtered-/kibana-cli"
-	updateGoPackage       = "github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli"
-	updateMaxErrorBodyLen = 512
+	updateNPMPackage              = "@fatecannotbealtered-/kibana-cli"
+	updateGoPackage               = "github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli"
+	updateSkillRepo               = "fatecannotbealtered/kibana-cli"
+	updateMaxErrorBodyLen         = 512
+	updateMaxSignatureBundleBytes = 1 << 20
 )
 
 var (
@@ -39,6 +43,7 @@ var (
 	updateGOOS           = func() string { return runtime.GOOS }
 	updateGOARCH         = func() string { return runtime.GOARCH }
 	updateReplaceBinary  = replaceExecutable
+	updateSkillSync      = runUpdateSkillSync
 )
 
 var updateCmd = &cobra.Command{
@@ -48,8 +53,8 @@ var updateCmd = &cobra.Command{
 
 Package-manager installs are not modified in place. When kibana-cli is managed by
 npm or Go, the command prints the exact package-manager command to run instead.
-Standalone Unix binaries are updated in place after SHA256 verification against
-the release checksums.txt file.`,
+Standalone Unix binaries are updated in place after signed checksum verification
+when possible and SHA256 verification against the release checksums.txt file.`,
 	Args: cobra.NoArgs,
 	RunE: runUpdate,
 }
@@ -73,21 +78,25 @@ type updateAsset struct {
 }
 
 type updateResult struct {
-	Status           string `json:"status"`
-	Message          string `json:"message"`
-	PreviousVersion  string `json:"previous_version,omitempty"`
-	CurrentVersion   string `json:"current_version"`
-	TargetVersion    string `json:"target_version"`
-	LatestVersion    string `json:"latest_version,omitempty"`
-	UpdateAvailable  bool   `json:"update_available"`
-	InstallMethod    string `json:"install_method"`
-	Path             string `json:"path,omitempty"`
-	Asset            string `json:"asset,omitempty"`
-	URL              string `json:"url,omitempty"`
-	Command          string `json:"command,omitempty"`
-	Hint             string `json:"hint,omitempty"`
-	DryRun           bool   `json:"dry_run,omitempty"`
-	ChecksumVerified bool   `json:"checksum_verified,omitempty"`
+	Status            string `json:"status"`
+	Message           string `json:"message"`
+	PreviousVersion   string `json:"previous_version,omitempty"`
+	CurrentVersion    string `json:"current_version"`
+	TargetVersion     string `json:"target_version"`
+	LatestVersion     string `json:"latest_version,omitempty"`
+	UpdateAvailable   bool   `json:"update_available"`
+	InstallMethod     string `json:"install_method"`
+	Path              string `json:"path,omitempty"`
+	Asset             string `json:"asset,omitempty"`
+	URL               string `json:"url,omitempty"`
+	Command           string `json:"command,omitempty"`
+	Hint              string `json:"hint,omitempty"`
+	DryRun            bool   `json:"dry_run,omitempty"`
+	ChecksumVerified  bool   `json:"checksum_verified,omitempty"`
+	SignatureStatus   string `json:"signature_status,omitempty"`
+	SignatureVerified bool   `json:"signature_verified,omitempty"`
+	SkillSyncCommand  string `json:"skill_sync_command,omitempty"`
+	SkillSyncStatus   string `json:"skill_sync_status,omitempty"`
 }
 
 type updateHTTPError struct {
@@ -123,15 +132,18 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	available := updateAvailable(currentVersion, targetVersion, targetFlag != "")
 
 	result := updateResult{
-		Status:          "up_to_date",
-		Message:         "kibana-cli is already up to date",
-		CurrentVersion:  version,
-		TargetVersion:   targetVersion,
-		LatestVersion:   targetVersion,
-		UpdateAvailable: available,
-		InstallMethod:   installMethod,
-		Path:            installPath,
-		URL:             release.HTMLURL,
+		Status:           "up_to_date",
+		Message:          "kibana-cli is already up to date",
+		CurrentVersion:   version,
+		TargetVersion:    targetVersion,
+		LatestVersion:    targetVersion,
+		UpdateAvailable:  available,
+		InstallMethod:    installMethod,
+		Path:             installPath,
+		URL:              release.HTMLURL,
+		SignatureStatus:  "not_checked",
+		SkillSyncCommand: updateSkillSyncCommand(),
+		SkillSyncStatus:  "not_run",
 	}
 	if !available {
 		printUpdateResult(result)
@@ -169,10 +181,11 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	}
 	result.Asset = assetName
 	updatePreview := map[string]any{
-		"path":            installPath,
-		"current_version": version,
-		"target_version":  targetVersion,
-		"asset":           assetName,
+		"path":               installPath,
+		"current_version":    version,
+		"target_version":     targetVersion,
+		"asset":              assetName,
+		"skill_sync_command": result.SkillSyncCommand,
 	}
 	result.DryRun = dryRun
 	skipped, err := writePlan("update binary", updatePreview, nil)
@@ -187,12 +200,17 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if !ok {
 		return failValidation("release checksums.txt not found")
 	}
+	signatureBundle, signatureBundleFound := findReleaseAsset(release.Assets, "checksums.txt.sigstore.json")
 
 	archiveData, err := downloadUpdateURL(apiCtx(), asset.BrowserDownloadURL)
 	if err != nil {
 		return handleUpdateError(err)
 	}
 	checksumData, err := downloadUpdateURL(apiCtx(), checksums.BrowserDownloadURL)
+	if err != nil {
+		return handleUpdateError(err)
+	}
+	signatureStatus, err := verifyChecksumSignature(apiCtx(), checksumData, signatureBundle, signatureBundleFound)
 	if err != nil {
 		return handleUpdateError(err)
 	}
@@ -210,6 +228,9 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if err := updateReplaceBinary(installPath, binaryData); err != nil {
 		return failConfig("failed to replace executable: " + err.Error())
 	}
+	if err := updateSkillSync(apiCtx(), updateSkillRepo); err != nil {
+		return failConfig("failed to sync skill directory: " + err.Error())
+	}
 
 	result.Status = "updated"
 	result.Message = fmt.Sprintf("updated kibana-cli from %s to %s", version, targetVersion)
@@ -217,8 +238,95 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	result.CurrentVersion = targetVersion
 	result.Hint = fmt.Sprintf("run \"kibana-cli changelog --since %s\" before continuing", normalizeReleaseVersion(result.PreviousVersion))
 	result.ChecksumVerified = true
+	result.SignatureStatus = signatureStatus
+	result.SignatureVerified = signatureStatus == "verified"
+	result.SkillSyncStatus = "synced"
 	printUpdateResult(result)
 	return nil
+}
+
+func updateSkillSyncCommand() string {
+	return "npx skills add " + updateSkillRepo + " -y -g"
+}
+
+func runUpdateSkillSync(ctx context.Context, repo string) error {
+	command := exec.CommandContext(ctx, "npx", "skills", "add", repo, "-y", "-g")
+	outputBytes, err := command.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(outputBytes))
+		if msg != "" {
+			return fmt.Errorf("%w: %s", err, truncateUpdateMessage(msg, 300))
+		}
+		return err
+	}
+	return nil
+}
+
+func truncateUpdateMessage(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+func verifyChecksumSignature(ctx context.Context, checksumData []byte, bundle updateAsset, bundleFound bool) (string, error) {
+	if !bundleFound {
+		if updateRequireSignature() {
+			return "missing_bundle", fmt.Errorf("release checksums.txt signature bundle not found")
+		}
+		return "missing_bundle", nil
+	}
+	if _, err := exec.LookPath("cosign"); err != nil {
+		if updateRequireSignature() {
+			return "cosign_missing", fmt.Errorf("cosign is not installed; checksum signature verification cannot run")
+		}
+		return "skipped_cosign_missing", nil
+	}
+
+	bundleData, err := downloadUpdateURL(ctx, bundle.BrowserDownloadURL)
+	if err != nil {
+		return "download_failed", fmt.Errorf("downloading checksum signature bundle: %w", err)
+	}
+	if len(bundleData) > updateMaxSignatureBundleBytes {
+		return "download_failed", fmt.Errorf("checksum signature bundle exceeds %d bytes", updateMaxSignatureBundleBytes)
+	}
+	tmpDir, err := os.MkdirTemp("", "kibana-cli-signature-*")
+	if err != nil {
+		return "failed", fmt.Errorf("creating signature temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	checksumPath := filepath.Join(tmpDir, "checksums.txt")
+	bundlePath := filepath.Join(tmpDir, "checksums.txt.sigstore.json")
+	if err := os.WriteFile(checksumPath, checksumData, 0o600); err != nil {
+		return "failed", fmt.Errorf("writing checksum temp file: %w", err)
+	}
+	if err := os.WriteFile(bundlePath, bundleData, 0o600); err != nil {
+		return "failed", fmt.Errorf("writing checksum signature bundle: %w", err)
+	}
+
+	identity := "^https://github\\.com/" + regexp.QuoteMeta(updateRepo) + "/\\.github/workflows/release\\.yml@refs/tags/v.*$"
+	command := exec.CommandContext(ctx, "cosign",
+		"verify-blob",
+		"--bundle", bundlePath,
+		"--certificate-identity-regexp", identity,
+		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com",
+		checksumPath,
+	)
+	outputBytes, err := command.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(outputBytes))
+		if msg != "" {
+			return "failed", fmt.Errorf("verifying checksum signature: %w: %s", err, truncateUpdateMessage(msg, 300))
+		}
+		return "failed", fmt.Errorf("verifying checksum signature: %w", err)
+	}
+	return "verified", nil
+}
+
+func updateRequireSignature() bool {
+	return os.Getenv("KIBANA_CLI_REQUIRE_SIGNATURE") == "1"
 }
 
 func fetchUpdateRelease(ctx context.Context, target string) (*updateRelease, error) {

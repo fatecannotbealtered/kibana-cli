@@ -130,9 +130,10 @@ kibana-cli update --check
 kibana-cli update --dry-run
 kibana-cli update --confirm <confirm_token>
 kibana-cli changelog --since <previous_version>
+kibana-cli reference --compact
 ```
 
-After a successful self-update, read `data.previous_version` and run `changelog --since <previous_version>` before continuing. For npm or Go managed installs, run the returned `data.command` instead of replacing files manually.
+After a successful self-update, review signature/checksum status, ensure `skill_sync_status` is successful, read `data.previous_version`, and run `changelog --since <previous_version>` before continuing. For npm or Go managed installs, run the returned `data.command` and `skill_sync_command` when the update result requires it.
 
 ## Security Boundary
 

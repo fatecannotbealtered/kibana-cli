@@ -530,6 +530,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	origGOOS := updateGOOS
 	origGOARCH := updateGOARCH
 	origReplace := updateReplaceBinary
+	origSkillSync := updateSkillSync
 	origVersion := version
 	t.Cleanup(func() {
 		updateRepo = origRepo
@@ -538,6 +539,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 		updateGOOS = origGOOS
 		updateGOARCH = origGOARCH
 		updateReplaceBinary = origReplace
+		updateSkillSync = origSkillSync
 		version = origVersion
 	})
 	updateRepo = "fatecannotbealtered/kibana-cli"
@@ -550,6 +552,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	}
 	updateGOOS = func() string { return goos }
 	updateGOARCH = func() string { return goarch }
+	updateSkillSync = func(context.Context, string) error { return nil }
 }
 
 func newUpdateReleaseServer(t *testing.T, tag string, downloads map[string][]byte) *httptest.Server {

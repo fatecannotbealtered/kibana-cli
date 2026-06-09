@@ -25,6 +25,12 @@ All notable changes to this project will be documented in this file.
 - Write-command audit entries now include failed write attempts and UTC timestamps.
 - `auth login` now falls back to `KIBANA_CLI_HOST`, `KIBANA_CLI_USER`, and `KIBANA_CLI_PASSWORD` when matching flags are omitted.
 - Release publishing now waits for release artifacts before publishing the npm wrapper.
+- Self-update now syncs the whole Agent Skill directory through `npx skills add fatecannotbealtered/kibana-cli -y -g` and reports `skill_sync_status`.
+- Skill, README, `.agent/` specs, and test prompts now follow the unified Agent-first update and Skill sync contract.
+
+### Security
+
+- Release checksums are signed with Sigstore/Cosign, and install/update paths report signature verification status separately from checksum verification.
 
 ## [1.1.0] - 2026-06-07
 
