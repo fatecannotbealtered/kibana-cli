@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -40,6 +41,7 @@ type contextResult struct {
 	SecurityTier    string         `json:"securityTier"`
 	SkillMinVersion string         `json:"skillMinVersion"`
 	Kibana          *contextKibana `json:"kibana"`
+	Notices         []updateNotice `json:"notices,omitempty"`
 }
 
 func runContext(_ *cobra.Command, _ []string) error {
@@ -56,6 +58,7 @@ func runContext(_ *cobra.Command, _ []string) error {
 		SecurityTier:    securityTier,
 		SkillMinVersion: skillMinVersion,
 		Kibana:          k,
+		Notices:         readCachedUpdateNotices(),
 	}
 	printContext(result)
 	if !result.OK {
@@ -84,6 +87,7 @@ func printContext(result *contextResult) {
 			"securityTier":    result.SecurityTier,
 			"skillMinVersion": result.SkillMinVersion,
 			"kibana":          result.Kibana,
+			"notices":         result.Notices,
 		}, elapsedDurationMs()))
 		return
 	}
@@ -103,6 +107,7 @@ func printContext(result *contextResult) {
 	}
 	k := result.Kibana
 	if !k.Configured {
+		printUpdateNoticeHint(os.Stdout, result.Notices)
 		return
 	}
 	output.Gray(fmt.Sprintf("  Host: %s (%s, source=%s)", k.Host, k.AuthMode, k.Source))
@@ -110,5 +115,6 @@ func printContext(result *contextResult) {
 		output.Warn(k.SearchError)
 	}
 	output.AuxGray(fmt.Sprintf("  exit %d", result.ExitCode))
+	printUpdateNoticeHint(os.Stdout, result.Notices)
 	fmt.Println()
 }

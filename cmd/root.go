@@ -147,6 +147,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&confirmToken, "confirm", "", "Confirm token returned by --dry-run for write commands")
 	rootCmd.PersistentFlags().BoolVar(&insecureTLS, "insecure", false, "Skip TLS certificate verification (corporate/self-signed CA)")
 	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "HTTP request timeout in seconds")
+	installUpdateNoticeHelp(rootCmd)
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		lastExit = 0

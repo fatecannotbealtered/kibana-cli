@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/output"
@@ -23,21 +24,22 @@ func init() {
 
 type doctorResult struct {
 	AgentStatus
-	Tool            string        `json:"tool"`
-	Version         string        `json:"version"`
-	SkillMinVersion string        `json:"skillMinVersion"`
-	SecurityTier    string        `json:"securityTier"`
-	Checks          []doctorCheck `json:"checks"`
-	ConfigExists    bool          `json:"configExists"`
-	AuthValid       bool          `json:"authValid"`
-	LatencyMs       int64         `json:"latencyMs"`
-	Host            string        `json:"host,omitempty"`
-	AuthMode        string        `json:"authMode,omitempty"`
-	Username        string        `json:"username,omitempty"`
-	KibanaVersion   string        `json:"kibanaVersion,omitempty"`
-	SearchReachable bool          `json:"searchReachable"`
-	SearchError     string        `json:"searchError,omitempty"`
-	Error           string        `json:"error,omitempty"`
+	Tool            string         `json:"tool"`
+	Version         string         `json:"version"`
+	SkillMinVersion string         `json:"skillMinVersion"`
+	SecurityTier    string         `json:"securityTier"`
+	Checks          []doctorCheck  `json:"checks"`
+	Notices         []updateNotice `json:"notices,omitempty"`
+	ConfigExists    bool           `json:"configExists"`
+	AuthValid       bool           `json:"authValid"`
+	LatencyMs       int64          `json:"latencyMs"`
+	Host            string         `json:"host,omitempty"`
+	AuthMode        string         `json:"authMode,omitempty"`
+	Username        string         `json:"username,omitempty"`
+	KibanaVersion   string         `json:"kibanaVersion,omitempty"`
+	SearchReachable bool           `json:"searchReachable"`
+	SearchError     string         `json:"searchError,omitempty"`
+	Error           string         `json:"error,omitempty"`
 }
 
 type doctorCheck struct {
@@ -63,6 +65,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		KibanaVersion:   out.KibanaVersion,
 		SearchReachable: out.SearchReachable,
 		SearchError:     out.SearchError,
+		Notices:         refreshUpdateNotices(apiCtx(), "doctor"),
 	}
 	result.Checks = buildDoctorChecks(result)
 	if !result.OK {
@@ -132,6 +135,7 @@ func printDoctor(result *doctorResult) {
 			"exitCode":  result.ExitCode,
 			"errorCode": result.ErrorCode,
 			"checks":    result.Checks,
+			"notices":   result.Notices,
 			"diagnostics": map[string]any{
 				"tool":            result.Tool,
 				"version":         result.Version,
@@ -170,5 +174,6 @@ func printDoctor(result *doctorResult) {
 		output.Warn(result.SearchError)
 	}
 	output.AuxGray(fmt.Sprintf("  Latency: %dms | exit %d", result.LatencyMs, result.ExitCode))
+	printUpdateNoticeHint(os.Stdout, result.Notices)
 	fmt.Println()
 }

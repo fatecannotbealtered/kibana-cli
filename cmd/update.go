@@ -78,25 +78,26 @@ type updateAsset struct {
 }
 
 type updateResult struct {
-	Status            string `json:"status"`
-	Message           string `json:"message"`
-	PreviousVersion   string `json:"previous_version,omitempty"`
-	CurrentVersion    string `json:"current_version"`
-	TargetVersion     string `json:"target_version"`
-	LatestVersion     string `json:"latest_version,omitempty"`
-	UpdateAvailable   bool   `json:"update_available"`
-	InstallMethod     string `json:"install_method"`
-	Path              string `json:"path,omitempty"`
-	Asset             string `json:"asset,omitempty"`
-	URL               string `json:"url,omitempty"`
-	Command           string `json:"command,omitempty"`
-	Hint              string `json:"hint,omitempty"`
-	DryRun            bool   `json:"dry_run,omitempty"`
-	ChecksumVerified  bool   `json:"checksum_verified,omitempty"`
-	SignatureStatus   string `json:"signature_status,omitempty"`
-	SignatureVerified bool   `json:"signature_verified,omitempty"`
-	SkillSyncCommand  string `json:"skill_sync_command,omitempty"`
-	SkillSyncStatus   string `json:"skill_sync_status,omitempty"`
+	Status            string         `json:"status"`
+	Message           string         `json:"message"`
+	PreviousVersion   string         `json:"previous_version,omitempty"`
+	CurrentVersion    string         `json:"current_version"`
+	TargetVersion     string         `json:"target_version"`
+	LatestVersion     string         `json:"latest_version,omitempty"`
+	UpdateAvailable   bool           `json:"update_available"`
+	InstallMethod     string         `json:"install_method"`
+	Path              string         `json:"path,omitempty"`
+	Asset             string         `json:"asset,omitempty"`
+	URL               string         `json:"url,omitempty"`
+	Command           string         `json:"command,omitempty"`
+	Hint              string         `json:"hint,omitempty"`
+	DryRun            bool           `json:"dry_run,omitempty"`
+	ChecksumVerified  bool           `json:"checksum_verified,omitempty"`
+	SignatureStatus   string         `json:"signature_status,omitempty"`
+	SignatureVerified bool           `json:"signature_verified,omitempty"`
+	SkillSyncCommand  string         `json:"skill_sync_command,omitempty"`
+	SkillSyncStatus   string         `json:"skill_sync_status,omitempty"`
+	Notices           []updateNotice `json:"notices,omitempty"`
 }
 
 type updateHTTPError struct {
@@ -145,6 +146,9 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		SkillSyncCommand: updateSkillSyncCommand(),
 		SkillSyncStatus:  "not_run",
 	}
+	if updateCheckOnly {
+		result.Notices = updateNoticesFromResult(result, "update_check")
+	}
 	if !available {
 		printUpdateResult(result)
 		return nil
@@ -155,6 +159,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	result.Command = updateInstallCommand(installMethod, targetVersion)
 
 	if updateCheckOnly {
+		result.Notices = updateNoticesFromResult(result, "update_check")
 		printUpdateResult(result)
 		return nil
 	}
