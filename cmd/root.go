@@ -275,7 +275,7 @@ func confirmTokenForExpiry(action string, detail map[string]any, expiresAt time.
 	if err != nil {
 		b = []byte(action)
 	}
-	sum := sha256.Sum256(b)
+	sum := confirmDigest32(b)
 	return fmt.Sprintf("ct_%d_%s", expiresAt.Unix(), hex.EncodeToString(sum[:])[:24])
 }
 

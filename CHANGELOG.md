@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Unified the golangci-lint v2 toolchain: Makefile installs from the `/v2` module path and CI uses `golangci-lint-action@v8` to match the v2 config format.
 - **BREAKING:** Config and not-configured failures now use exit code `4`, aligning `E_CONFIG` with the Agent CLI spec.
 - **BREAKING:** Error code names now match the Agent CLI spec: `E_RATE_LIMITED`, `E_CONFIRMATION_REQUIRED`, and `E_CONFLICT`.
 - **BREAKING:** Write confirmation tokens now include an expiry timestamp and are bound to operation context.
@@ -30,7 +31,9 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Confirm tokens are now signed with a machine-local HMAC key (`confirm.secret`, created on first use with 0600 permissions) so they cannot be fabricated without running `--dry-run` on the same machine.
 - Release checksums are signed with Sigstore/Cosign, and install/update paths report signature verification status separately from checksum verification.
+
 
 ## [1.1.0] - 2026-06-07
 
