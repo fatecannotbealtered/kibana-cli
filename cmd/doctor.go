@@ -84,6 +84,7 @@ func buildDoctorChecks(result *doctorResult) []doctorCheck {
 		versionCheck.Status = "fail"
 		versionCheck.Fix = "upgrade kibana-cli to " + result.SkillMinVersion + " or newer"
 	}
+	releaseCheck := doctorCheck{Check: "release_readiness", Status: releaseReadinessCheckStatus(), Fix: releaseReadinessCheckFix()}
 	securityCheck := doctorCheck{Check: "security_tier", Status: "pass"}
 	if result.SecurityTier == "" {
 		securityCheck.Status = "fail"
@@ -104,7 +105,7 @@ func buildDoctorChecks(result *doctorResult) []doctorCheck {
 		searchCheck.Status = "fail"
 		searchCheck.Fix = "check index read privileges and Console Proxy availability"
 	}
-	return []doctorCheck{versionCheck, securityCheck, configCheck, authCheck, searchCheck}
+	return []doctorCheck{versionCheck, releaseCheck, securityCheck, configCheck, authCheck, searchCheck}
 }
 
 func versionMeetsMin(current, min string) bool {

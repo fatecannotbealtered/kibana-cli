@@ -54,10 +54,14 @@ func TestReference_AgentSpecFields(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	data := envelopeData(t, out)
-	for _, key := range []string{"tool", "version", "exit_codes", "error_codes", "security", "commands"} {
+	for _, key := range []string{"tool", "version", "release_readiness", "exit_codes", "error_codes", "security", "commands"} {
 		if _, ok := data[key]; !ok {
 			t.Fatalf("reference missing %s: %s", key, out)
 		}
+	}
+	readiness, ok := data["release_readiness"].(map[string]any)
+	if !ok || readiness["level"] != "beta" || readiness["live_smoke_status"] != "missing" {
+		t.Fatalf("unexpected release_readiness: %v", data["release_readiness"])
 	}
 	if data["tool"] != toolName || data["version"] != version {
 		t.Fatalf("tool/version mismatch: %v/%v", data["tool"], data["version"])

@@ -80,4 +80,16 @@ func TestDoctorVersionCheck(t *testing.T) {
 	if len(checks) == 0 || checks[0].Check != "version" || checks[0].Status != "fail" {
 		t.Fatalf("expected failing version check: %+v", checks)
 	}
+	foundReleaseReadiness := false
+	for _, check := range checks {
+		if check.Check == "release_readiness" {
+			foundReleaseReadiness = true
+			if check.Status != "warn" {
+				t.Fatalf("release_readiness check = %+v", check)
+			}
+		}
+	}
+	if !foundReleaseReadiness {
+		t.Fatalf("missing release_readiness check: %+v", checks)
+	}
 }

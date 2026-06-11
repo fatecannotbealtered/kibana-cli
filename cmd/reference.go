@@ -61,10 +61,11 @@ func init() {
 
 func referenceData(markdown string) map[string]any {
 	return map[string]any{
-		"tool":            toolName,
-		"version":         rootCmd.Version,
-		"schema_version":  output.SchemaVersion,
-		"skillMinVersion": skillMinVersion,
+		"tool":              toolName,
+		"version":           rootCmd.Version,
+		"schema_version":    output.SchemaVersion,
+		"skillMinVersion":   skillMinVersion,
+		"release_readiness": buildReleaseReadiness(),
 		"formats": []string{
 			FormatJSON,
 			FormatText,

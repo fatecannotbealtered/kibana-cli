@@ -12,3 +12,5 @@ Start with `.agent/AGENT.md`, then read only the specific spec needed for the ta
 For behavior changes, update code, tests, `CHANGELOG.md`, and the Skill together.
 
 Before release, Functional Contract Coverage must remain 100%: every public README / Skill / reference / help / context / doctor / changelog / update behavior needs command-level tests.
+
+Release readiness must be explicit: `reference.release_readiness` and `doctor` declare `stable`, `beta`, or `unpublishable`; `stable` requires recorded live smoke/E2E evidence.
