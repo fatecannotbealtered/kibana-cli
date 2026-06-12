@@ -256,9 +256,6 @@ func writePlan(action string, preview, tokenDetail map[string]any) (bool, error)
 	return false, nil
 }
 
-func confirmTokenFor(action string, detail map[string]any) string {
-	return confirmTokenForExpiry(action, detail, time.Now().UTC().Add(confirmTokenTTL).Truncate(time.Second))
-}
 
 func confirmTokenForExpiry(action string, detail map[string]any, expiresAt time.Time) string {
 	payload := map[string]any{
