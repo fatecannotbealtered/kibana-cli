@@ -119,13 +119,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: go build -o kibana-cli ./cmd/kibana-cli
-
-      - name: Smoke test (Unix)
-        if: runner.os != 'Windows'
-        run: ./kibana-cli --help
-
-      - name: Smoke test (Windows)
-        if: runner.os == 'Windows'
-        run: ./kibana-cli.exe --help
+      - name: Build and smoke test
+        # explicit -o never appends .exe, so name the output per-OS;
+        # bash keeps one step working across all three runners
+        shell: bash
+        run: |
+          BIN=kibana-cli
+          [ "$RUNNER_OS" = "Windows" ] && BIN=kibana-cli.exe
+          go build -o "$BIN" ./cmd/kibana-cli
+          "./$BIN" --help
