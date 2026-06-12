@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Synced the `.agent/` spec copies from the ai-native-cli-spec template: stdout failure envelope (§4), HMAC confirm-token requirement (§7), signature_status/signature_verified fields (§14), Skill frontmatter `version` rule.
 - Unified the golangci-lint v2 toolchain: Makefile installs from the `/v2` module path and CI uses `golangci-lint-action@v8` to match the v2 config format.
 - **BREAKING:** Config and not-configured failures now use exit code `4`, aligning `E_CONFIG` with the Agent CLI spec.
 - **BREAKING:** Error code names now match the Agent CLI spec: `E_RATE_LIMITED`, `E_CONFIRMATION_REQUIRED`, and `E_CONFLICT`.
