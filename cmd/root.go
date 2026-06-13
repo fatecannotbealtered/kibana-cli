@@ -47,7 +47,7 @@ const (
 
 const (
 	toolName        = "kibana-cli"
-	skillMinVersion = "1.1.0"
+	skillMinVersion = "1.1.1"
 	securityTier    = "T1"
 )
 

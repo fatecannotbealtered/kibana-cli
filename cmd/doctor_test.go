@@ -84,7 +84,7 @@ func TestDoctorVersionCheck(t *testing.T) {
 	for _, check := range checks {
 		if check.Check == "release_readiness" {
 			foundReleaseReadiness = true
-			if check.Status != "warn" {
+			if check.Status != "pass" {
 				t.Fatalf("release_readiness check = %+v", check)
 			}
 		}

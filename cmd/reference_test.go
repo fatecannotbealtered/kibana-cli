@@ -60,7 +60,7 @@ func TestReference_AgentSpecFields(t *testing.T) {
 		}
 	}
 	readiness, ok := data["release_readiness"].(map[string]any)
-	if !ok || readiness["level"] != "beta" || readiness["live_smoke_status"] != "missing" {
+	if !ok || readiness["level"] != "stable" || readiness["live_smoke_status"] != "verified" {
 		t.Fatalf("unexpected release_readiness: %v", data["release_readiness"])
 	}
 	if data["tool"] != toolName || data["version"] != version {
