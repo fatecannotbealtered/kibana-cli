@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Unified the HTTP-status→exit-code mapping into a single source of truth (`output.ExitCodeForHTTP`); the `cmd` layer now delegates to it instead of maintaining a parallel mapper, so the status→exit contract can never drift between the two layers.
+
 ## [1.1.1] - 2026-06-13
 
 ### Added
