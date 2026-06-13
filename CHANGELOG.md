@@ -2,10 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.1.1] - 2026-06-13
 
 ### Added
 
+- Recorded live smoke against a real Elasticsearch+Kibana 7.10.2 instance with X-Pack security enabled (`docs/LIVE-SMOKE-EVIDENCE.md`, 2026-06-13: auth/keyring, patterns, search, agg, error taxonomy all PASS); `release_readiness` is now `stable` with `live_smoke_status: verified`.
 - FCC enumeration guard (`TestFCC_EveryLeafCommandHasTest`): enumerates every leaf command from live `reference` output and asserts each has a command-level test; skips while `fcc_status` is honestly declared non-verified, so the claim cannot be flipped without coverage.
 - Added `changelog [--since]`, derived from the embedded `CHANGELOG.md`, so Agents can refresh their knowledge after self-update.
 - `reference` now reports tool/version, supported formats, exit codes, error codes, command params, output-schema summaries, permission tiers, and the T1 security boundary.
