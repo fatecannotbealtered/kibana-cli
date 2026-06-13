@@ -112,7 +112,7 @@ func TestHintForErrorCode(t *testing.T) {
 	}
 }
 
-func Test_exitCodeForHTTP(t *testing.T) {
+func TestExitCodeForHTTP(t *testing.T) {
 	tests := []struct {
 		status int
 		want   int
@@ -128,7 +128,7 @@ func Test_exitCodeForHTTP(t *testing.T) {
 		{200, 7},
 	}
 	for _, tt := range tests {
-		if got := exitCodeForHTTP(tt.status); got != tt.want {
+		if got := ExitCodeForHTTP(tt.status); got != tt.want {
 			t.Fatalf("status %d: got %d want %d", tt.status, got, tt.want)
 		}
 	}

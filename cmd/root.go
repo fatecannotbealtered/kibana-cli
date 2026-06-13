@@ -190,19 +190,10 @@ func auditWriteAttempt() {
 	audit.Log(cmd.CommandPath(), os.Args[1:], lastExit, time.Since(cmdStartTime).Milliseconds())
 }
 
+// exitCodeForStatus delegates to output.ExitCodeForHTTP, the single source of
+// truth for the HTTP-status→exit-code mapping, so the two layers cannot drift.
 func exitCodeForStatus(status int) int {
-	switch {
-	case status == 401 || status == 403:
-		return ExitAuth
-	case status == 404:
-		return ExitNotFound
-	case status == 429:
-		return ExitRateLimit
-	case status >= 500:
-		return ExitNetwork
-	default:
-		return ExitBadArgs
-	}
+	return output.ExitCodeForHTTP(status)
 }
 
 func dryRunOutput(action string, detail map[string]any) bool {

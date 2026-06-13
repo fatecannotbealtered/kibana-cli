@@ -154,7 +154,7 @@ func PrintErrorJSONWithCode(msg string, statusCode int, code ErrorCode) {
 	details := map[string]any{
 		"status":    "api_error",
 		"errorCode": code,
-		"exitCode":  exitCodeForHTTP(statusCode),
+		"exitCode":  ExitCodeForHTTP(statusCode),
 	}
 	if statusCode > 0 {
 		details["statusCode"] = statusCode
@@ -165,7 +165,10 @@ func PrintErrorJSONWithCode(msg string, statusCode int, code ErrorCode) {
 	PrintJSON(FailureEnvelope(code, msg, details, 0))
 }
 
-func exitCodeForHTTP(statusCode int) int {
+// ExitCodeForHTTP is the single source of truth mapping an upstream HTTP status
+// to a process exit code. Both the output layer and the cmd layer route through
+// this so the status→exit contract can never drift between the two.
+func ExitCodeForHTTP(statusCode int) int {
 	switch {
 	case statusCode == 401:
 		return 4
