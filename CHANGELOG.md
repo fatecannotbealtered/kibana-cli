@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.3] - 2026-06-14
+
+### Added
+
+- `search --dsl <json>` raw Elasticsearch query passthrough; `search --search-after` stable cursor (`next_search_after`) for large/time-ordered result sets.
+- `agg --agg-type date_histogram` with `--interval`, plus metric sub-aggregations (`--metric avg|sum|min|max|count --metric-field`).
+- `objects list` / `objects get` — saved-objects (dashboards, visualizations, searches, index-patterns) read.
+- `reference` now exposes a real per-command `output_schema` + `examples[]`, guarded against regression.
+
+### Changed
+
+- Confirm tokens are now single-use (E_CONFLICT on replay) for auth/config/update writes.
+
 ## [1.1.2] - 2026-06-14
 
 ### Changed
