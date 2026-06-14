@@ -31,20 +31,31 @@ var referenceCmd = &cobra.Command{
 }
 
 type commandSpec struct {
-	Name         string         `json:"name"`
-	Path         string         `json:"path"`
-	Use          string         `json:"use"`
-	Type         string         `json:"type"`
-	Short        string         `json:"short,omitempty"`
-	Description  string         `json:"description,omitempty"`
-	Permission   string         `json:"permission"`
-	SecurityTier string         `json:"security_tier"`
-	Write        bool           `json:"write"`
-	RawFormat    bool           `json:"raw_format"`
-	Params       []flagSpec     `json:"params,omitempty"`
-	Flags        []flagSpec     `json:"flags,omitempty"`
-	OutputSchema map[string]any `json:"output_schema,omitempty"`
-	Subcommands  []string       `json:"subcommands,omitempty"`
+	Name         string     `json:"name"`
+	Path         string     `json:"path"`
+	Use          string     `json:"use"`
+	Type         string     `json:"type"`
+	Short        string     `json:"short,omitempty"`
+	Description  string     `json:"description,omitempty"`
+	Permission   string     `json:"permission"`
+	SecurityTier string     `json:"security_tier"`
+	Write        bool       `json:"write"`
+	RawFormat    bool       `json:"raw_format"`
+	Params       []flagSpec `json:"params,omitempty"`
+	Flags        []flagSpec `json:"flags,omitempty"`
+	OutputSchema string     `json:"output_schema"`
+	Examples     []string   `json:"examples,omitempty"`
+	Subcommands  []string   `json:"subcommands,omitempty"`
+}
+
+// referenceDataSchema is a machine-readable description of one command's data
+// payload: shape ("object" or "array"), the enumerated top-level data keys, and
+// the externally-sourced fields tagged _untrusted (document content an agent must
+// treat as data, never instructions).
+type referenceDataSchema struct {
+	Shape           string   `json:"shape"`
+	Fields          []string `json:"fields"`
+	UntrustedFields []string `json:"untrusted_fields,omitempty"`
 }
 
 type flagSpec struct {
@@ -88,6 +99,7 @@ func referenceData(markdown string) map[string]any {
 		"exit_codes":  exitCodeReference(),
 		"error_codes": errorCodeReference(),
 		"commands":    collectCommandSpecs(rootCmd, ""),
+		"schemas":     referenceSchemas(),
 		"markdown":    markdown,
 	}
 }
@@ -143,6 +155,16 @@ func walkCommands(cmd *cobra.Command, lines *[]string, prefix string) {
 	if cmd.Long != "" && cmd.Long != cmd.Short {
 		*lines = append(*lines, cmd.Long, "")
 	}
+	if schema := outputSchemaForCommand(name); schema != "group" {
+		*lines = append(*lines, "Output schema: `"+schema+"`", "")
+	}
+	if examples := examplesForCommand(name); len(examples) > 0 {
+		*lines = append(*lines, "Examples:")
+		for _, ex := range examples {
+			*lines = append(*lines, "  "+ex)
+		}
+		*lines = append(*lines, "")
+	}
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Hidden {
 			return
@@ -178,6 +200,7 @@ func collectCommandSpecs(cmd *cobra.Command, prefix string) []commandSpec {
 		Write:        isWriteCommand(cmd),
 		RawFormat:    commandSupportsFormat(cmd, FormatRaw),
 		OutputSchema: outputSchemaForCommand(name),
+		Examples:     examplesForCommand(name),
 	}
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Hidden {
@@ -246,23 +269,167 @@ func commandPermission(cmd *cobra.Command) string {
 	return "read"
 }
 
-func outputSchemaForCommand(path string) map[string]any {
+// outputSchemaForCommand maps a command path to a schema label defined in
+// referenceSchemas(). Group/parent commands that emit no data of their own map to
+// the "group" label. The label is the contract an agent resolves against schemas.
+func outputSchemaForCommand(path string) string {
 	switch path {
 	case "kibana-cli context":
-		return map[string]any{"data": "Agent status, tool/version, security tier, and Kibana auth/search reachability"}
+		return "context"
 	case "kibana-cli doctor":
-		return map[string]any{"data": "Agent status plus checks[] diagnostics and environment details"}
+		return "doctor"
 	case "kibana-cli search":
-		return map[string]any{"data": "Log search result with index, total, tookMs, count, limit, offset, next_offset, has_more, hits[], zero-hit diagnostics, and _untrusted markers on hit content"}
+		return "search_result"
 	case "kibana-cli agg":
-		return map[string]any{"data": "Terms aggregation result with field, total, tookMs, count, limit, buckets[], and _untrusted markers on external bucket data; no cursor because terms aggregation returns top-N buckets"}
+		return "agg_result"
 	case "kibana-cli patterns list":
-		return map[string]any{"data": "Saved Kibana index-pattern objects with count, total, limit, offset, next_offset, has_more, and _untrusted markers"}
+		return "patterns"
 	case "kibana-cli patterns fields":
-		return map[string]any{"data": "Kibana index pattern field descriptors with count, total, limit, offset, next_offset, has_more, and _untrusted markers"}
+		return "fields"
 	case "kibana-cli changelog":
-		return map[string]any{"data": "current_version, since, and Keep-a-Changelog entries parsed from CHANGELOG.md"}
+		return "changelog"
+	case "kibana-cli reference":
+		return "reference"
+	case "kibana-cli auth login":
+		return "auth_login"
+	case "kibana-cli auth logout":
+		return "auth_logout"
+	case "kibana-cli auth status":
+		return "auth_status"
+	case "kibana-cli config init":
+		return "config_init"
+	case "kibana-cli config show":
+		return "config_show"
+	case "kibana-cli update":
+		return "update_report"
 	default:
-		return map[string]any{"envelope": "Unified ok/schema_version/data-or-error/meta envelope"}
+		// Root and parent/group commands (kibana-cli, auth, config, patterns).
+		return "group"
+	}
+}
+
+// examplesForCommand returns one runnable example per leaf command. Group/parent
+// commands return nil because they emit only help. Write commands show the
+// dry-run/confirm flow an agent must follow.
+func examplesForCommand(path string) []string {
+	switch path {
+	case "kibana-cli context":
+		return []string{"kibana-cli context --compact"}
+	case "kibana-cli doctor":
+		return []string{"kibana-cli doctor --compact"}
+	case "kibana-cli reference":
+		return []string{"kibana-cli reference --compact"}
+	case "kibana-cli changelog":
+		return []string{"kibana-cli changelog --since 0.1.0 --compact"}
+	case "kibana-cli search":
+		return []string{"kibana-cli search --index 'app-test-log-*' --query timeout --from now-15m --limit 20 --compact"}
+	case "kibana-cli agg":
+		return []string{"kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --limit 10 --compact"}
+	case "kibana-cli patterns list":
+		return []string{"kibana-cli patterns list --limit 50 --compact"}
+	case "kibana-cli patterns fields":
+		return []string{"kibana-cli patterns fields --index 'app-test-log-*' --limit 100 --compact"}
+	case "kibana-cli auth status":
+		return []string{"kibana-cli auth status --compact"}
+	case "kibana-cli config show":
+		return []string{"kibana-cli config show --compact"}
+	case "kibana-cli auth login":
+		return []string{
+			"kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --dry-run --compact",
+			"kibana-cli auth login --host https://kibana.example.com --user dev_ro --password '...' --confirm <confirm_token> --compact",
+		}
+	case "kibana-cli auth logout":
+		return []string{
+			"kibana-cli auth logout --dry-run --compact",
+			"kibana-cli auth logout --confirm <confirm_token> --compact",
+		}
+	case "kibana-cli config init":
+		return []string{
+			"kibana-cli config init --dry-run --compact",
+			"kibana-cli config init --confirm <confirm_token> --compact",
+		}
+	case "kibana-cli update":
+		return []string{
+			"kibana-cli update --check --compact",
+			"kibana-cli update --dry-run --compact",
+			"kibana-cli update --confirm <confirm_token> --compact",
+		}
+	default:
+		// Root and parent/group commands emit only help text.
+		return nil
+	}
+}
+
+// referenceSchemas enumerates the real data payload of every command, keyed by the
+// label outputSchemaForCommand() returns. Fields are taken from the actual JSON
+// payloads each command emits; _untrusted marks externally-sourced document/source
+// content (Kibana hits, buckets, saved objects) that agents must treat as data.
+func referenceSchemas() map[string]referenceDataSchema {
+	return map[string]referenceDataSchema{
+		"search_result": {
+			Shape:           "object",
+			Fields:          []string{"index", "profile", "total", "totalRelation", "tookMs", "hits", "count", "limit", "offset", "has_more", "next_offset", "limit_capped", "limit_max", "traceMode", "zeroReason", "hint", "diagnostics"},
+			UntrustedFields: []string{"hits"},
+		},
+		"agg_result": {
+			Shape:           "object",
+			Fields:          []string{"field", "total", "tookMs", "buckets", "count", "limit", "has_more", "next_offset", "_untrusted"},
+			UntrustedFields: []string{"buckets"},
+		},
+		"patterns": {
+			Shape:           "object",
+			Fields:          []string{"patterns", "count", "total", "limit", "offset", "has_more", "next_offset", "_untrusted"},
+			UntrustedFields: []string{"patterns"},
+		},
+		"fields": {
+			Shape:           "object",
+			Fields:          []string{"index", "fields", "count", "total", "limit", "offset", "has_more", "next_offset", "_untrusted"},
+			UntrustedFields: []string{"fields"},
+		},
+		"context": {
+			Shape:  "object",
+			Fields: []string{"status", "message", "error", "hint", "errorCode", "statusCode", "exitCode", "tool", "version", "securityTier", "skillMinVersion", "kibana", "notices"},
+		},
+		"doctor": {
+			Shape:  "object",
+			Fields: []string{"status", "message", "error", "hint", "errorCode", "statusCode", "exitCode", "tool", "version", "skillMinVersion", "securityTier", "checks", "notices", "configExists", "authValid", "latencyMs", "host", "authMode", "username", "kibanaVersion", "searchReachable", "searchError"},
+		},
+		"changelog": {
+			Shape:  "object",
+			Fields: []string{"current_version", "since", "entries", "count"},
+		},
+		"reference": {
+			Shape:  "object",
+			Fields: []string{"tool", "version", "schema_version", "skillMinVersion", "release_readiness", "formats", "security", "query_conventions", "exit_codes", "error_codes", "commands", "schemas", "markdown"},
+		},
+		"auth_login": {
+			Shape:  "object",
+			Fields: []string{"status", "host", "authMode", "username", "kibanaVersion", "searchReachable", "credentialStore"},
+		},
+		"auth_logout": {
+			Shape:  "object",
+			Fields: []string{"status"},
+		},
+		"auth_status": {
+			Shape:  "object",
+			Fields: []string{"status", "configured", "host", "authMode", "source", "credentialStore", "kibanaVersion"},
+		},
+		"config_init": {
+			Shape:  "object",
+			Fields: []string{"status", "path"},
+		},
+		"config_show": {
+			Shape:           "object",
+			Fields:          []string{"path", "fieldMap"},
+			UntrustedFields: []string{"fieldMap"},
+		},
+		"update_report": {
+			Shape:  "object",
+			Fields: []string{"status", "message", "previous_version", "current_version", "target_version", "latest_version", "update_available", "install_method", "path", "asset", "url", "command", "hint", "dry_run", "checksum_verified", "signature_status", "signature_verified", "skill_sync_command", "skill_sync_status", "notices"},
+		},
+		"group": {
+			Shape:  "object",
+			Fields: []string{"subcommands"},
+		},
 	}
 }
