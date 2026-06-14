@@ -44,9 +44,11 @@ PowerShell 使用 `$env:NAME = "value"` 设置同样的环境变量。真实密�
 
 | 领域 | 命令 | Agent 用法 |
 |------|------|------------|
-| 搜索 | `search --index ...` / `search --data-view ...` | 按时间窗口、级别、查询文本、字段、limit 和 offset 查询日志。 |
-| 聚合 | `agg --index ... --terms ...` | 按字段聚合日志，辅助故障排查和趋势判断。 |
+| 搜索 | `search --index ...` / `search --data-view ...` | 按时间窗口、级别、查询文本、字段、limit、offset 以及 `--search-after` 游标查询日志。 |
+| 原生查询 DSL | `search --dsl '<json>'` | 直接发送原生 Elasticsearch `_search` 请求体，覆盖 flag 无法表达的查询。 |
+| 聚合 | `agg --index ... --terms ...` / `--agg-type date_histogram` | 按字段或时间桶聚合日志，可选 `--metric avg\|sum\|min\|max\|count`。 |
 | 索引模式与字段 | `patterns list / fields` | 查询前发现 index pattern 和字段名。 |
+| Saved Objects | `objects list --type ...` / `objects get --type ... --id ...` | 读取 Kibana dashboard、visualization、search、index-pattern。 |
 | 配置与认证 | `auth ...`, `config init / show` | 在 OS 凭据库保存凭据，并管理 field-map 配置。 |
 | 安全与更新 | `--dry-run`, `--confirm`, `update`, `changelog` | 预览本地写操作，更新后刷新 Agent 知识。 |
 | 自描述 | `reference`, `context`, `doctor` | 暴露命令 schema、认证状态和健康检查。 |

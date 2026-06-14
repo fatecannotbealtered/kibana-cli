@@ -253,6 +253,99 @@ func TestAgg_UnknownService(t *testing.T) {
 	}
 }
 
+func TestAgg_DateHistogram(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	out, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"agg", "--index", "logs-*", "--agg-type", "date_histogram", "--interval", "1h", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["aggType"] != "date_histogram" {
+		t.Fatalf("aggType not echoed: %s", out)
+	}
+	buckets, _ := data["buckets"].([]any)
+	if len(buckets) == 0 {
+		t.Fatalf("expected histogram buckets: %s", out)
+	}
+	first, _ := buckets[0].(map[string]any)
+	if key, _ := first["key"].(string); !strings.Contains(key, "2024-01-01T") {
+		t.Fatalf("expected formatted time key: %s", out)
+	}
+}
+
+func TestAgg_Metric_Avg(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	out, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"agg", "--index", "logs-*", "--terms", "level", "--metric", "avg", "--metric-field", "took_ms", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["metric"] != "avg" {
+		t.Fatalf("metric not echoed: %s", out)
+	}
+	buckets, _ := data["buckets"].([]any)
+	if len(buckets) == 0 {
+		t.Fatalf("expected buckets: %s", out)
+	}
+	first, _ := buckets[0].(map[string]any)
+	if _, ok := first["metric"]; !ok {
+		t.Fatalf("expected metric value in bucket: %s", out)
+	}
+}
+
+func TestAgg_Metric_MissingField(t *testing.T) {
+	setupTestHome(t)
+	_, code := runCLI(t, []string{"agg", "--index", "logs-*", "--terms", "level", "--metric", "avg", "--json"})
+	if code != ExitBadArgs {
+		t.Fatalf("got exit %d", code)
+	}
+}
+
+func TestAgg_Metric_Invalid(t *testing.T) {
+	setupTestHome(t)
+	_, code := runCLI(t, []string{"agg", "--index", "logs-*", "--terms", "level", "--metric", "median", "--metric-field", "x", "--json"})
+	if code != ExitBadArgs {
+		t.Fatalf("got exit %d", code)
+	}
+}
+
+func TestAgg_DateHistogram_NoTermsOK(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	_, code := runCLIWithEnv(t, map[string]string{
+		"KIBANA_CLI_HOST":     srv.URL,
+		"KIBANA_CLI_USER":     "ops",
+		"KIBANA_CLI_PASSWORD": "secret",
+	}, []string{"agg", "--index", "logs-*", "--agg-type", "date_histogram", "--json"})
+	if code != ExitOK {
+		t.Fatalf("got exit %d", code)
+	}
+}
+
+func TestAgg_TermsRequired(t *testing.T) {
+	setupTestHome(t)
+	_, code := runCLI(t, []string{"agg", "--index", "logs-*", "--json"})
+	if code != ExitBadArgs {
+		t.Fatalf("got exit %d", code)
+	}
+}
+
 func TestAgg_InvalidFieldMap(t *testing.T) {
 	srv := newMockKibanaServer()
 	defer srv.Close()

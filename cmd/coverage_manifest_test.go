@@ -20,6 +20,8 @@ var commandCoverage = []struct {
 	{path: "kibana-cli patterns fields", unitTest: "TestPatterns_Fields_*"},
 	{path: "kibana-cli search", unitTest: "TestSearch_*"},
 	{path: "kibana-cli agg", unitTest: "TestAgg_*"},
+	{path: "kibana-cli objects list", unitTest: "TestObjects_List_*"},
+	{path: "kibana-cli objects get", unitTest: "TestObjects_Get_*"},
 	{path: "kibana-cli update", unitTest: "TestUpdate_*"},
 	{path: "kibana-cli reference", unitTest: "TestReference_*"},
 }

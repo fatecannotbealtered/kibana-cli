@@ -28,6 +28,10 @@ type SearchOptions struct {
 	MessageFields []string // all configured message fields (precise multi-field search)
 	// MsgOnly (precise) restricts --query to match_phrase across message fields only.
 	MsgOnly bool
+	// SearchAfter is the ES search_after cursor (sort values of the last seen hit).
+	// When set, it replaces offset-based paging: the query adds an _id tiebreaker
+	// sort and omits `from`. Mutually exclusive with Offset at the caller level.
+	SearchAfter []any
 }
 
 func buildQuery(opts SearchOptions) map[string]any {
