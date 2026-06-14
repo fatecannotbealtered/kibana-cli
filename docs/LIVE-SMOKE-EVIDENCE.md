@@ -29,6 +29,24 @@ recorded_live_smoke_for_stable`, run against a real Elasticsearch + Kibana
 | `changelog` | PASS | |
 | `auth logout` (dry-run → confirm) | PASS | clears config + keyring |
 
+## 2026-06-14 — v1.1.3 new commands (live)
+
+Re-run against a live Elasticsearch + Kibana **7.10.1** instance (Docker
+`tools-e2e-{elasticsearch,kibana}`) holding real multi-million-doc log indices
+(e.g. `iot-3.0-test-log-*`). Each new leaf invoked with `--compact`; envelope
+asserted.
+
+| Command | Result | Notes |
+|---|---|---|
+| `search --dsl '{"query":{"match_all":{}},"size":1}'` | PASS | raw ES `_search` passthrough; hits returned with per-hit `_untrusted` tags |
+| `search --index iot-3.0-test-log-* --search-after <token>` | PASS | returned `next_search_after` cursor (base64 sort), pages stably |
+| `agg --agg-type date_histogram --interval 1d --from now-30d` | PASS | per-day buckets with real counts (e.g. `2026-06-08: 12.2M`) |
+| `agg --terms service_name --metric count` | PASS | top services by doc count (`ota-server: 56M`, …) |
+| `objects list --type index-pattern` | PASS | 7 saved index-patterns, `_untrusted: [objects]` |
+| `objects get --type index-pattern --id metrics-*` | PASS | full saved-object, `_untrusted: [title,description,object]` |
+
+All v1.1.3 new commands are live-verified.
+
 ### Credential-at-rest
 
 - After `auth login`, the configured password does **not** appear in any file
