@@ -241,9 +241,23 @@ func writePlan(action string, preview, tokenDetail map[string]any) (bool, error)
 	if strings.TrimSpace(confirmToken) == "" {
 		return false, failConfirmRequired(action, preview, token)
 	}
-	if err := validateConfirmToken(action, tokenDetail, strings.TrimSpace(confirmToken)); err != nil {
+	suppliedToken := strings.TrimSpace(confirmToken)
+	if err := validateConfirmToken(action, tokenDetail, suppliedToken); err != nil {
 		return false, failConflict(err.Error(), map[string]any{"action": action})
 	}
+	// Single-use gate: a token may drive exactly one write. A replay (e.g. an
+	// agent retrying a confirmed write that timed out) is rejected so the
+	// operation cannot be duplicated; there is no upstream version to bind to.
+	now := time.Now().UTC()
+	if isConfirmTokenConsumed(suppliedToken, now) {
+		return false, failConflict(
+			"confirm token already used; the operation may have completed — re-run --dry-run to see current state",
+			map[string]any{"action": action},
+		)
+	}
+	// Mark consumed BEFORE the write executes: if we crash mid-write, the retry
+	// is conservatively blocked rather than silently duplicating the operation.
+	markConfirmTokenConsumed(suppliedToken, now)
 	return false, nil
 }
 
