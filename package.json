@@ -1,6 +1,6 @@
 {
   "name": "@fatecannotbealtered-/kibana-cli",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Kibana log query CLI for AI Agents - search and aggregate logs through Kibana Console Proxy with JSON-by-default output",
   "keywords": [
     "kibana",
@@ -27,12 +27,12 @@
     "kibana-cli": "scripts/run.js"
   },
   "optionalDependencies": {
-    "@fatecannotbealtered-/kibana-cli-darwin-arm64": "1.1.1",
-    "@fatecannotbealtered-/kibana-cli-darwin-x64": "1.1.1",
-    "@fatecannotbealtered-/kibana-cli-linux-arm64": "1.1.1",
-    "@fatecannotbealtered-/kibana-cli-linux-x64": "1.1.1",
-    "@fatecannotbealtered-/kibana-cli-win32-arm64": "1.1.1",
-    "@fatecannotbealtered-/kibana-cli-win32-x64": "1.1.1"
+    "@fatecannotbealtered-/kibana-cli-darwin-arm64": "1.1.2",
+    "@fatecannotbealtered-/kibana-cli-darwin-x64": "1.1.2",
+    "@fatecannotbealtered-/kibana-cli-linux-arm64": "1.1.2",
+    "@fatecannotbealtered-/kibana-cli-linux-x64": "1.1.2",
+    "@fatecannotbealtered-/kibana-cli-win32-arm64": "1.1.2",
+    "@fatecannotbealtered-/kibana-cli-win32-x64": "1.1.2"
   },
   "files": [
     "scripts/run.js",
