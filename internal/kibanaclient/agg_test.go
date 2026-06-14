@@ -140,6 +140,103 @@ func TestClient_termsOnce_defaults(t *testing.T) {
 	}
 }
 
+func TestClient_Aggregate_dateHistogramWithMetric(t *testing.T) {
+	var body map[string]any
+	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		if r.URL.Path == "/api/console/proxy" {
+			payload, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(payload, &body)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"took": 4,
+				"hits": map[string]any{"total": 10},
+				"aggregations": map[string]any{
+					"terms_agg": map[string]any{
+						"buckets": []map[string]any{
+							{"key": 1000, "key_as_string": "2024-01-01T00:00:00.000Z", "doc_count": 6, "metric": map[string]any{"value": 12.5}},
+							{"key": 2000, "key_as_string": "2024-01-01T01:00:00.000Z", "doc_count": 4, "metric": map[string]any{"value": 3.0}},
+						},
+					},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	defer srv.Close()
+
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	res, err := c.Aggregate(context.Background(), AggOptions{
+		Index: "logs-*", AggType: AggTypeDateHistogram, Interval: "1h",
+		Metric: "avg", MetricField: "took_ms",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AggType != AggTypeDateHistogram || res.Metric != "avg" || len(res.Buckets) != 2 {
+		t.Fatalf("%+v", res)
+	}
+	if res.Buckets[0].Key != "2024-01-01T00:00:00.000Z" || res.Buckets[0].Metric == nil || *res.Buckets[0].Metric != 12.5 {
+		t.Fatalf("bucket0=%+v", res.Buckets[0])
+	}
+	// Request must carry a date_histogram with the interval and a metric sub-agg.
+	agg := body["aggs"].(map[string]any)["terms_agg"].(map[string]any)
+	dh, ok := agg["date_histogram"].(map[string]any)
+	if !ok || dh["fixed_interval"] != "1h" {
+		t.Fatalf("date_histogram body: %v", agg)
+	}
+	if _, ok := agg["aggs"].(map[string]any)["metric"]; !ok {
+		t.Fatalf("missing metric sub-agg: %v", agg)
+	}
+}
+
+func TestClient_Aggregate_termsWithMetricKeywordRetry(t *testing.T) {
+	var calls int
+	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		if r.URL.Path == "/api/console/proxy" {
+			calls++
+			if calls == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"took": 1,
+				"hits": map[string]any{"total": 2},
+				"aggregations": map[string]any{
+					"terms_agg": map[string]any{
+						"buckets": []map[string]any{
+							{"key": "order-svc", "doc_count": 2, "metric": map[string]any{"value": 7.0}},
+						},
+					},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	defer srv.Close()
+
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	res, err := c.Aggregate(context.Background(), AggOptions{
+		Index: "logs-*", AggType: AggTypeTerms, TermsField: "service",
+		Metric: "sum", MetricField: "took_ms",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Field != "service (.keyword)" || calls != 2 || res.Buckets[0].Metric == nil {
+		t.Fatalf("field=%q calls=%d buckets=%+v", res.Field, calls, res.Buckets)
+	}
+}
+
 func TestClient_Terms_keywordRetryFails(t *testing.T) {
 	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/status" {

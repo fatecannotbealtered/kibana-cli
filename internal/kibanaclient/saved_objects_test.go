@@ -89,6 +89,102 @@ func TestListIndexPatterns_emptyAndErrors(t *testing.T) {
 	}
 }
 
+func TestFindSavedObjects(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+		case "/api/saved_objects/_find":
+			gotQuery = r.URL.RawQuery
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total": 2,
+				"saved_objects": []map[string]any{
+					{"id": "a", "type": "dashboard", "updated_at": "t1", "attributes": map[string]any{"title": "Latency", "description": "p99"}},
+					{"id": "b", "type": "dashboard", "attributes": map[string]any{"title": "Errors"}},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	objs, total, err := c.FindSavedObjects(context.Background(), FindSavedObjectsOptions{
+		Type: "dashboard", Search: "lat", PerPage: 50,
+	})
+	if err != nil || total != 2 || len(objs) != 2 {
+		t.Fatalf("err=%v total=%d objs=%d", err, total, len(objs))
+	}
+	if objs[0].Title != "Latency" || objs[0].Description != "p99" || objs[0].Type != "dashboard" {
+		t.Fatalf("obj0=%+v", objs[0])
+	}
+	if !strings.Contains(gotQuery, "type=dashboard") || !strings.Contains(gotQuery, "search=lat") {
+		t.Fatalf("query=%q", gotQuery)
+	}
+}
+
+func TestFindSavedObjects_apiError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	if _, _, err := c.FindSavedObjects(context.Background(), FindSavedObjectsOptions{Type: "search"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGetSavedObject(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		if r.URL.Path == "/api/saved_objects/dashboard/abc" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "abc", "type": "dashboard", "updated_at": "t1",
+				"attributes": map[string]any{"title": "Latency", "description": "p99"},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	obj, full, err := c.GetSavedObject(context.Background(), "dashboard", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obj.ID != "abc" || obj.Title != "Latency" || obj.Description != "p99" {
+		t.Fatalf("obj=%+v", obj)
+	}
+	if full["id"] != "abc" {
+		t.Fatalf("full=%v", full)
+	}
+}
+
+func TestGetSavedObject_notFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	if _, _, err := c.GetSavedObject(context.Background(), "dashboard", "missing"); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestResolveIndexPattern(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

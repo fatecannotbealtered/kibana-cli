@@ -44,9 +44,11 @@ Worst-case risk tier: **T1 medium** - reads log data and writes only local confi
 
 | Area | Commands | Agent use |
 |------|----------|-----------|
-| Search | `search --index ...` / `search --data-view ...` | Query logs with time window, level, query text, fields, limit, and offset controls. |
-| Aggregation | `agg --index ... --terms ...` | Group logs by field for incident triage and trend checks. |
+| Search | `search --index ...` / `search --data-view ...` | Query logs with time window, level, query text, fields, limit, offset, and `--search-after` cursor controls. |
+| Raw query DSL | `search --dsl '<json>'` | Send a raw Elasticsearch `_search` body for queries the flags cannot express. |
+| Aggregation | `agg --index ... --terms ...` / `--agg-type date_histogram` | Group logs by field or time bucket, with optional `--metric avg\|sum\|min\|max\|count`. |
 | Patterns and fields | `patterns list / fields` | Discover index patterns and field names before querying. |
+| Saved objects | `objects list --type ...` / `objects get --type ... --id ...` | Read Kibana dashboards, visualizations, searches, and index-patterns. |
 | Config and auth | `auth ...`, `config init / show` | Store credentials in the OS credential store and manage field-map config. |
 | Safety and updates | `--dry-run`, `--confirm`, `update`, `changelog` | Preview local writes and refresh Agent knowledge after updates. |
 | Self-description | `reference`, `context`, `doctor` | Expose command schema, auth status, and health checks. |

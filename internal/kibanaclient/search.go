@@ -19,13 +19,41 @@ func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult,
 		"size":             opts.Size,
 		"track_total_hits": true,
 	}
-	if opts.Offset > 0 {
+	usingCursor := len(opts.SearchAfter) > 0
+	// search_after is offset-free: `from` is forbidden alongside it, so only
+	// honor Offset in the classic paging path.
+	if opts.Offset > 0 && !usingCursor {
 		body["from"] = opts.Offset
 	}
-	if opts.SortDesc {
-		body["sort"] = []any{map[string]any{opts.TimeField: map[string]string{"order": "desc"}}}
+	// search_after needs a deterministic total order, so append an _id tiebreaker
+	// to the descending time sort whenever a cursor is in play.
+	if opts.SortDesc || usingCursor {
+		sort := []any{map[string]any{opts.TimeField: map[string]string{"order": "desc"}}}
+		if usingCursor {
+			sort = append(sort, map[string]any{"_id": map[string]string{"order": "desc"}})
+		}
+		body["sort"] = sort
+	}
+	if usingCursor {
+		body["search_after"] = opts.SearchAfter
 	}
 	path := strings.Trim(strings.TrimPrefix(opts.Index, "/"), "/") + "/_search"
+	data, err := c.Proxy(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return nil, err
+	}
+	return parseSearchResponse(data)
+}
+
+// SearchRaw sends a caller-supplied Elasticsearch query DSL body directly to
+// _search through the Console Proxy, bypassing the flag-based query builder. The
+// body must already be a valid _search request object; callers validate the JSON.
+func (c *Client) SearchRaw(ctx context.Context, index string, body map[string]any) (*SearchResult, error) {
+	target := strings.Trim(strings.TrimPrefix(index, "/"), "/")
+	if target == "" {
+		target = "*"
+	}
+	path := target + "/_search"
 	data, err := c.Proxy(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return nil, err

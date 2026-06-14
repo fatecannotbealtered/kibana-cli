@@ -61,16 +61,38 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 			return
 		}
 		if opts.EmptyPatterns {
-			_ = json.NewEncoder(w).Encode(map[string]any{"saved_objects": []any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"saved_objects": []any{}, "total": 0})
+			return
+		}
+		objType := r.URL.Query().Get("type")
+		if objType != "" && objType != "index-pattern" {
+			// objects list: return type-tagged objects with title + description.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total": 2,
+				"saved_objects": []map[string]any{
+					{
+						"id":         "obj-1",
+						"type":       objType,
+						"updated_at": "2024-01-01T00:00:00Z",
+						"attributes": map[string]any{"title": "Latency " + objType, "description": "p99 latency"},
+					},
+					{
+						"id":         "obj-2",
+						"type":       objType,
+						"updated_at": "2024-01-02T00:00:00Z",
+						"attributes": map[string]any{"title": "Errors " + objType},
+					},
+				},
+			})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total": 1,
 			"saved_objects": []map[string]any{
 				{
-					"id": "dv-1",
-					"attributes": map[string]any{
-						"title": "logs-*",
-					},
+					"id":         "dv-1",
+					"type":       "index-pattern",
+					"attributes": map[string]any{"title": "logs-*"},
 				},
 			},
 		})
@@ -86,6 +108,31 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"attributes": map[string]any{"title": "logs-*"},
+		})
+	case strings.HasPrefix(r.URL.Path, "/api/saved_objects/"):
+		if opts.SavedObjectsFail {
+			status := opts.SavedObjectsStatus
+			if status == 0 {
+				status = http.StatusNotFound
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"message":"saved object not found"}`))
+			return
+		}
+		// /api/saved_objects/<type>/<id>
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/saved_objects/"), "/")
+		objType, objID := "", ""
+		if len(parts) >= 2 {
+			objType, objID = parts[0], parts[1]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":         objID,
+			"type":       objType,
+			"updated_at": "2024-01-01T00:00:00Z",
+			"attributes": map[string]any{
+				"title":       "Latency " + objType,
+				"description": "p99 latency dashboard",
+			},
 		})
 	case r.URL.Path == "/api/index_patterns/_fields_for_wildcard":
 		if opts.FieldsAPIFail {
@@ -111,6 +158,39 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+// mockAggResponse builds a terms or date_histogram bucket set that mirrors the
+// requested aggregation, including a "metric" sub-agg value when one was asked for.
+func mockAggResponse(req map[string]any) map[string]any {
+	aggs, _ := req["aggs"].(map[string]any)
+	termsAgg, _ := aggs["terms_agg"].(map[string]any)
+	_, isDateHisto := termsAgg["date_histogram"]
+	_, hasMetric := termsAgg["aggs"]
+
+	var keys []string
+	if isDateHisto {
+		keys = []string{"2024-01-01T00:00:00.000Z", "2024-01-01T01:00:00.000Z"}
+	} else {
+		keys = []string{"ERROR", "INFO"}
+	}
+	counts := []int64{2, 8}
+	metricVals := []float64{12.5, 3.0}
+	buckets := make([]map[string]any, 0, len(keys))
+	for i, k := range keys {
+		b := map[string]any{"doc_count": counts[i]}
+		if isDateHisto {
+			b["key"] = (i + 1) * 1000
+			b["key_as_string"] = k
+		} else {
+			b["key"] = k
+		}
+		if hasMetric {
+			b["metric"] = map[string]any{"value": metricVals[i]}
+		}
+		buckets = append(buckets, b)
+	}
+	return map[string]any{"buckets": buckets}
 }
 
 func mockKibanaProxyWith(w http.ResponseWriter, r *http.Request, method, path string, opts mockKibanaOptions) {
@@ -158,15 +238,8 @@ func mockKibanaProxyWith(w http.ResponseWriter, r *http.Request, method, path st
 		_ = json.Unmarshal(body, &req)
 		if _, hasAgg := req["aggs"]; hasAgg {
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"took": 3,
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{
-						"buckets": []map[string]any{
-							{"key": "ERROR", "doc_count": 2},
-							{"key": "INFO", "doc_count": 8},
-						},
-					},
-				},
+				"took":         3,
+				"aggregations": map[string]any{"terms_agg": mockAggResponse(req)},
 			})
 			return
 		}
@@ -180,7 +253,7 @@ func mockKibanaProxyWith(w http.ResponseWriter, r *http.Request, method, path st
 			src = opts.SearchSource
 		}
 		hits := []map[string]any{
-			{"_index": "logs-2024", "_id": "1", "_source": src},
+			{"_index": "logs-2024", "_id": "1", "_source": src, "sort": []any{1704067200000, "1"}},
 		}
 		totalVal := 1
 		if opts.SearchNoHits {

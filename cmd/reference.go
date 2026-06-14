@@ -86,15 +86,16 @@ func referenceData(markdown string) map[string]any {
 			"risk_tier":    securityTier,
 			"blast_radius": "Read log data through Kibana and mutate only local kibana-cli config, audit files, field-map.yaml, or a standalone local binary during update.",
 			"permissions": []map[string]any{
-				{"tier": "read", "description": "context, doctor, reference, changelog, patterns, search, agg, config show, auth status, update check"},
+				{"tier": "read", "description": "context, doctor, reference, changelog, patterns, search, agg, objects, config show, auth status, update check"},
 				{"tier": "write", "description": "auth login/logout, config init, standalone binary update; always requires dry-run then confirm"},
 				{"tier": "dangerous", "description": "not implemented"},
 			},
 		},
 		"query_conventions": map[string]any{
 			"fields":     "Query commands support --fields in JSON mode; _untrusted markers are preserved only for returned fields.",
-			"pagination": "search and patterns support --limit plus --offset; agg supports --limit for top-N buckets and has no stable cursor.",
-			"sort":       "search defaults to descending event time; patterns keep Kibana Saved Objects order; agg keeps Elasticsearch terms order.",
+			"pagination": "search and patterns support --limit plus --offset; search also offers a stable --search-after cursor (next_search_after token) for large time-ordered sets; objects list supports --limit/--offset; agg supports --limit for top-N buckets and has no stable cursor.",
+			"sort":       "search defaults to descending event time; patterns keep Kibana Saved Objects order; agg keeps Elasticsearch terms or date_histogram order.",
+			"raw_dsl":    "search --dsl <json> sends a raw Elasticsearch _search body through the Console Proxy, bypassing the flag query builder; returned hits keep _untrusted tagging.",
 		},
 		"exit_codes":  exitCodeReference(),
 		"error_codes": errorCodeReference(),
@@ -253,7 +254,7 @@ func commandType(cmd *cobra.Command) string {
 	switch {
 	case path == "kibana-cli reference" || path == "kibana-cli context" || path == "kibana-cli doctor" || path == "kibana-cli changelog":
 		return "self_description"
-	case strings.HasPrefix(path, "kibana-cli search") || strings.HasPrefix(path, "kibana-cli agg") || strings.HasPrefix(path, "kibana-cli patterns"):
+	case strings.HasPrefix(path, "kibana-cli search") || strings.HasPrefix(path, "kibana-cli agg") || strings.HasPrefix(path, "kibana-cli patterns") || strings.HasPrefix(path, "kibana-cli objects"):
 		return "query"
 	case strings.HasPrefix(path, "kibana-cli config") || strings.HasPrefix(path, "kibana-cli auth") || strings.HasPrefix(path, "kibana-cli update"):
 		return "config"
@@ -286,6 +287,10 @@ func outputSchemaForCommand(path string) string {
 		return "patterns"
 	case "kibana-cli patterns fields":
 		return "fields"
+	case "kibana-cli objects list":
+		return "objects_list"
+	case "kibana-cli objects get":
+		return "objects_get"
 	case "kibana-cli changelog":
 		return "changelog"
 	case "kibana-cli reference":
@@ -322,13 +327,24 @@ func examplesForCommand(path string) []string {
 	case "kibana-cli changelog":
 		return []string{"kibana-cli changelog --since 0.1.0 --compact"}
 	case "kibana-cli search":
-		return []string{"kibana-cli search --index 'app-test-log-*' --query timeout --from now-15m --limit 20 --compact"}
+		return []string{
+			"kibana-cli search --index 'app-test-log-*' --query timeout --from now-15m --limit 20 --compact",
+			"kibana-cli search --index 'app-test-log-*' --limit 100 --search-after <next_search_after> --compact",
+			"kibana-cli search --index 'app-test-log-*' --dsl '{\"query\":{\"match_all\":{}},\"size\":5}' --compact",
+		}
 	case "kibana-cli agg":
-		return []string{"kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --limit 10 --compact"}
+		return []string{
+			"kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --limit 10 --compact",
+			"kibana-cli agg --index 'app-test-log-*' --agg-type date_histogram --interval 1h --metric avg --metric-field took_ms --compact",
+		}
 	case "kibana-cli patterns list":
 		return []string{"kibana-cli patterns list --limit 50 --compact"}
 	case "kibana-cli patterns fields":
 		return []string{"kibana-cli patterns fields --index 'app-test-log-*' --limit 100 --compact"}
+	case "kibana-cli objects list":
+		return []string{"kibana-cli objects list --type dashboard --limit 50 --compact"}
+	case "kibana-cli objects get":
+		return []string{"kibana-cli objects get --type dashboard --id 7adfa750-4c81-11e8-b3d7-01146121b73d --compact"}
 	case "kibana-cli auth status":
 		return []string{"kibana-cli auth status --compact"}
 	case "kibana-cli config show":
@@ -368,13 +384,23 @@ func referenceSchemas() map[string]referenceDataSchema {
 	return map[string]referenceDataSchema{
 		"search_result": {
 			Shape:           "object",
-			Fields:          []string{"index", "profile", "total", "totalRelation", "tookMs", "hits", "count", "limit", "offset", "has_more", "next_offset", "limit_capped", "limit_max", "traceMode", "zeroReason", "hint", "diagnostics"},
+			Fields:          []string{"index", "profile", "total", "totalRelation", "tookMs", "hits", "count", "limit", "offset", "has_more", "next_offset", "next_search_after", "limit_capped", "limit_max", "traceMode", "zeroReason", "hint", "diagnostics"},
 			UntrustedFields: []string{"hits"},
 		},
 		"agg_result": {
 			Shape:           "object",
-			Fields:          []string{"field", "total", "tookMs", "buckets", "count", "limit", "has_more", "next_offset", "_untrusted"},
+			Fields:          []string{"field", "aggType", "metric", "total", "tookMs", "buckets", "count", "limit", "has_more", "next_offset", "_untrusted"},
 			UntrustedFields: []string{"buckets"},
+		},
+		"objects_list": {
+			Shape:           "object",
+			Fields:          []string{"type", "objects", "count", "total", "limit", "offset", "has_more", "next_offset", "_untrusted"},
+			UntrustedFields: []string{"objects"},
+		},
+		"objects_get": {
+			Shape:           "object",
+			Fields:          []string{"id", "type", "title", "description", "updated_at", "object", "_untrusted"},
+			UntrustedFields: []string{"title", "description", "object"},
 		},
 		"patterns": {
 			Shape:           "object",

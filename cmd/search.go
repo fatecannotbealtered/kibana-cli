@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -46,11 +48,16 @@ func init() {
 	addLimitOffsetFlags(searchCmd, 50, "Max hits to return (1-1000)")
 	searchCmd.Flags().String("fields", "", "Comma-separated fields in JSON output")
 	searchCmd.Flags().StringArray("field", nil, "Exact term filter key=value (repeatable)")
+	searchCmd.Flags().String("dsl", "", "Raw Elasticsearch _search query DSL (JSON); bypasses the flag query builder")
+	searchCmd.Flags().String("search-after", "", "Stable cursor token (next_search_after from a prior page); alternative to --offset")
 }
 
 func runSearch(cmd *cobra.Command, _ []string) error {
 	if !jsonMode && cmd.Flags().Changed("fields") {
 		return failValidation("--fields is only supported with --format json")
+	}
+	if dsl, _ := cmd.Flags().GetString("dsl"); strings.TrimSpace(dsl) != "" {
+		return runSearchDSL(cmd, dsl)
 	}
 	fm, err := loadFieldMapOrExit()
 	if err != nil {
@@ -89,6 +96,15 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	cursorToken, _ := cmd.Flags().GetString("search-after")
+	cursorToken = strings.TrimSpace(cursorToken)
+	if cursorToken != "" && cmd.Flags().Changed("offset") {
+		return failValidation("--search-after and --offset are mutually exclusive; pick one pagination mode")
+	}
+	searchAfter, err := decodeSearchAfter(cursorToken)
+	if err != nil {
+		return failValidation(err.Error())
+	}
 	fields := map[string]string{}
 	for _, pair := range mustStringArrayFlag(cmd, "field") {
 		pair = strings.TrimSpace(pair)
@@ -126,13 +142,15 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		TraceMode:     resolved.TraceMode,
 		MessageField:  resolved.PrimaryMessageField(),
 		MessageFields: resolved.MessageFields,
+		SearchAfter:   searchAfter,
 	}
 	if dryRunOutput("search logs", map[string]any{
-		"index":   resolved.Index,
-		"profile": resolved.Profile,
-		"query":   kibanaclient.BuildQuery(opts),
-		"limit":   limit,
-		"offset":  offset,
+		"index":        resolved.Index,
+		"profile":      resolved.Profile,
+		"query":        kibanaclient.BuildQuery(opts),
+		"limit":        limit,
+		"offset":       offset,
+		"search_after": searchAfter,
 	}) {
 		return nil
 	}
@@ -165,15 +183,27 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 			"limit":   limit,
 			"offset":  offset,
 		}
+		usingCursor := len(searchAfter) > 0
 		hasMore := int64(offset+len(hits)) < result.Total
+		if usingCursor {
+			// With a cursor, total-vs-offset is meaningless; a full page implies more.
+			hasMore = len(hits) == limit
+		}
 		if result.TotalRelation == "gte" && len(hits) == limit {
 			hasMore = true
 		}
 		payload["has_more"] = hasMore
-		if hasMore {
+		if hasMore && !usingCursor {
 			payload["next_offset"] = offset + len(hits)
 		} else {
 			payload["next_offset"] = nil
+		}
+		// next_search_after is the stable cursor for the following page; null when
+		// this page is the last one or yielded no hits.
+		if hasMore && len(result.LastSort) > 0 {
+			payload["next_search_after"] = encodeSearchAfter(result.LastSort)
+		} else {
+			payload["next_search_after"] = nil
 		}
 		if result.TotalRelation != "" {
 			payload["totalRelation"] = result.TotalRelation
@@ -218,6 +248,105 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	}
 	output.AuxGray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, resolved.Index, result.TookMs))
 	return nil
+}
+
+// runSearchDSL handles `search --dsl <json>`: it sends the caller's raw _search
+// body straight through the Console Proxy, for queries the flag surface can't
+// express. The index still comes from --index/--data-view (default *).
+func runSearchDSL(cmd *cobra.Command, dsl string) error {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(dsl), &body); err != nil {
+		return failValidation("invalid --dsl JSON: " + err.Error())
+	}
+	var client *kibanaclient.Client
+	index, err := resolveSearchIndex(cmd, &client)
+	if err != nil {
+		return err
+	}
+	index = strings.TrimSpace(index)
+	if index != "" && index != "*" {
+		if err := config.ValidateIndexTarget(index); err != nil {
+			return failValidation(err.Error())
+		}
+	}
+	if dryRunOutput("search logs (raw dsl)", map[string]any{
+		"index": index,
+		"dsl":   body,
+	}) {
+		return nil
+	}
+	if client == nil {
+		client, _, err = newKibanaClient()
+		if err != nil {
+			return err
+		}
+	}
+	result, err := client.SearchRaw(apiCtx(), index, body)
+	if err != nil {
+		return handleAPIError(err, jsonMode)
+	}
+	hits := output.FlattenSearchHits(result.Hits, getFieldsFlag(cmd))
+	if jsonMode {
+		payload := map[string]any{
+			"index":      index,
+			"tookMs":     result.TookMs,
+			"total":      result.Total,
+			"hits":       hits,
+			"count":      len(hits),
+			"_untrusted": []string{"hits"},
+		}
+		if result.TotalRelation != "" {
+			payload["totalRelation"] = result.TotalRelation
+		}
+		printJSONSuccess(projectTopLevelFields(payload, getFieldsFlag(cmd)))
+		return nil
+	}
+	if len(result.Hits) == 0 {
+		output.Info("No hits.")
+		return nil
+	}
+	for _, h := range result.Hits {
+		ts := h.Timestamp
+		if ts == "" {
+			ts = "-"
+		}
+		fmt.Printf("%s  %s\n", ts, firstMessage(h.Source, nil))
+	}
+	indexLabel := index
+	if indexLabel == "" {
+		indexLabel = "*"
+	}
+	output.AuxGray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, indexLabel, result.TookMs))
+	return nil
+}
+
+// encodeSearchAfter packs ES sort values into an opaque, URL-safe cursor token.
+func encodeSearchAfter(sort []any) string {
+	raw, err := json.Marshal(sort)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// decodeSearchAfter unpacks a cursor token back into ES sort values. An empty
+// token yields a nil cursor (first page).
+func decodeSearchAfter(token string) ([]any, error) {
+	if token == "" {
+		return nil, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --search-after token: %v", err)
+	}
+	var sort []any
+	if err := json.Unmarshal(raw, &sort); err != nil {
+		return nil, fmt.Errorf("invalid --search-after token: %v", err)
+	}
+	if len(sort) == 0 {
+		return nil, fmt.Errorf("invalid --search-after token: empty cursor")
+	}
+	return sort, nil
 }
 
 func resolveSearchIndex(cmd *cobra.Command, clientRef **kibanaclient.Client) (string, error) {
