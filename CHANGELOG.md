@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.4] - 2026-06-15
+
+### Changed
+
+- npm scope 迁移 `@fatecannotbealtered-` → `@ananke`（无横线 org 在 npm 被占，迁移到 `@ananke`）。Affects the root package, the six platform `optionalDependencies`, and all `npm install -g` references in docs/SKILL.
+- Synced `.agent/` CLI-SPEC and bumped CI actions to the latest template versions.
+
 ## [1.1.3] - 2026-06-14
 
 ### Added
