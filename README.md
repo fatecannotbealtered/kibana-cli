@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fatecannotbealtered/kibana-cli)](https://goreportcard.com/report/github.com/fatecannotbealtered/kibana-cli)
-[![npm version](https://img.shields.io/npm/v/@ananke/kibana-cli.svg)](https://www.npmjs.com/package/@ananke/kibana-cli)
+[![npm version](https://img.shields.io/npm/v/@fateforge/kibana-cli.svg)](https://www.npmjs.com/package/@fateforge/kibana-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > Agent-native Kibana log query CLI for search and aggregation through Kibana Console Proxy.
@@ -15,7 +15,7 @@ Paste this block into the AI Agent that will operate Kibana log search. It insta
 
 ```bash
 # Install CLI and Agent Skill.
-npm install -g @ananke/kibana-cli
+npm install -g @fateforge/kibana-cli
 npx skills add fatecannotbealtered/kibana-cli -y -g
 
 # Provide runtime context. Replace placeholders in the local shell/secret manager.

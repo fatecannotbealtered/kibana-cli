@@ -14,7 +14,7 @@ Kibana log query CLI for AI Agents. It uses a Kibana base URL with HTTP Basic au
 ```bash
 # Please install kibana-cli and use it for Kibana log search, aggregation, and field discovery going forward.
 # Install CLI.
-npm install -g @ananke/kibana-cli
+npm install -g @fateforge/kibana-cli
 
 # Install this Skill.
 npx skills add fatecannotbealtered/kibana-cli -y -g
