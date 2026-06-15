@@ -39,7 +39,7 @@ func TestResolveBuildVersion(t *testing.T) {
 			return &debug.BuildInfo{Main: debug.Module{Version: "v9.9.9"}}, true
 		}
 		defer func() { readBuildInfo = orig }()
-		if got := resolveBuildVersion("dev"); got != "1.1.3" {
+		if got := resolveBuildVersion("dev"); got != "1.1.4" {
 			t.Fatalf("got %q", got)
 		}
 	})
@@ -47,7 +47,7 @@ func TestResolveBuildVersion(t *testing.T) {
 		orig := readBuildInfo
 		readBuildInfo = func() (*debug.BuildInfo, bool) { return nil, false }
 		defer func() { readBuildInfo = orig }()
-		if got := resolveBuildVersion("dev"); got != "1.1.3" {
+		if got := resolveBuildVersion("dev"); got != "1.1.4" {
 			t.Fatalf("got %q", got)
 		}
 	})
@@ -57,7 +57,7 @@ func TestResolveBuildVersion(t *testing.T) {
 			return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true
 		}
 		defer func() { readBuildInfo = orig }()
-		if got := resolveBuildVersion("dev"); got != "1.1.3" {
+		if got := resolveBuildVersion("dev"); got != "1.1.4" {
 			t.Fatalf("got %q", got)
 		}
 	})

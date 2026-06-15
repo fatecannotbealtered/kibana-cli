@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	updateNPMPackage              = "@fatecannotbealtered-/kibana-cli"
+	updateNPMPackage              = "@ananke/kibana-cli"
 	updateGoPackage               = "github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli"
 	updateSkillRepo               = "fatecannotbealtered/kibana-cli"
 	updateMaxErrorBodyLen         = 512

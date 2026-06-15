@@ -61,12 +61,12 @@ func TestUpdate_NPMInstallUsesPackageManager(t *testing.T) {
 	home := setupTestHome(t)
 	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
-	pkgRoot := filepath.Join(home, "node_modules", "@fatecannotbealtered-", "kibana-cli")
+	pkgRoot := filepath.Join(home, "node_modules", "@ananke", "kibana-cli")
 	exe := filepath.Join(pkgRoot, "bin", "kibana-cli")
 	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pkgRoot, "package.json"), []byte(`{"name":"@fatecannotbealtered-/kibana-cli"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(pkgRoot, "package.json"), []byte(`{"name":"@ananke/kibana-cli"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
