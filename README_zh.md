@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/fatecannotbealtered/kibana-cli/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fatecannotbealtered/kibana-cli)](https://goreportcard.com/report/github.com/fatecannotbealtered/kibana-cli)
-[![npm version](https://img.shields.io/npm/v/@ananke/kibana-cli.svg)](https://www.npmjs.com/package/@ananke/kibana-cli)
+[![npm version](https://img.shields.io/npm/v/@fateforge/kibana-cli.svg)](https://www.npmjs.com/package/@fateforge/kibana-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > 面向 AI Agent 的 Kibana 日志查询 CLI，通过 Kibana Console Proxy 执行搜索与聚合。
@@ -15,7 +15,7 @@
 
 ```bash
 # 安装 CLI 和 Agent Skill。
-npm install -g @ananke/kibana-cli
+npm install -g @fateforge/kibana-cli
 npx skills add fatecannotbealtered/kibana-cli -y -g
 
 # 提供运行上下文。把占位符替换为本地 shell/密钥管理器里的值。

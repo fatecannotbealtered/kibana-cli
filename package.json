@@ -1,5 +1,5 @@
 {
-  "name": "@ananke/kibana-cli",
+  "name": "@fateforge/kibana-cli",
   "version": "1.1.4",
   "description": "Kibana log query CLI for AI Agents - search and aggregate logs through Kibana Console Proxy with JSON-by-default output",
   "keywords": [
@@ -27,12 +27,12 @@
     "kibana-cli": "scripts/run.js"
   },
   "optionalDependencies": {
-    "@ananke/kibana-cli-darwin-arm64": "1.1.4",
-    "@ananke/kibana-cli-darwin-x64": "1.1.4",
-    "@ananke/kibana-cli-linux-arm64": "1.1.4",
-    "@ananke/kibana-cli-linux-x64": "1.1.4",
-    "@ananke/kibana-cli-win32-arm64": "1.1.4",
-    "@ananke/kibana-cli-win32-x64": "1.1.4"
+    "@fateforge/kibana-cli-darwin-arm64": "1.1.4",
+    "@fateforge/kibana-cli-darwin-x64": "1.1.4",
+    "@fateforge/kibana-cli-linux-arm64": "1.1.4",
+    "@fateforge/kibana-cli-linux-x64": "1.1.4",
+    "@fateforge/kibana-cli-win32-arm64": "1.1.4",
+    "@fateforge/kibana-cli-win32-x64": "1.1.4"
   },
   "files": [
     "scripts/run.js",
