@@ -66,6 +66,7 @@ var (
 	confirmToken   string
 	insecureTLS    bool
 	timeoutSeconds int
+	contextName    string
 )
 
 var lastExit int
@@ -147,6 +148,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&confirmToken, "confirm", "", "Confirm token returned by --dry-run for write commands")
 	rootCmd.PersistentFlags().BoolVar(&insecureTLS, "insecure", false, "Skip TLS certificate verification (corporate/self-signed CA)")
 	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "HTTP request timeout in seconds")
+	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "Select a stored context (system) by name; overrides KIBANA_CLI_CONTEXT and the current context")
 	installUpdateNoticeHelp(rootCmd)
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
@@ -479,7 +481,7 @@ func initClientOptionsFromEnv() {
 
 func newKibanaClient() (*kibanaclient.Client, *config.Config, error) {
 	initClientOptionsFromEnv()
-	cfg, err := config.MustLoad()
+	cfg, err := config.MustLoadFor(contextName)
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "not configured") {

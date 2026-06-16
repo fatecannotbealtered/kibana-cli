@@ -59,10 +59,13 @@ func TestDeleteKeyringSecrets(t *testing.T) {
 	}
 }
 
-func TestOnDiskCopyKeyringStore(t *testing.T) {
-	in := &Config{Host: "https://kibana.example.com", Username: "u", Password: "p", KibanaVersion: "8.0"}
-	out := in.onDiskCopy()
-	if out.Password != "" || out.CredentialKind != "basic" || out.CredentialStore != CredentialStoreKeyring {
-		t.Fatalf("disk copy: %+v", out)
+func TestToContextEntryKeyringStore(t *testing.T) {
+	in := &Config{Host: "https://kibana.example.com", Username: "u", Password: "p", KibanaVersion: "8.0", DefaultIndex: "app-*"}
+	out := in.toContextEntry()
+	if out.CredentialKind != "basic" || out.CredentialStore != CredentialStoreKeyring {
+		t.Fatalf("context entry: %+v", out)
+	}
+	if out.Host != in.Host || out.DefaultIndex != "app-*" {
+		t.Fatalf("context entry lost fields: %+v", out)
 	}
 }

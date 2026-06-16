@@ -40,6 +40,7 @@ type contextResult struct {
 	Version         string         `json:"version"`
 	SecurityTier    string         `json:"securityTier"`
 	SkillMinVersion string         `json:"skillMinVersion"`
+	ActiveContext   string         `json:"activeContext,omitempty"`
 	Kibana          *contextKibana `json:"kibana"`
 	Notices         []updateNotice `json:"notices,omitempty"`
 }
@@ -57,6 +58,7 @@ func runContext(_ *cobra.Command, _ []string) error {
 		Version:         version,
 		SecurityTier:    securityTier,
 		SkillMinVersion: skillMinVersion,
+		ActiveContext:   out.ContextName,
 		Kibana:          k,
 		Notices:         readCachedUpdateNotices(),
 	}
@@ -86,6 +88,7 @@ func printContext(result *contextResult) {
 			"version":         result.Version,
 			"securityTier":    result.SecurityTier,
 			"skillMinVersion": result.SkillMinVersion,
+			"activeContext":   result.ActiveContext,
 			"kibana":          result.Kibana,
 			"notices":         result.Notices,
 		}, elapsedDurationMs()))
@@ -109,6 +112,9 @@ func printContext(result *contextResult) {
 	if !k.Configured {
 		printUpdateNoticeHint(os.Stdout, result.Notices)
 		return
+	}
+	if result.ActiveContext != "" {
+		output.Gray("  Context: " + result.ActiveContext)
 	}
 	output.Gray(fmt.Sprintf("  Host: %s (%s, source=%s)", k.Host, k.AuthMode, k.Source))
 	if k.SearchError != "" && !k.SearchReachable {

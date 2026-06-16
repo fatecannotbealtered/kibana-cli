@@ -73,6 +73,13 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	// Fall back to the active context's default index when the caller named
+	// neither an index nor a profile.
+	if strings.TrimSpace(index) == "" && strings.TrimSpace(profile) == "" {
+		if defIdx, _ := config.ActiveMeta(contextName); defIdx != "" {
+			index = defIdx
+		}
+	}
 
 	resolved, err := fieldmap.ResolveSearchOptions(fm, profile, index, service, level)
 	if err != nil {
@@ -171,8 +178,9 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 			project = append(project, resolved.MessageFields...)
 			project = append(project, resolved.ServiceFields...)
 			project = append(project, resolved.LevelFields...)
+			project = append(project, "_service", "_message", "_level", "traceId", "spanId")
 		}
-		hits := output.FlattenSearchHits(result.Hits, project)
+		hits := output.FlattenSearchHits(result.Hits, project, normalizeSpecFor(resolved))
 		payload := map[string]any{
 			"tookMs":  result.TookMs,
 			"total":   result.Total,
@@ -285,7 +293,7 @@ func runSearchDSL(cmd *cobra.Command, dsl string) error {
 	if err != nil {
 		return handleAPIError(err, jsonMode)
 	}
-	hits := output.FlattenSearchHits(result.Hits, getFieldsFlag(cmd))
+	hits := output.FlattenSearchHits(result.Hits, getFieldsFlag(cmd), output.NormalizeSpec{})
 	if jsonMode {
 		payload := map[string]any{
 			"index":      index,
@@ -376,6 +384,21 @@ func resolveSearchIndex(cmd *cobra.Command, clientRef **kibanaclient.Client) (st
 func mustStringArrayFlag(cmd *cobra.Command, name string) []string {
 	v, _ := cmd.Flags().GetStringArray(name)
 	return v
+}
+
+// normalizeSpecFor builds the output normalization spec from a resolved field-map,
+// compiling any user trace patterns (bad patterns are dropped, not fatal).
+func normalizeSpecFor(resolved fieldmap.ResolvedSearch) output.NormalizeSpec {
+	spec := output.NormalizeSpec{
+		ServiceFields: resolved.ServiceFields,
+		MessageFields: resolved.MessageFields,
+		LevelFields:   resolved.LevelFields,
+		TraceIDFields: resolved.TraceIDFields,
+	}
+	if pats, _ := msgtrace.CompilePatterns(resolved.TraceMsgRegexes); len(pats) > 0 {
+		spec.TraceMsgPatterns = pats
+	}
+	return spec
 }
 
 func firstMessage(src map[string]any, fields []string) string {

@@ -94,11 +94,11 @@ func finishLogin(host, user, password string) error {
 	if user == "" || password == "" {
 		return failValidation("provide --user and --password (or use KIBANA_CLI_USER/KIBANA_CLI_PASSWORD)")
 	}
-	cfg := &config.Config{Host: host, Username: user, Password: password}
+	cfg := &config.Config{Host: host, Username: user, Password: password, ContextName: strings.TrimSpace(contextName)}
 	store := config.CredentialStoreKeyring
 	skipped, err := writePlan(
 		"save credentials",
-		map[string]any{"host": host, "username": user, "authMode": cfg.AuthMode(), "credentialStore": store},
+		map[string]any{"host": host, "username": user, "authMode": cfg.AuthMode(), "credentialStore": store, "context": cfg.ContextName},
 		map[string]any{"host": host, "username": user, "authMode": cfg.AuthMode(), "credentialStore": store, "passwordHash": secretHash(password)},
 	)
 	if err != nil || skipped {
@@ -116,6 +116,11 @@ func finishLogin(host, user, password string) error {
 	cfg.KibanaVersion = vr.KibanaVersion
 	if err := config.Save(cfg, config.SaveOptions{}); err != nil {
 		return failConfig("failed to save config: " + err.Error())
+	}
+	if name := strings.TrimSpace(contextName); name != "" {
+		if err := config.SetCurrentContext(name); err != nil {
+			return failConfig(err.Error())
+		}
 	}
 	if jsonMode {
 		printJSONSuccess(map[string]any{

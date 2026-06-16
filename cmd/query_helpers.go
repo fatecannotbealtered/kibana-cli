@@ -1,16 +1,29 @@
 package cmd
 
 import (
+	"path/filepath"
 	"strings"
 
+	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 	"github.com/fatecannotbealtered/kibana-cli/internal/fieldmap"
 	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
 	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
+// loadFieldMapOrExit loads the active field-map: a per-context override file when
+// the selected context sets fieldMapFile, otherwise the global field-map.yaml.
 func loadFieldMapOrExit() (*fieldmap.Map, error) {
-	fm, err := fieldmap.Load()
+	_, fieldMapFile := config.ActiveMeta(contextName)
+	var (
+		fm  *fieldmap.Map
+		err error
+	)
+	if strings.TrimSpace(fieldMapFile) != "" {
+		fm, err = fieldmap.LoadFile(filepath.Join(config.Dir(), fieldMapFile))
+	} else {
+		fm, err = fieldmap.Load()
+	}
 	if err != nil {
 		return nil, failValidation(err.Error())
 	}

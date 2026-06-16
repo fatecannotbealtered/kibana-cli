@@ -32,25 +32,27 @@ const (
 
 // Defaults applies when a profile omits a field list.
 type Defaults struct {
-	Index         string   `yaml:"index" json:"index"`
-	TimeField     string   `yaml:"time_field" json:"timeField"`
-	ServiceFields []string `yaml:"service_fields" json:"serviceFields"`
-	LevelFields   []string `yaml:"level_fields" json:"levelFields"`
-	MessageFields []string `yaml:"message_fields" json:"messageFields"`
-	TraceIDFields []string `yaml:"trace_id_fields" json:"traceIdFields"`
-	TraceMode     string   `yaml:"trace_mode" json:"traceMode"`
+	Index           string   `yaml:"index" json:"index"`
+	TimeField       string   `yaml:"time_field" json:"timeField"`
+	ServiceFields   []string `yaml:"service_fields" json:"serviceFields"`
+	LevelFields     []string `yaml:"level_fields" json:"levelFields"`
+	MessageFields   []string `yaml:"message_fields" json:"messageFields"`
+	TraceIDFields   []string `yaml:"trace_id_fields" json:"traceIdFields"`
+	TraceMode       string   `yaml:"trace_mode" json:"traceMode"`
+	TraceMsgRegexes []string `yaml:"trace_msg_patterns" json:"traceMsgPatterns,omitempty"`
 }
 
 // Profile describes one index pattern and its field names.
 type Profile struct {
-	Index         string   `yaml:"index" json:"index,omitempty"`
-	IndexPatterns []string `yaml:"index_patterns" json:"indexPatterns,omitempty"`
-	TimeField     string   `yaml:"time_field" json:"timeField,omitempty"`
-	ServiceFields []string `yaml:"service_fields" json:"serviceFields,omitempty"`
-	LevelFields   []string `yaml:"level_fields" json:"levelFields,omitempty"`
-	MessageFields []string `yaml:"message_fields" json:"messageFields,omitempty"`
-	TraceIDFields []string `yaml:"trace_id_fields" json:"traceIdFields,omitempty"`
-	TraceMode     string   `yaml:"trace_mode" json:"traceMode,omitempty"`
+	Index           string   `yaml:"index" json:"index,omitempty"`
+	IndexPatterns   []string `yaml:"index_patterns" json:"indexPatterns,omitempty"`
+	TimeField       string   `yaml:"time_field" json:"timeField,omitempty"`
+	ServiceFields   []string `yaml:"service_fields" json:"serviceFields,omitempty"`
+	LevelFields     []string `yaml:"level_fields" json:"levelFields,omitempty"`
+	MessageFields   []string `yaml:"message_fields" json:"messageFields,omitempty"`
+	TraceIDFields   []string `yaml:"trace_id_fields" json:"traceIdFields,omitempty"`
+	TraceMode       string   `yaml:"trace_mode" json:"traceMode,omitempty"`
+	TraceMsgRegexes []string `yaml:"trace_msg_patterns" json:"traceMsgPatterns,omitempty"`
 }
 
 // Service maps a logical service name to optional profile scope and extra match fields.
@@ -65,9 +67,15 @@ func FilePath() string {
 	return filepath.Join(config.Dir(), FileName)
 }
 
-// Load reads field-map.yaml; missing file returns nil map without error.
+// Load reads the global field-map.yaml; missing file returns nil map without error.
 func Load() (*Map, error) {
-	data, err := os.ReadFile(FilePath())
+	return LoadFile(FilePath())
+}
+
+// LoadFile reads a field-map from an explicit path (per-context override);
+// a missing file returns nil map without error.
+func LoadFile(path string) (*Map, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -93,7 +101,10 @@ type ResolvedSearch struct {
 	MessageFields []string
 	TraceIDFields []string
 	TraceMode     string
-	Profile       string
+	// TraceMsgRegexes are raw user patterns for extracting a traceId out of the
+	// message body (compiled at the output boundary via msgtrace.CompilePatterns).
+	TraceMsgRegexes []string
+	Profile         string
 }
 
 // ResolveSearchOptions merges CLI flags with field-map.yaml.
@@ -109,6 +120,7 @@ func ResolveSearchOptions(m *Map, profileName, indexFlag, serviceName, level str
 	r.MessageFields = append([]string{}, m.Defaults.MessageFields...)
 	r.TraceIDFields = append([]string{}, m.Defaults.TraceIDFields...)
 	r.TraceMode = NormalizeTraceMode(m.Defaults.TraceMode)
+	r.TraceMsgRegexes = append([]string{}, m.Defaults.TraceMsgRegexes...)
 
 	if profileName != "" {
 		p, ok := m.Profiles[profileName]
@@ -177,6 +189,9 @@ func applyProfile(r *ResolvedSearch, name string, p Profile, indexFlag string) {
 	}
 	if p.TraceMode != "" {
 		r.TraceMode = NormalizeTraceMode(p.TraceMode)
+	}
+	if len(p.TraceMsgRegexes) > 0 {
+		r.TraceMsgRegexes = append([]string{}, p.TraceMsgRegexes...)
 	}
 }
 
@@ -334,6 +349,9 @@ profiles:
     index_patterns: ["*v3*log*", "*mdc*"]
     message_fields: [msg]
     trace_mode: msg
+    # Optional custom traceId-in-message regexes (first group = traceId, second =
+    # spanId). Built-ins cover MDC [trace, span], traceId=..., and bare 32-hex.
+    # trace_msg_patterns: ['reqId=([0-9a-f]{16,32})']
 
   trace-in-field:
     index_patterns: ["*legacy*log*", "*-elk-*"]

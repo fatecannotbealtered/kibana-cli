@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"time"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
@@ -21,27 +22,29 @@ type bootstrapOutcome struct {
 	SearchError     string
 	ConfigError     string
 	AuthError       string
+	ContextName     string
 }
 
 func runBootstrapCheck() (*bootstrapOutcome, error) {
 	out := &bootstrapOutcome{}
-	cfg, err := config.Load()
+	cfg, err := config.LoadFor(contextName)
 	if err != nil {
 		out.AgentStatus = agentConfigError(err.Error())
 		out.ConfigError = err.Error()
 		applyAgentExit(out.AgentStatus)
 		return out, nil
 	}
-	out.ConfigExists = config.IsConfigured()
+	out.ConfigExists = cfg.Host != "" && strings.TrimSpace(cfg.Username) != "" && cfg.Password != ""
 	out.Host = cfg.Host
 	out.AuthMode = cfg.AuthMode()
+	out.ContextName = cfg.ContextName
 	if !out.ConfigExists {
 		out.AgentStatus = agentNotConfigured()
 		applyAgentExit(out.AgentStatus)
 		return out, nil
 	}
 	initClientOptionsFromEnv()
-	validCfg, err := config.MustLoad()
+	validCfg, err := config.MustLoadFor(contextName)
 	if err != nil {
 		msg := err.Error()
 		out.AgentStatus = agentConfigErrorDetail(msg)

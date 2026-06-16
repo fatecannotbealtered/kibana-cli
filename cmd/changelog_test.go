@@ -35,7 +35,7 @@ func TestChangelog_JSONSince(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	data := envelopeData(t, out)
-	if data["current_version"] != "1.1.4" {
+	if data["current_version"] != "1.1.5" {
 		t.Fatalf("current version: %v", data["current_version"])
 	}
 	if !strings.Contains(lastJSONLine(out), `"version":"Unreleased"`) &&

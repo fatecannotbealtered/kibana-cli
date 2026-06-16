@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.5] - 2026-06-16
+
+### Added
+
+- **Multi-system contexts** (kubectl-style). `config.json` is now a context store (`schemaVersion: 2`) holding named systems, each with its own host, credentials (keyring), `defaultIndex`, and optional per-context `fieldMapFile`. New commands: `context list` / `context current` / `context use <name>` / `context add <name>` / `context remove <name>`. Selection precedence: `KIBANA_CLI_HOST/USER/PASSWORD` triad (anonymous) → `--context <name>` → `KIBANA_CLI_CONTEXT` → current context. `auth login --context <name>` stores and switches in one step; `context` bootstrap reports `activeContext`.
+- **Normalized search output**. Hits gain canonical aliases — `_service`, `_message`, `_level` — plus a unified `traceId`/`spanId` derived from the resolved field-map, so results from indices with different field names (msg vs message, log_app vs service_name) share one schema. Original fields are preserved (non-destructive).
+- **`patterns infer`**. Probes an index's fields, maps them onto logical groups via a built-in alias dictionary, samples recent messages to detect a traceId embedded in the log line (`trace_mode: msg`), and emits a paste-ready field-map profile. `--write` appends it to the active field-map under dry-run/confirm.
+- **Multi-pattern trace extraction**. `traceId` is now pulled from the message body across several formats (MDC `[trace, span]`, `traceId=` / `trace_id:`, bare 32-hex). field-map gains an optional `trace_msg_patterns` list (defaults/profile/index-rule) for custom shapes; bad patterns are skipped, not fatal.
+
+### Changed
+
+- `config.json` schema is context-based (`schemaVersion: 2`); the active `Config` is the resolved view. Secrets remain keyring-only and never touch the file.
+- Env auth is anchored on `KIBANA_CLI_HOST`: only the full host+user+password triad overrides the active context. A lone `KIBANA_CLI_USER` / `KIBANA_CLI_PASSWORD` (commonly set to feed `context add` / `auth login`) is ignored, not an error, and no longer suppresses a keyring-backed context's credentials or `defaultIndex`.
+- Search output always preserves `_index` / `_id` (hit provenance) even under an explicit `--fields`, so results spanning multiple indices keep their source.
+
 ## [1.1.4] - 2026-06-15
 
 ### Changed
