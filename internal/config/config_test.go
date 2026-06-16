@@ -454,7 +454,11 @@ func TestSaveStoreMkdirFailsWhenHomeIsFile(t *testing.T) {
 	}()
 	keyring.MockInit()
 	err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
-	if err == nil || !strings.Contains(err.Error(), "creating config dir") {
+	// Save reads the existing store before writing. When the home path is a file,
+	// the failure surfaces either at the read (ENOTDIR on Unix → "reading config")
+	// or at the mkdir (NotExist on Windows → "creating config dir"); both prove
+	// Save refuses an unusable config dir.
+	if err == nil || (!strings.Contains(err.Error(), "creating config dir") && !strings.Contains(err.Error(), "reading config")) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
