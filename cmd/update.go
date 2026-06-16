@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -53,8 +52,10 @@ var updateCmd = &cobra.Command{
 
 Package-manager installs are not modified in place. When kibana-cli is managed by
 npm or Go, the command prints the exact package-manager command to run instead.
-Standalone Unix binaries are updated in place after signed checksum verification
-when possible and SHA256 verification against the release checksums.txt file.`,
+Standalone binaries are updated in place only after the Sigstore signature on
+checksums.txt is verified in-process against this repo's tagged release workflow
+identity and the archive SHA256 is verified against checksums.txt. An unsigned or
+unverifiable release is refused; there is no skip path.`,
 	Args: cobra.NoArgs,
 	RunE: runUpdate,
 }
@@ -217,10 +218,12 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	}
 	signatureStatus, err := verifyChecksumSignature(apiCtx(), checksumData, signatureBundle, signatureBundleFound)
 	if err != nil {
-		return handleUpdateError(err)
+		// Integrity failure is non-retryable: a missing or invalid signature is
+		// a supply-chain red flag, not a transient blip an agent should retry.
+		return failIntegrity("verifying release signature: " + err.Error())
 	}
 	if err := verifyArchiveChecksum(archiveData, checksumData, assetName); err != nil {
-		return failValidation(err.Error())
+		return failIntegrity(err.Error())
 	}
 	binName := "kibana-cli"
 	if updateGOOS() == "windows" {
@@ -275,18 +278,14 @@ func truncateUpdateMessage(s string, n int) string {
 	return s[:n] + "..."
 }
 
+// verifyChecksumSignature enforces a mandatory, in-process Sigstore signature
+// check on checksums.txt before the release is trusted. There is no skip path: a
+// release without a signature bundle, or one whose signature does not verify
+// against this repo's release-workflow identity, is refused. The returned status
+// is always "verified" on the nil-error path.
 func verifyChecksumSignature(ctx context.Context, checksumData []byte, bundle updateAsset, bundleFound bool) (string, error) {
 	if !bundleFound {
-		if updateRequireSignature() {
-			return "missing_bundle", fmt.Errorf("release checksums.txt signature bundle not found")
-		}
-		return "missing_bundle", nil
-	}
-	if _, err := exec.LookPath("cosign"); err != nil {
-		if updateRequireSignature() {
-			return "cosign_missing", fmt.Errorf("cosign is not installed; checksum signature verification cannot run")
-		}
-		return "skipped_cosign_missing", nil
+		return "missing", errors.New("release does not include checksums.txt.sigstore.json; refusing to install an unsigned release")
 	}
 
 	bundleData, err := downloadUpdateURL(ctx, bundle.BrowserDownloadURL)
@@ -311,27 +310,10 @@ func verifyChecksumSignature(ctx context.Context, checksumData []byte, bundle up
 		return "failed", fmt.Errorf("writing checksum signature bundle: %w", err)
 	}
 
-	identity := "^https://github\\.com/" + regexp.QuoteMeta(updateRepo) + "/\\.github/workflows/release\\.yml@refs/tags/v.*$"
-	command := exec.CommandContext(ctx, "cosign",
-		"verify-blob",
-		"--bundle", bundlePath,
-		"--certificate-identity-regexp", identity,
-		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com",
-		checksumPath,
-	)
-	outputBytes, err := command.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(outputBytes))
-		if msg != "" {
-			return "failed", fmt.Errorf("verifying checksum signature: %w: %s", err, truncateUpdateMessage(msg, 300))
-		}
-		return "failed", fmt.Errorf("verifying checksum signature: %w", err)
+	if err := updateVerifySignature(checksumPath, bundlePath, updateSignerIdentityRegexp()); err != nil {
+		return "failed", err
 	}
 	return "verified", nil
-}
-
-func updateRequireSignature() bool {
-	return os.Getenv("KIBANA_CLI_REQUIRE_SIGNATURE") == "1"
 }
 
 func fetchUpdateRelease(ctx context.Context, target string) (*updateRelease, error) {
