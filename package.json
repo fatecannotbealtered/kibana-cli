@@ -27,12 +27,12 @@
     "kibana-cli": "scripts/run.js"
   },
   "optionalDependencies": {
-    "@fateforge/kibana-cli-darwin-arm64": "1.1.5",
-    "@fateforge/kibana-cli-darwin-x64": "1.1.5",
-    "@fateforge/kibana-cli-linux-arm64": "1.1.5",
-    "@fateforge/kibana-cli-linux-x64": "1.1.5",
-    "@fateforge/kibana-cli-win32-arm64": "1.1.5",
-    "@fateforge/kibana-cli-win32-x64": "1.1.5"
+    "@fateforge/kibana-cli-darwin-arm64": "1.1.6",
+    "@fateforge/kibana-cli-darwin-x64": "1.1.6",
+    "@fateforge/kibana-cli-linux-arm64": "1.1.6",
+    "@fateforge/kibana-cli-linux-x64": "1.1.6",
+    "@fateforge/kibana-cli-win32-arm64": "1.1.6",
+    "@fateforge/kibana-cli-win32-x64": "1.1.6"
   },
   "files": [
     "scripts/run.js",
