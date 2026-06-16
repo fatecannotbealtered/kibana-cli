@@ -1,10 +1,10 @@
 ---
 name: kibana-cli
-version: "1.1.5"
+version: "1.1.6"
 description: Kibana log query CLI for AI Agents that searches and aggregates ELK logs through Kibana Console Proxy. Triggers for Kibana, ELK, log search, log aggregation, trace-id lookup, index-pattern field discovery, multi-system context switching, and Kibana diagnostics.
 license: MIT
 user-invocable: true
-metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.5"}}
+metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.6"}}
 ---
 
 # kibana-cli

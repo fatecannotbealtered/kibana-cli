@@ -42,6 +42,7 @@ const (
 	ErrTimeout         ErrorCode = "E_TIMEOUT"
 	ErrConfirmRequired ErrorCode = "E_CONFIRMATION_REQUIRED"
 	ErrConflict        ErrorCode = "E_CONFLICT"
+	ErrIntegrity       ErrorCode = "E_INTEGRITY"
 	ErrUnknown         ErrorCode = "E_UNKNOWN"
 )
 
@@ -144,6 +145,8 @@ func HintForErrorCode(code ErrorCode) string {
 		return "Run with --dry-run, review the preview, then pass the returned --confirm token"
 	case ErrConflict:
 		return "Re-run --dry-run and retry with the new confirm token"
+	case ErrIntegrity:
+		return "Release integrity verification failed (signature or checksum); do not retry. Re-run update to fetch the current release, or report a possible supply-chain issue"
 	default:
 		return ""
 	}

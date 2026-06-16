@@ -176,8 +176,9 @@ func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 		t.Fatal(err)
 	}
 	assets := map[string][]byte{
-		assetName:       archive,
-		"checksums.txt": checksumLine(assetName, archive),
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
 	}
 	srv := newUpdateReleaseServer(t, "v1.1.1", assets)
 	defer srv.Close()
@@ -281,13 +282,14 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
-			assetName:       archive,
-			"checksums.txt": checksumLine(assetName, []byte("different")),
+			assetName:                     archive,
+			"checksums.txt":               checksumLine(assetName, []byte("different")),
+			"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
 		out, code := runConfirmedCLI(t, []string{"update", "--json"})
-		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "checksum verification failed") {
+		if code != ExitGeneral || !strings.Contains(lastJSONLine(out), "checksum verification failed") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
 	})
@@ -301,8 +303,9 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
-			assetName:       archive,
-			"checksums.txt": checksumLine(assetName, archive),
+			assetName:                     archive,
+			"checksums.txt":               checksumLine(assetName, archive),
+			"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
@@ -322,8 +325,9 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
-			assetName:       archive,
-			"checksums.txt": checksumLine(assetName, archive),
+			assetName:                     archive,
+			"checksums.txt":               checksumLine(assetName, archive),
+			"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
@@ -532,6 +536,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	origReplace := updateReplaceBinary
 	origSkillSync := updateSkillSync
 	origVersion := version
+	origVerifySig := updateVerifySignature
 	t.Cleanup(func() {
 		updateRepo = origRepo
 		updateGitHubAPIBase = origBase
@@ -541,6 +546,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 		updateReplaceBinary = origReplace
 		updateSkillSync = origSkillSync
 		version = origVersion
+		updateVerifySignature = origVerifySig
 	})
 	updateRepo = "fatecannotbealtered/kibana-cli"
 	version = "1.1.0"
@@ -553,6 +559,10 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	updateGOOS = func() string { return goos }
 	updateGOARCH = func() string { return goarch }
 	updateSkillSync = func(context.Context, string) error { return nil }
+	// In-process Sigstore verification is stubbed in tests; a live OIDC-signed
+	// bundle cannot be produced in a unit test. Fail-closed control flow is
+	// covered by overriding this with an error-returning stub.
+	updateVerifySignature = func(_, _, _ string) error { return nil }
 }
 
 func newUpdateReleaseServer(t *testing.T, tag string, downloads map[string][]byte) *httptest.Server {
@@ -650,4 +660,30 @@ func makeZip(t *testing.T, name string, data []byte) []byte {
 func checksumLine(name string, data []byte) []byte {
 	sum := sha256.Sum256(data)
 	return []byte(fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), name))
+}
+
+func TestUpdate_UnsignedReleaseRefused(t *testing.T) {
+	home := setupTestHome(t)
+	exe := filepath.Join(home, "bin", "kibana-cli")
+	withUpdateHooks(t, "", exe, "linux", "amd64")
+	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Release WITHOUT checksums.txt.sigstore.json: must be refused, not skipped.
+	srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+		assetName:       archive,
+		"checksums.txt": checksumLine(assetName, archive),
+	})
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
+	out, code := runConfirmedCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
+	if code != ExitGeneral {
+		t.Fatalf("exit %d (want %d) out=%s", code, ExitGeneral, out)
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, "E_INTEGRITY") || !strings.Contains(j, "unsigned release") {
+		t.Fatalf("expected unsigned-release refusal: %s", j)
+	}
 }

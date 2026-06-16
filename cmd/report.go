@@ -101,6 +101,23 @@ func failNetwork(msg string) error {
 	return ErrSilent
 }
 
+// failIntegrity reports a non-retryable release-integrity failure (missing or
+// invalid signature, or checksum mismatch). It is deliberately not mapped to a
+// retryable network code: a forged or corrupt release is not fixed by retrying.
+func failIntegrity(msg string) error {
+	st := AgentStatus{
+		OK:        false,
+		Status:    StatusAPIError,
+		Message:   msg,
+		Error:     msg,
+		Hint:      output.HintForErrorCode(output.ErrIntegrity),
+		ErrorCode: output.ErrIntegrity,
+		ExitCode:  ExitGeneral,
+	}
+	emitAgentFailure(st)
+	return ErrSilent
+}
+
 func failConfirmRequired(action string, preview map[string]any, token string) error {
 	msg := "write command requires --confirm token from --dry-run"
 	st := AgentStatus{

@@ -1,6 +1,6 @@
 {
   "name": "@fateforge/kibana-cli",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Kibana log query CLI for AI Agents - search and aggregate logs through Kibana Console Proxy with JSON-by-default output",
   "keywords": [
     "kibana",
