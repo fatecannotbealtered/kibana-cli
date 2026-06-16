@@ -277,6 +277,16 @@ func outputSchemaForCommand(path string) string {
 	switch path {
 	case "kibana-cli context":
 		return "context"
+	case "kibana-cli context list":
+		return "context_list"
+	case "kibana-cli context current":
+		return "context_current"
+	case "kibana-cli context use":
+		return "context_use"
+	case "kibana-cli context add":
+		return "context_add"
+	case "kibana-cli context remove":
+		return "context_remove"
 	case "kibana-cli doctor":
 		return "doctor"
 	case "kibana-cli search":
@@ -287,6 +297,8 @@ func outputSchemaForCommand(path string) string {
 		return "patterns"
 	case "kibana-cli patterns fields":
 		return "fields"
+	case "kibana-cli patterns infer":
+		return "patterns_infer"
 	case "kibana-cli objects list":
 		return "objects_list"
 	case "kibana-cli objects get":
@@ -320,6 +332,25 @@ func examplesForCommand(path string) []string {
 	switch path {
 	case "kibana-cli context":
 		return []string{"kibana-cli context --compact"}
+	case "kibana-cli context list":
+		return []string{"kibana-cli context list --compact"}
+	case "kibana-cli context current":
+		return []string{"kibana-cli context current --compact"}
+	case "kibana-cli context use":
+		return []string{
+			"kibana-cli context use sys-a --dry-run --compact",
+			"kibana-cli context use sys-a --confirm <confirm_token> --compact",
+		}
+	case "kibana-cli context add":
+		return []string{
+			"kibana-cli context add sys-a --host https://kibana-a.example.com --user dev_ro --password '...' --default-index 'sysA-app-*' --dry-run --compact",
+			"kibana-cli context add sys-a --host https://kibana-a.example.com --user dev_ro --password '...' --confirm <confirm_token> --compact",
+		}
+	case "kibana-cli context remove":
+		return []string{
+			"kibana-cli context remove sys-a --dry-run --compact",
+			"kibana-cli context remove sys-a --confirm <confirm_token> --compact",
+		}
 	case "kibana-cli doctor":
 		return []string{"kibana-cli doctor --compact"}
 	case "kibana-cli reference":
@@ -341,6 +372,12 @@ func examplesForCommand(path string) []string {
 		return []string{"kibana-cli patterns list --limit 50 --compact"}
 	case "kibana-cli patterns fields":
 		return []string{"kibana-cli patterns fields --index 'app-test-log-*' --limit 100 --compact"}
+	case "kibana-cli patterns infer":
+		return []string{
+			"kibana-cli patterns infer --index 'sysA-app-*' --compact",
+			"kibana-cli patterns infer --index 'sysA-app-*' --write --dry-run --compact",
+			"kibana-cli patterns infer --index 'sysA-app-*' --write --confirm <confirm_token> --compact",
+		}
 	case "kibana-cli objects list":
 		return []string{"kibana-cli objects list --type dashboard --limit 50 --compact"}
 	case "kibana-cli objects get":
@@ -412,9 +449,33 @@ func referenceSchemas() map[string]referenceDataSchema {
 			Fields:          []string{"index", "fields", "count", "total", "limit", "offset", "has_more", "next_offset", "_untrusted"},
 			UntrustedFields: []string{"fields"},
 		},
+		"patterns_infer": {
+			Shape:  "object",
+			Fields: []string{"index", "profileName", "inferredProfile", "yamlSnippet", "notes", "status", "path", "profile"},
+		},
 		"context": {
 			Shape:  "object",
-			Fields: []string{"status", "message", "error", "hint", "errorCode", "statusCode", "exitCode", "tool", "version", "securityTier", "skillMinVersion", "kibana", "notices"},
+			Fields: []string{"status", "message", "error", "hint", "errorCode", "statusCode", "exitCode", "tool", "version", "securityTier", "skillMinVersion", "activeContext", "kibana", "notices"},
+		},
+		"context_list": {
+			Shape:  "object",
+			Fields: []string{"currentContext", "contexts", "count"},
+		},
+		"context_current": {
+			Shape:  "object",
+			Fields: []string{"currentContext", "host"},
+		},
+		"context_use": {
+			Shape:  "object",
+			Fields: []string{"status", "currentContext"},
+		},
+		"context_add": {
+			Shape:  "object",
+			Fields: []string{"status", "context", "host", "kibanaVersion", "current"},
+		},
+		"context_remove": {
+			Shape:  "object",
+			Fields: []string{"status", "context"},
 		},
 		"doctor": {
 			Shape:  "object",

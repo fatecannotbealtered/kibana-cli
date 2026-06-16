@@ -34,6 +34,7 @@ func resetCLIState(t *testing.T) {
 	output.Quiet = false
 	output.JSONCompact = false
 	resetCommandFlags(searchCmd, aggCmd, authLoginCmd, patternsListCmd, patternsFieldsCmd, configInitCmd, updateCmd, changelogCmd)
+	resetCommandFlags(contextAddCmd, patternsInferCmd)
 	resetCommandFlags(rootCmd)
 }
 

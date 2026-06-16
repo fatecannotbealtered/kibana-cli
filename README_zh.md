@@ -47,8 +47,9 @@ PowerShell 使用 `$env:NAME = "value"` 设置同样的环境变量。真实密�
 | 搜索 | `search --index ...` / `search --data-view ...` | 按时间窗口、级别、查询文本、字段、limit、offset 以及 `--search-after` 游标查询日志。 |
 | 原生查询 DSL | `search --dsl '<json>'` | 直接发送原生 Elasticsearch `_search` 请求体，覆盖 flag 无法表达的查询。 |
 | 聚合 | `agg --index ... --terms ...` / `--agg-type date_histogram` | 按字段或时间桶聚合日志，可选 `--metric avg\|sum\|min\|max\|count`。 |
-| 索引模式与字段 | `patterns list / fields` | 查询前发现 index pattern 和字段名。 |
+| 索引模式与字段 | `patterns list / fields` / `patterns infer` | 查询前发现 index pattern 和字段名；`infer` 自动为索引推断 field-map profile（msg/message、service/log_app、traceId 是独立字段还是埋在 msg 里）。 |
 | Saved Objects | `objects list --type ...` / `objects get --type ... --id ...` | 读取 Kibana dashboard、visualization、search、index-pattern。 |
+| 多系统上下文 | `context list / use / add / remove`、`--context` | 在多个系统（ELK 集群）间切换，每个 context 各自的 host、凭据、默认索引与 field-map。 |
 | 配置与认证 | `auth ...`, `config init / show` | 在 OS 凭据库保存凭据，并管理 field-map 配置。 |
 | 安全与更新 | `--dry-run`, `--confirm`, `update`, `changelog` | 预览本地写操作，更新后刷新 Agent 知识。 |
 | 自描述 | `reference`, `context`, `doctor` | 暴露命令 schema、认证状态和健康检查。 |

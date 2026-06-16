@@ -38,6 +38,11 @@ profiles:
       - "*mdc*"
     message_fields: [msg]
     trace_mode: msg
+    # Optional: custom regexes to lift a traceId out of the message body for the
+    # normalized output. First capture group = traceId, optional second = spanId.
+    # Built-ins already cover MDC [trace, span], traceId=..., and bare 32-hex.
+    # trace_msg_patterns:
+    #   - 'reqId=([0-9a-f]{16,32})'
 
   trace-in-field:
     index_patterns:

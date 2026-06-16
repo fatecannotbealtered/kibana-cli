@@ -9,15 +9,22 @@ import (
 	"strings"
 )
 
-// Config stores Kibana connection credentials.
-// Host is the Kibana base URL (e.g. https://kibana.example.com), not the Discover UI path.
+// Config is the resolved active connection — the single context selected for this
+// invocation, merged with any environment overrides. It is an in-memory view, not
+// the on-disk format (that is Store + ContextEntry).
 type Config struct {
-	Host            string `json:"host"`
-	KibanaVersion   string `json:"kibanaVersion,omitempty"`
-	CredentialStore string `json:"credentialStore,omitempty"`
-	CredentialKind  string `json:"credentialKind,omitempty"`
-	Username        string `json:"username,omitempty"`
-	Password        string `json:"password,omitempty"`
+	Host            string
+	Username        string
+	Password        string
+	CredentialStore string
+	CredentialKind  string
+	KibanaVersion   string
+
+	// ContextName is the active context ("env" for the env-var override, "" when
+	// nothing is configured). DefaultIndex / FieldMapFile come from the context.
+	ContextName  string
+	DefaultIndex string
+	FieldMapFile string
 }
 
 // userHomeDir is os.UserHomeDir in production; tests may override it.
@@ -57,53 +64,111 @@ func envAuthVars() (host, user, password string, anySet bool) {
 }
 
 func validateEnvAuthOverride() error {
-	host, user, password, anySet := envAuthVars()
-	if !anySet {
+	host, user, password, _ := envAuthVars()
+	// Only KIBANA_CLI_HOST anchors an intended env auth override. A lone
+	// KIBANA_CLI_USER / KIBANA_CLI_PASSWORD (commonly set to feed `context add`
+	// or `auth login`) is not an auth attempt — it is ignored, not an error, so a
+	// keyring-backed context still resolves in the same shell.
+	if host == "" {
 		return nil
 	}
-	if host == "" || user == "" || password == "" {
-		return errors.New("partial KIBANA_CLI_* auth env: set all of KIBANA_CLI_HOST, KIBANA_CLI_USER, and KIBANA_CLI_PASSWORD together, or unset all three")
+	if user == "" || password == "" {
+		return errors.New("incomplete KIBANA_CLI_* auth env: KIBANA_CLI_HOST is set — also set KIBANA_CLI_USER and KIBANA_CLI_PASSWORD, or unset all three")
 	}
 	return nil
 }
 
-// Load reads configuration: KIBANA_CLI_* env overrides file.
-func Load() (*Config, error) {
-	if err := validateEnvAuthOverride(); err != nil {
-		return nil, err
+// envAuthComplete reports whether the full host+user+password triad is set — the
+// only case that constitutes an anonymous env override.
+func envAuthComplete() bool {
+	host, user, password, _ := envAuthVars()
+	return host != "" && user != "" && password != ""
+}
+
+// envContextName returns the KIBANA_CLI_CONTEXT override (selects a stored context).
+func envContextName() string {
+	return firstNonEmpty(os.Getenv("KIBANA_CLI_CONTEXT"))
+}
+
+// selectContextName resolves which stored context to use (highest first):
+// explicit flag → KIBANA_CLI_CONTEXT → store.CurrentContext.
+func selectContextName(contextFlag string, store *Store) string {
+	if n := strings.TrimSpace(contextFlag); n != "" {
+		return n
 	}
-	cfg := &Config{}
-	data, err := os.ReadFile(FilePath())
-	if err == nil {
-		if jsonErr := json.Unmarshal(data, cfg); jsonErr != nil {
-			return nil, fmt.Errorf("parsing config %s: %w", FilePath(), jsonErr)
-		}
-		if cfg.Password != "" {
-			return nil, fmt.Errorf("plaintext password in %s is not supported; run kibana-cli auth login or use KIBANA_CLI_PASSWORD", FilePath())
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("reading config: %w", err)
+	if n := envContextName(); n != "" {
+		return n
 	}
-	if host, user, password, anySet := envAuthVars(); anySet {
-		cfg.Host = host
-		cfg.Username = user
-		cfg.Password = password
+	if store != nil {
+		return strings.TrimSpace(store.CurrentContext)
 	}
+	return ""
+}
+
+func applyVersionEnv(cfg *Config) {
 	if v := firstNonEmpty(os.Getenv("KIBANA_CLI_KIBANA_VERSION")); v != "" {
 		cfg.KibanaVersion = v
 	}
-	if cfg.usesKeyringStore() && cfg.secretsFromEnv() == "" {
-		if err := loadSecretFromKeyring(cfg); err != nil {
-			return nil, err
+}
+
+// Load resolves the active context using the default selection precedence.
+func Load() (*Config, error) {
+	return LoadFor("")
+}
+
+// LoadFor resolves the active context. Precedence (highest first):
+//  1. KIBANA_CLI_HOST/USER/PASSWORD triad — anonymous env context.
+//  2. contextFlag (the --context value).
+//  3. KIBANA_CLI_CONTEXT env.
+//  4. store.CurrentContext.
+//
+// The flag and env only *select*; they never mutate the file.
+func LoadFor(contextFlag string) (*Config, error) {
+	if err := validateEnvAuthOverride(); err != nil {
+		return nil, err
+	}
+	if envAuthComplete() {
+		host, user, password, _ := envAuthVars()
+		cfg := &Config{Host: host, Username: user, Password: password, ContextName: "env"}
+		applyVersionEnv(cfg)
+		return cfg, nil
+	}
+	store, err := LoadStore()
+	if err != nil {
+		return nil, err
+	}
+	cfg := &Config{}
+	name := selectContextName(contextFlag, store)
+	if name != "" {
+		entry, ok := store.Contexts[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown context %q: run 'kibana-cli context list'", name)
+		}
+		cfg.ContextName = name
+		cfg.Host = entry.Host
+		cfg.Username = entry.Username
+		cfg.CredentialStore = entry.CredentialStore
+		cfg.CredentialKind = entry.CredentialKind
+		cfg.KibanaVersion = entry.KibanaVersion
+		cfg.DefaultIndex = entry.DefaultIndex
+		cfg.FieldMapFile = entry.FieldMapFile
+		// A full env triad short-circuits above, so reaching here means env auth is
+		// not in effect — a lone KIBANA_CLI_PASSWORD must not suppress the keyring.
+		if cfg.usesKeyringStore() {
+			if err := loadSecretFromKeyring(cfg); err != nil {
+				return nil, err
+			}
 		}
 	}
+	applyVersionEnv(cfg)
 	return cfg, nil
 }
 
 // SaveOptions is reserved for future non-secret persistence options.
 type SaveOptions struct{}
 
-// Save persists configuration (keyring by default).
+// Save upserts cfg as a context (named by cfg.ContextName, default "default"),
+// stores the password in the keyring, and makes it current if none is set.
 func Save(cfg *Config, _ SaveOptions) error {
 	if !KeyringAvailable() {
 		return errors.New("OS credential store unavailable; use environment variables or configure the OS credential store")
@@ -111,58 +176,76 @@ func Save(cfg *Config, _ SaveOptions) error {
 	if err := saveSecretToKeyring(cfg); err != nil {
 		return fmt.Errorf("saving to OS credential store: %w", err)
 	}
-	disk := cfg.onDiskCopy()
-	if err := writeConfigFile(disk); err != nil {
+	store, err := LoadStore()
+	if err != nil {
 		return err
 	}
-	return nil
+	name := strings.TrimSpace(cfg.ContextName)
+	if name == "" || name == "env" {
+		name = "default"
+	}
+	if store.Contexts == nil {
+		store.Contexts = map[string]*ContextEntry{}
+	}
+	store.Contexts[name] = cfg.toContextEntry()
+	if strings.TrimSpace(store.CurrentContext) == "" {
+		store.CurrentContext = name
+	}
+	return SaveStore(store)
 }
 
 var configJSONMarshal = func(v any) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
 }
 
-func writeConfigFile(cfg *Config) error {
-	if err := os.MkdirAll(Dir(), 0700); err != nil {
-		return fmt.Errorf("creating config dir: %w", err)
-	}
-	data, err := configJSONMarshal(cfg)
-	if err != nil {
-		return fmt.Errorf("encoding config: %w", err)
-	}
-	if err := os.WriteFile(FilePath(), data, 0600); err != nil {
-		return fmt.Errorf("writing config: %w", err)
-	}
-	return nil
-}
-
 func (c *Config) usesKeyringStore() bool {
 	return strings.TrimSpace(c.CredentialStore) == CredentialStoreKeyring
 }
 
-func (c *Config) secretsFromEnv() string {
-	if firstNonEmpty(os.Getenv("KIBANA_CLI_PASSWORD")) != "" {
-		return "env"
-	}
-	return ""
-}
-
-func readDiskConfigOnly() (*Config, error) {
-	data, err := os.ReadFile(FilePath())
+// SetCurrentContext switches the active context (the `context use` write).
+func SetCurrentContext(name string) error {
+	name = strings.TrimSpace(name)
+	store, err := LoadStore()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config %s: %w", FilePath(), err)
+	if _, ok := store.Contexts[name]; !ok {
+		return fmt.Errorf("unknown context %q: run 'kibana-cli context list'", name)
 	}
-	return &cfg, nil
+	store.CurrentContext = name
+	return SaveStore(store)
 }
 
-// Delete removes config and keyring secrets.
+// RemoveContext deletes a context and its keyring secret; if it was current, the
+// pointer falls back to any remaining context.
+func RemoveContext(name string) error {
+	name = strings.TrimSpace(name)
+	store, err := LoadStore()
+	if err != nil {
+		return err
+	}
+	entry, ok := store.Contexts[name]
+	if !ok {
+		return fmt.Errorf("unknown context %q: run 'kibana-cli context list'", name)
+	}
+	deleteKeyringSecrets(&Config{Host: entry.Host, Username: entry.Username})
+	delete(store.Contexts, name)
+	if store.CurrentContext == name {
+		store.CurrentContext = ""
+		for n := range store.Contexts {
+			store.CurrentContext = n
+			break
+		}
+	}
+	return SaveStore(store)
+}
+
+// Delete removes config.json and every context's keyring secret (full reset).
 func Delete() error {
-	if cfg, err := readDiskConfigOnly(); err == nil {
-		deleteKeyringSecrets(cfg)
+	if store, err := LoadStore(); err == nil {
+		for _, entry := range store.Contexts {
+			deleteKeyringSecrets(&Config{Host: entry.Host, Username: entry.Username})
+		}
 	}
 	err := os.Remove(FilePath())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -171,7 +254,7 @@ func Delete() error {
 	return nil
 }
 
-// IsConfigured reports whether Kibana host and credentials exist.
+// IsConfigured reports whether the active context has host and credentials.
 func IsConfigured() bool {
 	cfg, err := Load()
 	if err != nil {
@@ -180,28 +263,33 @@ func IsConfigured() bool {
 	return cfg.Host != "" && strings.TrimSpace(cfg.Username) != "" && cfg.Password != ""
 }
 
-// AuthSource returns env-cli / file / keyring / none.
+// AuthSource returns env-cli / keyring / file / none for the active context.
 func AuthSource() string {
 	host, user, password, anySet := envAuthVars()
 	if anySet && host != "" && user != "" && password != "" {
 		return "env-cli"
 	}
-	if data, err := os.ReadFile(FilePath()); err == nil {
-		var disk Config
-		if json.Unmarshal(data, &disk) == nil && disk.usesKeyringStore() {
-			return "keyring"
-		}
-		return "file"
+	store, err := LoadStore()
+	if err != nil || len(store.Contexts) == 0 {
+		return "none"
 	}
-	return "none"
+	name := selectContextName("", store)
+	entry, ok := store.Contexts[name]
+	if !ok {
+		return "none"
+	}
+	if entry.usesKeyringStore() {
+		return "keyring"
+	}
+	return "file"
 }
 
-// CredentialStoreLabel describes where secrets are stored.
+// CredentialStoreLabel describes where the active secret is stored.
 func CredentialStoreLabel(cfg *Config) string {
 	if cfg == nil {
 		return ""
 	}
-	if cfg.secretsFromEnv() != "" {
+	if cfg.ContextName == "env" {
 		return "environment"
 	}
 	if cfg.usesKeyringStore() {
@@ -210,14 +298,19 @@ func CredentialStoreLabel(cfg *Config) string {
 	return ""
 }
 
-// MustLoad validates configuration for Kibana mode.
+// MustLoad validates the active context for Kibana mode.
 func MustLoad() (*Config, error) {
-	cfg, err := Load()
+	return MustLoadFor("")
+}
+
+// MustLoadFor resolves and validates a specific context selection.
+func MustLoadFor(contextFlag string) (*Config, error) {
+	cfg, err := LoadFor(contextFlag)
 	if err != nil {
 		return nil, err
 	}
 	if cfg.Host == "" {
-		return nil, errors.New("not configured: run 'kibana-cli auth login' or set KIBANA_CLI_HOST")
+		return nil, errors.New("not configured: run 'kibana-cli auth login' / 'kibana-cli context add' or set KIBANA_CLI_HOST")
 	}
 	if strings.TrimSpace(cfg.Username) == "" || cfg.Password == "" {
 		return nil, errors.New("not configured: set KIBANA_CLI_USER and KIBANA_CLI_PASSWORD or run auth login")

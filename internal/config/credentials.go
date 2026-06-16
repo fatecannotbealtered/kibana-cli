@@ -63,14 +63,16 @@ func deleteKeyringSecrets(cfg *Config) {
 	_ = keyring.Delete(keyringService, credentialKey(cfg.Host, cfg.Username))
 }
 
-// onDiskCopy returns config safe to write to config.json.
-func (c *Config) onDiskCopy() *Config {
-	out := &Config{
+// toContextEntry projects the active Config into an on-disk context entry. The
+// password is intentionally dropped — it lives only in the keyring.
+func (c *Config) toContextEntry() *ContextEntry {
+	return &ContextEntry{
 		Host:            c.Host,
-		KibanaVersion:   c.KibanaVersion,
 		Username:        c.Username,
 		CredentialStore: CredentialStoreKeyring,
 		CredentialKind:  "basic",
+		DefaultIndex:    c.DefaultIndex,
+		FieldMapFile:    c.FieldMapFile,
+		KibanaVersion:   c.KibanaVersion,
 	}
-	return out
 }

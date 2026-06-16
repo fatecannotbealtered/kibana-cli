@@ -2,13 +2,14 @@ package fieldmap
 
 // IndexRule applies field/trace settings when --index matches a glob (first match wins).
 type IndexRule struct {
-	Match         string   `yaml:"match" json:"match"`
-	TimeField     string   `yaml:"time_field" json:"timeField,omitempty"`
-	ServiceFields []string `yaml:"service_fields" json:"serviceFields,omitempty"`
-	LevelFields   []string `yaml:"level_fields" json:"levelFields,omitempty"`
-	MessageFields []string `yaml:"message_fields" json:"messageFields,omitempty"`
-	TraceIDFields []string `yaml:"trace_id_fields" json:"traceIdFields,omitempty"`
-	TraceMode     string   `yaml:"trace_mode" json:"traceMode,omitempty"`
+	Match           string   `yaml:"match" json:"match"`
+	TimeField       string   `yaml:"time_field" json:"timeField,omitempty"`
+	ServiceFields   []string `yaml:"service_fields" json:"serviceFields,omitempty"`
+	LevelFields     []string `yaml:"level_fields" json:"levelFields,omitempty"`
+	MessageFields   []string `yaml:"message_fields" json:"messageFields,omitempty"`
+	TraceIDFields   []string `yaml:"trace_id_fields" json:"traceIdFields,omitempty"`
+	TraceMode       string   `yaml:"trace_mode" json:"traceMode,omitempty"`
+	TraceMsgRegexes []string `yaml:"trace_msg_patterns" json:"traceMsgPatterns,omitempty"`
 }
 
 // MatchIndexRule returns the first index_rules entry that matches index.
@@ -42,5 +43,8 @@ func applyIndexRule(r *ResolvedSearch, rule IndexRule) {
 	}
 	if rule.TraceMode != "" {
 		r.TraceMode = NormalizeTraceMode(rule.TraceMode)
+	}
+	if len(rule.TraceMsgRegexes) > 0 {
+		r.TraceMsgRegexes = append([]string{}, rule.TraceMsgRegexes...)
 	}
 }

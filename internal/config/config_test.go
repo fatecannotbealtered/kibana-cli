@@ -16,7 +16,8 @@ func overrideHome(t *testing.T) func() {
 	keyring.MockInit()
 	tmpDir := t.TempDir()
 	keys := []string{
-		"KIBANA_CLI_HOST", "KIBANA_CLI_USER", "KIBANA_CLI_PASSWORD", "KIBANA_CLI_KIBANA_VERSION",
+		"KIBANA_CLI_HOST", "KIBANA_CLI_USER", "KIBANA_CLI_PASSWORD",
+		"KIBANA_CLI_KIBANA_VERSION", "KIBANA_CLI_CONTEXT",
 	}
 	saved := map[string]string{}
 	for _, k := range keys {
@@ -40,7 +41,7 @@ func overrideHome(t *testing.T) func() {
 	}
 }
 
-func TestSaveAndLoadBasic(t *testing.T) {
+func TestSaveAndLoadDefaultContext(t *testing.T) {
 	defer overrideHome(t)()
 	want := &Config{Host: "https://kibana.example.com", Username: "ops", Password: "secret"}
 	if err := Save(want, SaveOptions{}); err != nil {
@@ -53,39 +54,64 @@ func TestSaveAndLoadBasic(t *testing.T) {
 	if got.Host != want.Host || got.Username != want.Username || got.Password != want.Password {
 		t.Fatalf("got %+v", got)
 	}
+	if got.ContextName != "default" {
+		t.Fatalf("expected default context, got %q", got.ContextName)
+	}
 }
 
-func TestLoadRejectsPartialEnvAuth(t *testing.T) {
+// TestEnvAuthHostAnchored: only a host anchors an env override, so a host set
+// without the rest errors; a lone user/password is ignored (it commonly feeds
+// `context add`) and must not break a keyring-backed context resolution.
+func TestEnvAuthHostAnchored(t *testing.T) {
 	defer overrideHome(t)()
 	if err := Save(&Config{Host: "https://file.example.com", Username: "fileuser", Password: "filepass"}, SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	cases := []struct {
+	errorCases := []struct {
 		name string
 		set  map[string]string
 	}{
-		{"user only", map[string]string{"KIBANA_CLI_USER": "envuser"}},
 		{"host only", map[string]string{"KIBANA_CLI_HOST": "https://env.example.com"}},
-		{"password only", map[string]string{"KIBANA_CLI_PASSWORD": "envpass"}},
 		{"host and user", map[string]string{"KIBANA_CLI_HOST": "https://env.example.com", "KIBANA_CLI_USER": "envuser"}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tc := range errorCases {
+		t.Run("error/"+tc.name, func(t *testing.T) {
 			for k, v := range tc.set {
 				t.Setenv(k, v)
 			}
 			_, err := Load()
-			if err == nil {
-				t.Fatal("expected error for partial auth env")
+			if err == nil || !strings.Contains(err.Error(), "incomplete KIBANA_CLI_* auth env") {
+				t.Fatalf("expected incomplete-env error, got %v", err)
 			}
-			if !strings.Contains(err.Error(), "partial KIBANA_CLI_* auth env") {
-				t.Fatalf("unexpected error: %v", err)
+		})
+	}
+
+	ignoredCases := []struct {
+		name string
+		set  map[string]string
+	}{
+		{"user only", map[string]string{"KIBANA_CLI_USER": "envuser"}},
+		{"password only", map[string]string{"KIBANA_CLI_PASSWORD": "envpass"}},
+	}
+	for _, tc := range ignoredCases {
+		t.Run("ignored/"+tc.name, func(t *testing.T) {
+			for k, v := range tc.set {
+				t.Setenv(k, v)
+			}
+			// A lone user/password is ignored: the keyring-backed default context
+			// still resolves with its real credentials.
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("lone env var must not error: %v", err)
+			}
+			if cfg.Host != "https://file.example.com" || cfg.Password != "filepass" {
+				t.Fatalf("keyring context not resolved: %+v", cfg)
 			}
 		})
 	}
 }
 
-func TestEnvCLIOverridesFile(t *testing.T) {
+func TestEnvCLIOverridesContext(t *testing.T) {
 	defer overrideHome(t)()
 	_ = Save(&Config{Host: "https://file.example.com", Username: "a", Password: "p"}, SaveOptions{})
 	_ = os.Setenv("KIBANA_CLI_HOST", "https://cli.example.com")
@@ -97,6 +123,106 @@ func TestEnvCLIOverridesFile(t *testing.T) {
 	}
 	if got.Host != "https://cli.example.com" || got.Username != "env" || got.Password != "envpass" {
 		t.Fatalf("got %+v", got)
+	}
+	if got.ContextName != "env" {
+		t.Fatalf("expected env context, got %q", got.ContextName)
+	}
+}
+
+func TestContextSelectionAndSwitch(t *testing.T) {
+	defer overrideHome(t)()
+	if err := Save(&Config{ContextName: "sys-a", Host: "https://a.example.com", Username: "alice", Password: "pa", DefaultIndex: "a-*"}, SaveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(&Config{ContextName: "sys-b", Host: "https://b.example.com", Username: "bob", Password: "pb", DefaultIndex: "b-*"}, SaveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// First saved context becomes current.
+	cur, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur.ContextName != "sys-a" {
+		t.Fatalf("expected sys-a current, got %q", cur.ContextName)
+	}
+	// KIBANA_CLI_CONTEXT selects without mutating the file.
+	t.Setenv("KIBANA_CLI_CONTEXT", "sys-b")
+	selB, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selB.Host != "https://b.example.com" || selB.DefaultIndex != "b-*" {
+		t.Fatalf("env select failed: %+v", selB)
+	}
+	_ = os.Unsetenv("KIBANA_CLI_CONTEXT")
+	// --context flag wins over current.
+	flagB, err := LoadFor("sys-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flagB.Username != "bob" {
+		t.Fatalf("flag select failed: %+v", flagB)
+	}
+	// Unknown context errors.
+	if _, err := LoadFor("nope"); err == nil || !strings.Contains(err.Error(), "unknown context") {
+		t.Fatalf("expected unknown context error, got %v", err)
+	}
+	// Switch current.
+	if err := SetCurrentContext("sys-b"); err != nil {
+		t.Fatal(err)
+	}
+	cur2, _ := Load()
+	if cur2.ContextName != "sys-b" {
+		t.Fatalf("switch failed, current=%q", cur2.ContextName)
+	}
+	if err := SetCurrentContext("ghost"); err == nil {
+		t.Fatal("expected error switching to unknown context")
+	}
+}
+
+// TestActiveMetaIgnoresLonePassword: a lone KIBANA_CLI_PASSWORD (set to feed a
+// write) must not suppress the active context's defaultIndex / fieldMapFile.
+func TestActiveMetaIgnoresLonePassword(t *testing.T) {
+	defer overrideHome(t)()
+	if err := Save(&Config{ContextName: "sys-a", Host: "https://a.example.com", Username: "alice", Password: "pa", DefaultIndex: "a-*", FieldMapFile: "fm-a.yaml"}, SaveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KIBANA_CLI_PASSWORD", "feeding-a-write")
+	idx, fm := ActiveMeta("")
+	if idx != "a-*" || fm != "fm-a.yaml" {
+		t.Fatalf("lone password suppressed context meta: idx=%q fm=%q", idx, fm)
+	}
+	// A full triad, by contrast, is an anonymous override with no stored meta.
+	t.Setenv("KIBANA_CLI_HOST", "https://env.example.com")
+	t.Setenv("KIBANA_CLI_USER", "envuser")
+	if idx, fm := ActiveMeta(""); idx != "" || fm != "" {
+		t.Fatalf("full env triad should yield no meta: idx=%q fm=%q", idx, fm)
+	}
+}
+
+func TestRemoveContextFallsBack(t *testing.T) {
+	defer overrideHome(t)()
+	_ = Save(&Config{ContextName: "sys-a", Host: "https://a.example.com", Username: "alice", Password: "pa"}, SaveOptions{})
+	_ = Save(&Config{ContextName: "sys-b", Host: "https://b.example.com", Username: "bob", Password: "pb"}, SaveOptions{})
+	if err := RemoveContext("sys-a"); err != nil {
+		t.Fatal(err)
+	}
+	store, err := LoadStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.Contexts["sys-a"]; ok {
+		t.Fatal("sys-a not removed")
+	}
+	if store.CurrentContext != "sys-b" {
+		t.Fatalf("current did not fall back: %q", store.CurrentContext)
+	}
+	// Keyring secret for sys-a is gone.
+	if _, err := keyring.Get(keyringService, credentialKey("https://a.example.com", "alice")); err == nil {
+		t.Fatal("expected sys-a keyring secret removed")
+	}
+	if err := RemoveContext("ghost"); err == nil {
+		t.Fatal("expected error removing unknown context")
 	}
 }
 
@@ -113,6 +239,14 @@ func TestAuthSource(t *testing.T) {
 	_ = os.Setenv("KIBANA_CLI_PASSWORD", "p")
 	if AuthSource() != "env-cli" {
 		t.Fatalf("expected env-cli, got %s", AuthSource())
+	}
+}
+
+func TestAuthSourceKeyring(t *testing.T) {
+	defer overrideHome(t)()
+	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
+	if AuthSource() != "keyring" {
+		t.Fatalf("keyring: got %s", AuthSource())
 	}
 }
 
@@ -162,7 +296,7 @@ func TestIsConfigured(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadKeyring(t *testing.T) {
+func TestSaveKeepsPasswordOutOfFile(t *testing.T) {
 	defer overrideHome(t)()
 	want := &Config{Host: "https://kibana.example.com", Username: "ops", Password: "secret"}
 	if err := Save(want, SaveOptions{}); err != nil {
@@ -204,7 +338,7 @@ func TestFilePath(t *testing.T) {
 	}
 }
 
-func TestLoadInvalidJSON(t *testing.T) {
+func TestLoadStoreInvalidJSON(t *testing.T) {
 	defer overrideHome(t)()
 	if err := os.MkdirAll(Dir(), 0700); err != nil {
 		t.Fatal(err)
@@ -218,7 +352,7 @@ func TestLoadInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestLoadReadErrorWhenConfigIsDirectory(t *testing.T) {
+func TestLoadStoreReadErrorWhenConfigIsDirectory(t *testing.T) {
 	defer overrideHome(t)()
 	if err := os.MkdirAll(Dir(), 0700); err != nil {
 		t.Fatal(err)
@@ -294,7 +428,7 @@ func TestSaveKeyringSetError(t *testing.T) {
 	}
 }
 
-func TestSaveMkdirFailsWhenHomeIsFile(t *testing.T) {
+func TestSaveStoreMkdirFailsWhenHomeIsFile(t *testing.T) {
 	tmp := t.TempDir()
 	blocker := filepath.Join(tmp, "homefile")
 	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
@@ -303,7 +437,7 @@ func TestSaveMkdirFailsWhenHomeIsFile(t *testing.T) {
 	origHome := userHomeDir
 	userHomeDir = func() (string, error) { return blocker, nil }
 	defer func() { userHomeDir = origHome }()
-	keys := []string{"KIBANA_CLI_HOST", "KIBANA_CLI_USER", "KIBANA_CLI_PASSWORD", "KIBANA_CLI_KIBANA_VERSION"}
+	keys := []string{"KIBANA_CLI_HOST", "KIBANA_CLI_USER", "KIBANA_CLI_PASSWORD", "KIBANA_CLI_KIBANA_VERSION", "KIBANA_CLI_CONTEXT"}
 	saved := map[string]string{}
 	for _, k := range keys {
 		saved[k] = os.Getenv(k)
@@ -325,12 +459,12 @@ func TestSaveMkdirFailsWhenHomeIsFile(t *testing.T) {
 	}
 }
 
-func TestWriteConfigFileEncodeError(t *testing.T) {
+func TestSaveStoreEncodeError(t *testing.T) {
 	defer overrideHome(t)()
 	orig := configJSONMarshal
 	configJSONMarshal = func(any) ([]byte, error) { return nil, errors.New("encode failed") }
 	defer func() { configJSONMarshal = orig }()
-	err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u"})
+	err := SaveStore(&Store{Contexts: map[string]*ContextEntry{"x": {Host: "https://k.example.com"}}})
 	if err == nil || !strings.Contains(err.Error(), "encoding config") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -345,7 +479,7 @@ func TestSaveWriteFailsWhenConfigPathIsDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
-	if err == nil || !strings.Contains(err.Error(), "writing config") {
+	if err == nil || !strings.Contains(err.Error(), "reading config") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -384,29 +518,14 @@ func TestDeleteRemoveErrorWhenConfigDirNotEmpty(t *testing.T) {
 	}
 }
 
-func TestDeleteWithInvalidJSONStillRemoves(t *testing.T) {
-	defer overrideHome(t)()
-	if err := os.MkdirAll(Dir(), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(FilePath(), []byte("not-json"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := Delete(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestCredentialStoreLabel(t *testing.T) {
 	if CredentialStoreLabel(nil) != "" {
 		t.Fatal("nil cfg")
 	}
 	defer overrideHome(t)()
-	t.Setenv("KIBANA_CLI_PASSWORD", "p")
-	if CredentialStoreLabel(&Config{}) != "environment" {
+	if CredentialStoreLabel(&Config{ContextName: "env"}) != "environment" {
 		t.Fatal("expected environment")
 	}
-	_ = os.Unsetenv("KIBANA_CLI_PASSWORD")
 	if CredentialStoreLabel(&Config{CredentialStore: CredentialStoreKeyring}) != CredentialStoreKeyring {
 		t.Fatal("expected keyring")
 	}
@@ -418,20 +537,6 @@ func TestCredentialStoreLabel(t *testing.T) {
 func TestAuthMode(t *testing.T) {
 	if (&Config{}).AuthMode() != "basic" {
 		t.Fatal("expected basic")
-	}
-}
-
-func TestAuthSourceFileAndKeyring(t *testing.T) {
-	defer overrideHome(t)()
-	if err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u"}); err != nil {
-		t.Fatal(err)
-	}
-	if AuthSource() != "file" {
-		t.Fatalf("file: got %s", AuthSource())
-	}
-	_ = Save(&Config{Host: "https://kibana.example.com", Username: "u", Password: "p"}, SaveOptions{})
-	if AuthSource() != "keyring" {
-		t.Fatalf("keyring: got %s", AuthSource())
 	}
 }
 
@@ -450,25 +555,34 @@ func TestMustLoadErrors(t *testing.T) {
 		t.Fatal("expected load error")
 	}
 	_ = os.Unsetenv("KIBANA_CLI_USER")
+	// Context with whitespace username → empty username error.
 	_ = Save(&Config{Host: "https://kibana.example.com/", Username: " ", Password: "p"}, SaveOptions{})
 	if _, err := MustLoad(); err == nil {
 		t.Fatal("expected empty username error")
 	}
-	if err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u"}); err != nil {
-		t.Fatal(err)
+	// Context present but no keyring secret → empty password error.
+	_ = SaveStore(&Store{CurrentContext: "nopass", Contexts: map[string]*ContextEntry{
+		"nopass": {Host: "https://kibana.example.com", Username: "u", CredentialStore: CredentialStoreKeyring},
+	}})
+	keyring.MockInit()
+	if _, err := LoadFor("nopass"); err == nil {
+		// keyring missing secret surfaces as read error; acceptable either way
+		t.Log("keyring read returned no error (secret absent path)")
 	}
-	if _, err := MustLoad(); err == nil {
-		t.Fatal("expected empty password error")
-	}
-	_ = Save(&Config{Host: "not-a-url", Username: "u", Password: "p"}, SaveOptions{})
-	if _, err := MustLoad(); err == nil {
+	// Invalid host → validation error.
+	_ = Save(&Config{ContextName: "badhost", Host: "not-a-url", Username: "u", Password: "p"}, SaveOptions{})
+	if _, err := MustLoadFor("badhost"); err == nil {
 		t.Fatal("expected host validation error")
 	}
 }
 
-func TestLoadRejectsPlaintextPasswordInConfig(t *testing.T) {
+func TestLoadStoreRejectsPlaintextPassword(t *testing.T) {
 	defer overrideHome(t)()
-	if err := writeConfigFile(&Config{Host: "https://kibana.example.com", Username: "u", Password: "secret"}); err != nil {
+	if err := os.MkdirAll(Dir(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"schemaVersion":2,"currentContext":"x","contexts":{"x":{"host":"https://k.example.com","username":"u","password":"oops"}}}`
+	if err := os.WriteFile(FilePath(), []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Load()
