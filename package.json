@@ -26,6 +26,10 @@
   "bin": {
     "kibana-cli": "scripts/run.js"
   },
+  "scripts": {
+    "version": "node scripts/sync-version.js",
+    "check-version": "node scripts/check-version.js"
+  },
   "optionalDependencies": {
     "@fateforge/kibana-cli-darwin-arm64": "1.1.7",
     "@fateforge/kibana-cli-darwin-x64": "1.1.7",
