@@ -101,7 +101,6 @@ func failNetwork(msg string) error {
 	return ErrSilent
 }
 
-
 func failConfirmRequired(action string, preview map[string]any, token string) error {
 	msg := "write command requires --confirm token from --dry-run"
 	st := AgentStatus{
