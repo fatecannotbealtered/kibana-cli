@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.8] - 2026-06-21
+
+### Changed
+
+- `update` is now a SINGLE command with no confirm token. A bare `kibana-cli update` performs the whole self-update in one call (resolve latest or `--version` → verify Sigstore signature in-process → verify checksum → replace binary → sync Skill). The previous dry-run → `--confirm <token>` write gate has been removed from `update` only; `--check` and `--dry-run` remain optional read-only flags and no longer issue a `confirm_token` or `expires_at`. Other (data-write) commands keep their dry-run/confirm flow unchanged.
+- Every `update` failure and interruption envelope now carries `stage` (`discover`|`download`|`verify_signature`|`verify_checksum`|`replace`|`skill_sync`), `current_version` (the version running now), `binary_replaced`, and `skill_sync_status`, so an agent can determine its post-failure state from the envelope alone.
+
+### Fixed
+
+- `replace`-stage failures during update are now classified by next action instead of being lumped into a retryable network error: local IO/disk faults return non-retryable `E_IO` (exit 1) and permission faults return `E_FORBIDDEN` (exit 4), with `binary_replaced: false`.
+- A Skill-sync failure after a successful binary replace is now a PARTIAL SUCCESS (`ok: false`, `binary_replaced: true`, retryable) carrying `skill_sync_command`, instead of a hard network error that lost the fact the binary already updated.
+
+### Added
+
+- New error codes `E_IO` (→ exit 1) and `E_INTERRUPTED` (→ exit 130), wired into the code→exit mapping. SIGINT/SIGTERM during `update` is now trapped: the temp dir is cleaned and a terminal JSON envelope (`E_INTERRUPTED`) is still emitted on stdout stating the truthful post-state, instead of dying as a bare killed process.
+
+### Security
+
+- Release-integrity verification is unchanged and still fails closed: the signature-then-checksum order and the non-retryable `E_INTEGRITY` (exit 1) behavior are preserved. Removing the confirm-token gate from `update` does not weaken integrity — the safety guarantee is the mandatory in-process Sigstore verification.
+
 ## [1.1.7] - 2026-06-16
 
 ### Fixed

@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 )
 
 func TestUpdate_CheckUpToDate_JSON(t *testing.T) {
@@ -103,7 +105,9 @@ func TestUpdate_GoInstallUsesPackageManager(t *testing.T) {
 	}
 }
 
-func TestUpdate_DryRunStandaloneBinary(t *testing.T) {
+// update --dry-run is an OPTIONAL read-only preview: it must NOT issue a
+// confirm_token or expires_at (it is no longer a write gate).
+func TestUpdate_DryRunIsReadOnlyNoToken(t *testing.T) {
 	home := setupTestHome(t)
 	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
@@ -115,28 +119,59 @@ func TestUpdate_DryRunStandaloneBinary(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	j := lastJSONLine(out)
-	if !strings.Contains(j, `"confirm_token"`) || !strings.Contains(j, `"preview"`) {
-		t.Fatalf("unexpected: %s", j)
+	if strings.Contains(j, `"confirm_token"`) {
+		t.Fatalf("dry-run must not issue a confirm_token: %s", j)
+	}
+	if strings.Contains(j, `"expires_at"`) {
+		t.Fatalf("dry-run must not issue expires_at: %s", j)
+	}
+	if !strings.Contains(j, `"dry_run":true`) && !strings.Contains(j, `"dry_run": true`) {
+		t.Fatalf("expected dry_run preview: %s", j)
 	}
 	if !strings.Contains(j, `kibana-cli-1.1.1-linux-amd64.tar.gz`) {
 		t.Fatalf("missing planned asset: %s", j)
 	}
 }
 
-func TestUpdate_StandaloneRequiresConfirmBeforeDownload(t *testing.T) {
+// A bare `update` (no --confirm, no dry-run) performs the whole update in one
+// call: the confirm-token gate has been removed from update.
+func TestUpdate_BareExecutesWithoutToken(t *testing.T) {
 	home := setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
-	defer srv.Close()
 	exe := filepath.Join(home, "bin", "kibana-cli")
-	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
-
-	out, code := runCLI(t, []string{"update", "--json"})
-	if code != ExitConfirmRequired {
-		t.Fatalf("exit %d: %s", code, out)
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(lastJSONLine(out), `"code":"E_CONFIRMATION_REQUIRED"`) &&
-		!strings.Contains(lastJSONLine(out), `"code": "E_CONFIRMATION_REQUIRED"`) {
-		t.Fatalf("expected confirmation envelope: %s", out)
+	if err := os.WriteFile(exe, []byte("old"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	withUpdateHooks(t, "", exe, "linux", "amd64")
+	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+	})
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
+
+	out, code := runCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
+	if code != ExitOK {
+		t.Fatalf("bare update should execute: exit %d out=%s", code, out)
+	}
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "new-binary" {
+		t.Fatalf("binary not replaced by bare update: %q", data)
+	}
+	dataMap := envelopeData(t, out)
+	if dataMap["status"] != "updated" {
+		t.Fatalf("expected status updated: %s", out)
 	}
 }
 
@@ -184,7 +219,7 @@ func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 	defer srv.Close()
 	updateGitHubAPIBase = srv.URL
 
-	out, code := runConfirmedCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
+	out, code := runCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
@@ -226,7 +261,7 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 		srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 		defer srv.Close()
 		withUpdateHooks(t, srv.URL, filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
-		out, code := runConfirmedCLI(t, []string{"update", "--json"})
+		out, code := runCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "release asset not found") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -242,7 +277,7 @@ func TestUpdate_ReleaseValidationFailures(t *testing.T) {
 		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{assetName: []byte("archive")})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runConfirmedCLI(t, []string{"update", "--json"})
+		out, code := runCLI(t, []string{"update", "--json"})
 		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "checksums.txt") {
 			t.Fatalf("exit %d out=%s", code, out)
 		}
@@ -288,9 +323,21 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runConfirmedCLI(t, []string{"update", "--json"})
+		out, code := runCLI(t, []string{"update", "--json"})
+		// Integrity failure is non-retryable E_INTEGRITY -> exit 1.
 		if code != ExitGeneral || !strings.Contains(lastJSONLine(out), "checksum verification failed") {
 			t.Fatalf("exit %d out=%s", code, out)
+		}
+		j := lastJSONLine(out)
+		if !strings.Contains(j, "E_INTEGRITY") {
+			t.Fatalf("expected E_INTEGRITY: %s", j)
+		}
+		if strings.Contains(j, `"retryable":true`) || strings.Contains(j, `"retryable": true`) {
+			t.Fatalf("integrity failure must be non-retryable: %s", j)
+		}
+		details := envelopeErrorDetails(t, out)
+		if details["stage"] != updateStageVerifyChecksum || details["binary_replaced"] != false {
+			t.Fatalf("expected verify_checksum stage, not committed: %s", out)
 		}
 	})
 
@@ -309,16 +356,26 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runConfirmedCLI(t, []string{"update", "--json"})
-		if code != ExitBadArgs || !strings.Contains(lastJSONLine(out), "not found in release archive") {
+		out, code := runCLI(t, []string{"update", "--json"})
+		// Extraction of the verified archive into a temp dir is a local IO fault,
+		// not a usage error: E_IO -> exit 1, replace stage, not committed.
+		if code != ExitGeneral || !strings.Contains(lastJSONLine(out), "not found in release archive") {
 			t.Fatalf("exit %d out=%s", code, out)
+		}
+		j := lastJSONLine(out)
+		if !strings.Contains(j, "E_IO") {
+			t.Fatalf("expected E_IO: %s", j)
+		}
+		details := envelopeErrorDetails(t, out)
+		if details["stage"] != updateStageReplace || details["binary_replaced"] != false {
+			t.Fatalf("expected replace stage, not committed: %s", out)
 		}
 	})
 
-	t.Run("replaceFailure", func(t *testing.T) {
+	t.Run("replaceIOFailure", func(t *testing.T) {
 		home := setupTestHome(t)
 		withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
-		updateReplaceBinary = func(string, []byte) error { return errors.New("replace denied") }
+		updateReplaceBinary = func(string, []byte) error { return errors.New("disk full") }
 		archive := makeTarGz(t, "kibana-cli", []byte("new"))
 		assetName, err := releaseAssetName("1.1.1")
 		if err != nil {
@@ -331,9 +388,110 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		})
 		defer srv.Close()
 		updateGitHubAPIBase = srv.URL
-		out, code := runConfirmedCLI(t, []string{"update", "--json"})
-		if code != ExitAuth || !strings.Contains(lastJSONLine(out), "replace denied") {
+		out, code := runCLI(t, []string{"update", "--json"})
+		// Local replace failure is E_IO -> exit 1, NOT a retryable network error.
+		if code != ExitGeneral || !strings.Contains(lastJSONLine(out), "disk full") {
 			t.Fatalf("exit %d out=%s", code, out)
+		}
+		j := lastJSONLine(out)
+		if !strings.Contains(j, "E_IO") || strings.Contains(j, "E_NETWORK") {
+			t.Fatalf("expected E_IO not E_NETWORK: %s", j)
+		}
+		details := envelopeErrorDetails(t, out)
+		if details["stage"] != updateStageReplace || details["binary_replaced"] != false {
+			t.Fatalf("expected replace stage, not committed: %s", out)
+		}
+	})
+
+	t.Run("replacePermissionFailure", func(t *testing.T) {
+		home := setupTestHome(t)
+		withUpdateHooks(t, "", filepath.Join(home, "bin", "kibana-cli"), "linux", "amd64")
+		updateReplaceBinary = func(string, []byte) error {
+			return fmt.Errorf("rename: %w", os.ErrPermission)
+		}
+		archive := makeTarGz(t, "kibana-cli", []byte("new"))
+		assetName, err := releaseAssetName("1.1.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+			assetName:                     archive,
+			"checksums.txt":               checksumLine(assetName, archive),
+			"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+		})
+		defer srv.Close()
+		updateGitHubAPIBase = srv.URL
+		out, code := runCLI(t, []string{"update", "--json"})
+		// Permission failure during replace -> E_FORBIDDEN, exit 4.
+		if code != ExitForbidden {
+			t.Fatalf("exit %d out=%s", code, out)
+		}
+		if !strings.Contains(lastJSONLine(out), "E_FORBIDDEN") {
+			t.Fatalf("expected E_FORBIDDEN: %s", lastJSONLine(out))
+		}
+	})
+
+	t.Run("skillSyncPartialSuccess", func(t *testing.T) {
+		home := setupTestHome(t)
+		exe := filepath.Join(home, "bin", "kibana-cli")
+		if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exe, []byte("old"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		withUpdateHooks(t, "", exe, "linux", "amd64")
+		updateSkillSync = func(context.Context, string) error { return errors.New("npx not found") }
+		archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+		assetName, err := releaseAssetName("1.1.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+			assetName:                     archive,
+			"checksums.txt":               checksumLine(assetName, archive),
+			"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+		})
+		defer srv.Close()
+		updateGitHubAPIBase = srv.URL
+		out, code := runCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
+		// Binary replaced but Skill sync failed -> partial success: ok:false,
+		// binary_replaced:true, retryable, with skill_sync_command.
+		if code != ExitNetwork {
+			t.Fatalf("exit %d out=%s", code, out)
+		}
+		// The binary WAS replaced, so the post-state must say so truthfully.
+		data, err := os.ReadFile(exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "new-binary" {
+			t.Fatalf("binary should be replaced before skill sync: %q", data)
+		}
+		payload := envelopePayload(t, out)
+		if payload["ok"] != false {
+			t.Fatalf("partial success must be ok:false: %s", out)
+		}
+		details := envelopeErrorDetails(t, out)
+		if details["stage"] != updateStageSkillSync {
+			t.Fatalf("expected skill_sync stage: %s", out)
+		}
+		if details["binary_replaced"] != true {
+			t.Fatalf("expected binary_replaced:true: %s", out)
+		}
+		if details["current_version"] != "1.1.1" {
+			t.Fatalf("expected current_version 1.1.1 after swap: %s", out)
+		}
+		if details["skill_sync_status"] != "failed" {
+			t.Fatalf("expected skill_sync_status failed: %s", out)
+		}
+		cmd, _ := details["skill_sync_command"].(string)
+		if !strings.Contains(cmd, "npx skills add") {
+			t.Fatalf("expected skill_sync_command: %s", out)
+		}
+		errObj, _ := payload["error"].(map[string]any)
+		if errObj["retryable"] != true {
+			t.Fatalf("skill sync partial success should be retryable: %s", out)
 		}
 	})
 }
@@ -348,7 +506,7 @@ func TestUpdate_AssetDownloadHTTPError(t *testing.T) {
 	srv := newUpdateReleaseServerWithBrokenDownload(t, "v1.1.1", assetName)
 	defer srv.Close()
 	updateGitHubAPIBase = srv.URL
-	out, code := runConfirmedCLI(t, []string{"update", "--json"})
+	out, code := runCLI(t, []string{"update", "--json"})
 	j := lastJSONLine(out)
 	if code != ExitNotFound || (!strings.Contains(j, `"statusCode":404`) && !strings.Contains(j, `"statusCode": 404`)) {
 		t.Fatalf("exit %d out=%s", code, out)
@@ -678,12 +836,99 @@ func TestUpdate_UnsignedReleaseRefused(t *testing.T) {
 	})
 	defer srv.Close()
 	updateGitHubAPIBase = srv.URL
-	out, code := runConfirmedCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
+	out, code := runCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
 	if code != ExitGeneral {
 		t.Fatalf("exit %d (want %d) out=%s", code, ExitGeneral, out)
 	}
 	j := lastJSONLine(out)
 	if !strings.Contains(j, "E_INTEGRITY") || !strings.Contains(j, "unsigned release") {
 		t.Fatalf("expected unsigned-release refusal: %s", j)
+	}
+	details := envelopeErrorDetails(t, out)
+	if details["stage"] != updateStageVerifySignature || details["binary_replaced"] != false {
+		t.Fatalf("expected verify_signature stage, not committed: %s", out)
+	}
+}
+
+// Integrity failures during signature verification are non-retryable E_INTEGRITY
+// and must never be reclassified as a transient signature stub mismatch.
+func TestUpdate_SignatureVerificationFailsClosed(t *testing.T) {
+	home := setupTestHome(t)
+	exe := filepath.Join(home, "bin", "kibana-cli")
+	withUpdateHooks(t, "", exe, "linux", "amd64")
+	updateVerifySignature = func(_, _, _ string) error { return errors.New("identity mismatch") }
+	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+	})
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
+	out, code := runCLI(t, []string{"update", "--version", "v1.1.1", "--json"})
+	if code != ExitGeneral {
+		t.Fatalf("exit %d out=%s", code, out)
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, "E_INTEGRITY") || !strings.Contains(j, "identity mismatch") {
+		t.Fatalf("expected E_INTEGRITY identity mismatch: %s", j)
+	}
+	if strings.Contains(j, `"retryable":true`) || strings.Contains(j, `"retryable": true`) {
+		t.Fatalf("integrity failure must be non-retryable: %s", j)
+	}
+}
+
+// SIGINT/SIGTERM before the swap still emits a terminal JSON envelope
+// (E_INTERRUPTED, exit 130) stating "no change, still on <current>".
+func TestUpdate_InterruptBeforeSwapEmitsEnvelope(t *testing.T) {
+	resetCLIState(t)
+	jsonMode = true
+	origVersion := version
+	version = "1.1.0"
+	t.Cleanup(func() { version = origVersion })
+
+	out := captureCLIOutput(t, func() {
+		_ = handleUpdateError(context.Canceled, updateStageDownload, false, "not_run")
+	})
+	if lastExit != ExitInterrupted {
+		t.Fatalf("expected exit 130, got %d", lastExit)
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, "E_INTERRUPTED") {
+		t.Fatalf("expected E_INTERRUPTED: %s", j)
+	}
+	if !strings.Contains(j, "still on 1.1.0") {
+		t.Fatalf("expected post-state message: %s", j)
+	}
+	if !strings.Contains(j, `"retryable":true`) && !strings.Contains(j, `"retryable": true`) {
+		t.Fatalf("interrupt should be retryable: %s", j)
+	}
+	if !strings.Contains(j, `"binary_replaced":false`) && !strings.Contains(j, `"binary_replaced": false`) {
+		t.Fatalf("expected binary_replaced false: %s", j)
+	}
+}
+
+func TestUpdate_NewErrorCodeMappings(t *testing.T) {
+	if output.RetryableForErrorCode(output.ErrIO) {
+		t.Fatal("E_IO must be non-retryable")
+	}
+	if !output.RetryableForErrorCode(output.ErrInterrupted) {
+		t.Fatal("E_INTERRUPTED must be retryable")
+	}
+	if got := output.ExitCodeForErrorCode(output.ErrIO); got != ExitGeneral {
+		t.Fatalf("E_IO exit got %d want %d", got, ExitGeneral)
+	}
+	if got := output.ExitCodeForErrorCode(output.ErrInterrupted); got != ExitInterrupted {
+		t.Fatalf("E_INTERRUPTED exit got %d want %d", got, ExitInterrupted)
+	}
+	if c, e := classifyReplaceError(fmt.Errorf("x: %w", os.ErrPermission)); c != output.ErrForbidden || e != ExitForbidden {
+		t.Fatalf("permission replace error: %v %d", c, e)
+	}
+	if c, e := classifyReplaceError(errors.New("disk full")); c != output.ErrIO || e != ExitGeneral {
+		t.Fatalf("io replace error: %v %d", c, e)
 	}
 }

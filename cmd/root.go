@@ -34,6 +34,7 @@ const (
 	ExitRateLimit       = 7
 	ExitNetwork         = 7
 	ExitTimeout         = 8
+	ExitInterrupted     = 130
 )
 
 const defaultTimeoutSeconds = 60

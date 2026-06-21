@@ -86,8 +86,9 @@ func referenceData(markdown string) map[string]any {
 			"risk_tier":    securityTier,
 			"blast_radius": "Read log data through Kibana and mutate only local kibana-cli config, audit files, field-map.yaml, or a standalone local binary during update.",
 			"permissions": []map[string]any{
-				{"tier": "read", "description": "context, doctor, reference, changelog, patterns, search, agg, objects, config show, auth status, update check"},
-				{"tier": "write", "description": "auth login/logout, config init, standalone binary update; always requires dry-run then confirm"},
+				{"tier": "read", "description": "context, doctor, reference, changelog, patterns, search, agg, objects, config show, auth status, update --check"},
+				{"tier": "write", "description": "auth login/logout, config init; always requires dry-run then confirm"},
+				{"tier": "self_update", "description": "update; single command (no confirm token), self-verifying via in-process Sigstore signature, then Skill sync"},
 				{"tier": "dangerous", "description": "not implemented"},
 			},
 		},
@@ -403,9 +404,9 @@ func examplesForCommand(path string) []string {
 		}
 	case "kibana-cli update":
 		return []string{
+			"kibana-cli update --compact",
 			"kibana-cli update --check --compact",
 			"kibana-cli update --dry-run --compact",
-			"kibana-cli update --confirm <confirm_token> --compact",
 		}
 	default:
 		// Root and parent/group commands emit only help text.

@@ -33,6 +33,19 @@ const (
 	updateMaxSignatureBundleBytes = 1 << 20
 )
 
+// Update runs as staged work with exactly one atomic commit point (the binary
+// swap). Every failure and interruption reports the stage it happened in so the
+// agent can tell — from the envelope alone — whether the installed binary
+// changed.
+const (
+	updateStageDiscover        = "discover"
+	updateStageDownload        = "download"
+	updateStageVerifySignature = "verify_signature"
+	updateStageVerifyChecksum  = "verify_checksum"
+	updateStageReplace         = "replace"
+	updateStageSkillSync       = "skill_sync"
+)
+
 var (
 	updateRepo           = "fatecannotbealtered/kibana-cli"
 	updateGitHubAPIBase  = "https://api.github.com"
@@ -64,7 +77,6 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for updates without changing files")
 	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. X.Y.Z or vX.Y.Z)")
-	markWrite(updateCmd)
 }
 
 type updateRelease struct {
@@ -119,14 +131,19 @@ func (e *updateHTTPError) Error() string {
 }
 
 func runUpdate(cmd *cobra.Command, _ []string) error {
+	// Single command, no confirm token: a bare `update` performs discover ->
+	// download -> verify -> replace -> skill_sync in one call. Self-update is
+	// exempt from the §7 dry-run/confirm write gate; the safety guarantee is the
+	// in-process Sigstore verification, not an agent's review of a preview.
+	// --check and --dry-run stay as optional read-only flags.
 	targetFlag := strings.TrimSpace(updateTargetVersion)
 	release, err := fetchUpdateRelease(apiCtx(), targetFlag)
 	if err != nil {
-		return handleUpdateError(err)
+		return handleUpdateError(err, updateStageDiscover, false, "not_run")
 	}
 	targetVersion := normalizeReleaseVersion(release.TagName)
 	if targetVersion == "" {
-		return failValidation("release has no tag_name")
+		return failUpdateStage(output.ErrValidation, ExitBadArgs, "release has no tag_name", updateStageDiscover, false, "not_run")
 	}
 	currentVersion := normalizeReleaseVersion(version)
 	installPath, _ := updateExecutablePath()
@@ -150,6 +167,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	if updateCheckOnly {
 		result.Notices = updateNoticesFromResult(result, "update_check")
 	}
+	// Idempotent: already on the latest (or requested) version is a no-op ok.
 	if !available {
 		printUpdateResult(result)
 		return nil
@@ -178,52 +196,50 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	if installPath == "" {
-		return failConfig("could not determine current executable path")
+		return failUpdateStage(output.ErrConfig, ExitAuth, "could not determine current executable path", updateStageReplace, false, "not_run")
 	}
 
 	assetName, err := releaseAssetName(targetVersion)
 	if err != nil {
-		return failValidation(err.Error())
+		return failUpdateStage(output.ErrValidation, ExitBadArgs, err.Error(), updateStageDiscover, false, "not_run")
 	}
 	result.Asset = assetName
-	updatePreview := map[string]any{
-		"path":               installPath,
-		"current_version":    version,
-		"target_version":     targetVersion,
-		"asset":              assetName,
-		"skill_sync_command": result.SkillSyncCommand,
+
+	// --dry-run is an OPTIONAL read-only preview of the plan. It issues NO
+	// confirm_token and NO expires_at — it is no longer a gate before update.
+	if dryRun {
+		result.DryRun = true
+		result.Message = fmt.Sprintf("would update kibana-cli from %s to %s", version, targetVersion)
+		printUpdateResultPreview(result)
+		return nil
 	}
-	result.DryRun = dryRun
-	skipped, err := writePlan("update binary", updatePreview, nil)
-	if err != nil || skipped {
-		return err
-	}
+
 	asset, ok := findReleaseAsset(release.Assets, assetName)
 	if !ok {
-		return failValidation("release asset not found: " + assetName)
+		return failUpdateStage(output.ErrValidation, ExitBadArgs, "release asset not found: "+assetName, updateStageDiscover, false, "not_run")
 	}
 	checksums, ok := findReleaseAsset(release.Assets, "checksums.txt")
 	if !ok {
-		return failValidation("release checksums.txt not found")
+		return failUpdateStage(output.ErrValidation, ExitBadArgs, "release checksums.txt not found", updateStageDiscover, false, "not_run")
 	}
 	signatureBundle, signatureBundleFound := findReleaseAsset(release.Assets, "checksums.txt.sigstore.json")
 
 	archiveData, err := downloadUpdateURL(apiCtx(), asset.BrowserDownloadURL)
 	if err != nil {
-		return handleUpdateError(err)
+		return handleUpdateError(err, updateStageDownload, false, "not_run")
 	}
 	checksumData, err := downloadUpdateURL(apiCtx(), checksums.BrowserDownloadURL)
 	if err != nil {
-		return handleUpdateError(err)
+		return handleUpdateError(err, updateStageDownload, false, "not_run")
 	}
 	signatureStatus, err := verifyChecksumSignature(apiCtx(), checksumData, signatureBundle, signatureBundleFound)
 	if err != nil {
 		// Integrity failure is non-retryable: a missing or invalid signature is
 		// a supply-chain red flag, not a transient blip an agent should retry.
-		return failIntegrity("verifying release signature: " + err.Error())
+		return failUpdateStage(output.ErrIntegrity, ExitGeneral, "verifying release signature: "+err.Error(), updateStageVerifySignature, false, "not_run")
 	}
 	if err := verifyArchiveChecksum(archiveData, checksumData, assetName); err != nil {
-		return failIntegrity(err.Error())
+		return failUpdateStage(output.ErrIntegrity, ExitGeneral, err.Error(), updateStageVerifyChecksum, false, "not_run")
 	}
 	binName := "kibana-cli"
 	if updateGOOS() == "windows" {
@@ -231,26 +247,122 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	}
 	binaryData, err := extractReleaseBinary(archiveData, assetName, binName)
 	if err != nil {
-		return failValidation(err.Error())
+		// Extraction reads the already-downloaded, integrity-verified archive into
+		// a temp dir; a failure here is a local IO/archive fault, not a network
+		// blip — atomic swap not yet committed.
+		return failUpdateStage(output.ErrIO, ExitGeneral, err.Error(), updateStageReplace, false, "not_run")
 	}
 	if err := updateReplaceBinary(installPath, binaryData); err != nil {
-		return failConfig("failed to replace executable: " + err.Error())
+		code, exit := classifyReplaceError(err)
+		return failUpdateStage(code, exit, "failed to replace executable: "+err.Error(), updateStageReplace, false, "not_run")
 	}
+
+	// The binary swap committed: from here `current_version` is the new version
+	// and binary_replaced is true. A skill_sync failure is now a PARTIAL SUCCESS,
+	// not a hard failure that loses the fact the binary already updated.
+	result.PreviousVersion = version
+	result.CurrentVersion = targetVersion
+	result.ChecksumVerified = true
+	result.SignatureStatus = signatureStatus
+	result.SignatureVerified = signatureStatus == "verified"
+
 	if err := updateSkillSync(apiCtx(), updateSkillRepo); err != nil {
-		return failConfig("failed to sync skill directory: " + err.Error())
+		return failSkillSyncPartial(result, err)
 	}
 
 	result.Status = "updated"
 	result.Message = fmt.Sprintf("updated kibana-cli from %s to %s", version, targetVersion)
-	result.PreviousVersion = version
-	result.CurrentVersion = targetVersion
 	result.Hint = fmt.Sprintf("run \"kibana-cli changelog --since %s\" before continuing", normalizeReleaseVersion(result.PreviousVersion))
-	result.ChecksumVerified = true
-	result.SignatureStatus = signatureStatus
-	result.SignatureVerified = signatureStatus == "verified"
 	result.SkillSyncStatus = "synced"
 	printUpdateResult(result)
 	return nil
+}
+
+// classifyReplaceError maps a binary-swap failure to its agent next-action. The
+// swap touches only local files (temp write, chmod, same-dir rename), so failures
+// here are local environment faults — permission -> E_FORBIDDEN (exit 4),
+// everything else (disk full, file locked, partial write) -> E_IO (exit 1).
+// These were previously misclassified as a retryable network/config error.
+func classifyReplaceError(err error) (output.ErrorCode, int) {
+	if errors.Is(err, os.ErrPermission) {
+		return output.ErrForbidden, ExitForbidden
+	}
+	return output.ErrIO, ExitGeneral
+}
+
+// failSkillSyncPartial reports the binary-replaced-but-Skill-unsynced state as a
+// partial success: ok:false, binary_replaced:true, with the skill_sync_command
+// the agent must run. The agent now knows it is on the new binary and only needs
+// to retry the Skill sync — not re-run the whole update.
+func failSkillSyncPartial(result updateResult, err error) error {
+	result.Status = "skill_sync_failed"
+	result.SkillSyncStatus = "failed"
+	result.Message = fmt.Sprintf(
+		"updated kibana-cli to %s, but Skill sync failed: %s — run %q, then \"kibana-cli changelog --since %s\"",
+		result.CurrentVersion, err.Error(), result.SkillSyncCommand, normalizeReleaseVersion(result.PreviousVersion),
+	)
+	details := updateStageDetails(updateStageSkillSync, result.CurrentVersion, true, "failed")
+	details["skill_sync_command"] = result.SkillSyncCommand
+	details["previous_version"] = result.PreviousVersion
+	details["signature_verified"] = result.SignatureVerified
+	details["signature_status"] = result.SignatureStatus
+	st := AgentStatus{
+		OK:        false,
+		Status:    "skill_sync_failed",
+		Message:   result.Message,
+		Error:     result.Message,
+		Hint:      "binary is at " + result.CurrentVersion + "; run " + result.SkillSyncCommand + ", then changelog --since " + normalizeReleaseVersion(result.PreviousVersion),
+		ErrorCode: output.ErrNetwork,
+		ExitCode:  ExitNetwork,
+	}
+	applyAgentExit(st)
+	if jsonMode {
+		output.PrintJSON(output.FailureEnvelope(st.ErrorCode, st.Message, details, elapsedDurationMs()))
+		return ErrSilent
+	}
+	output.Warn(st.Message)
+	return ErrSilent
+}
+
+// updateStageDetails builds the staged-failure detail block every update error
+// envelope must carry, so the agent can determine its post-failure state without
+// re-probing: stage, current_version (the version actually running NOW),
+// binary_replaced, and skill_sync_status.
+func updateStageDetails(stage, currentVersion string, binaryReplaced bool, skillSyncStatus string) map[string]any {
+	return map[string]any{
+		"stage":             stage,
+		"current_version":   currentVersion,
+		"binary_replaced":   binaryReplaced,
+		"skill_sync_status": skillSyncStatus,
+	}
+}
+
+// failUpdateStage emits a staged update-failure envelope with the §14 invariant
+// fields. currentVersion is always the version the tool is running now.
+func failUpdateStage(code output.ErrorCode, exit int, msg, stage string, binaryReplaced bool, skillSyncStatus string) error {
+	details := updateStageDetails(stage, version, binaryReplaced, skillSyncStatus)
+	st := AgentStatus{
+		OK:        false,
+		Status:    StatusAPIError,
+		Message:   msg,
+		Error:     msg,
+		Hint:      output.HintForErrorCode(code),
+		ErrorCode: code,
+		ExitCode:  exit,
+	}
+	if hint := output.HintForErrorCode(code); hint != "" {
+		details["hint"] = hint
+	}
+	applyAgentExit(st)
+	if jsonMode {
+		output.PrintJSON(output.FailureEnvelope(code, msg, details, elapsedDurationMs()))
+		return ErrSilent
+	}
+	output.Error(msg)
+	if st.Hint != "" {
+		output.AuxGray("  " + st.Hint)
+	}
+	return ErrSilent
 }
 
 func updateSkillSyncCommand() string {
@@ -378,10 +490,23 @@ func parseUpdateErrorMessage(data []byte) string {
 	return msg
 }
 
-func handleUpdateError(err error) error {
+// handleUpdateError classifies a discover/download failure and emits the staged
+// update-failure envelope. Interruption (a cancelled context from SIGINT/SIGTERM)
+// is mapped to E_INTERRUPTED so the agent receives a parseable terminal state
+// instead of a bare killed process. Before the binary swap, the post-state is
+// always "no change, still on <current>".
+func handleUpdateError(err error, stage string, binaryReplaced bool, skillSyncStatus string) error {
+	if isInterruptError(err) {
+		return failUpdateInterrupted(stage, binaryReplaced, skillSyncStatus)
+	}
 	var httpErr *updateHTTPError
 	if errors.As(err, &httpErr) {
 		code := output.ErrorCodeFromStatus(httpErr.StatusCode)
+		details := updateStageDetails(stage, version, binaryReplaced, skillSyncStatus)
+		details["statusCode"] = httpErr.StatusCode
+		if hint := output.HintForErrorCode(code); hint != "" {
+			details["hint"] = hint
+		}
 		st := AgentStatus{
 			OK:         false,
 			Status:     StatusAPIError,
@@ -392,10 +517,42 @@ func handleUpdateError(err error) error {
 			StatusCode: httpErr.StatusCode,
 			ExitCode:   exitCodeForStatus(httpErr.StatusCode),
 		}
+		applyAgentExit(st)
+		if jsonMode {
+			output.PrintJSON(output.FailureEnvelope(code, httpErr.Error(), details, elapsedDurationMs()))
+			return ErrSilent
+		}
 		emitAgentFailure(st)
 		return ErrSilent
 	}
-	return failNetwork(err.Error())
+	return failUpdateStage(output.ErrNetwork, ExitNetwork, err.Error(), stage, binaryReplaced, skillSyncStatus)
+}
+
+// isInterruptError reports whether err is the cancellation of the update context
+// by SIGINT/SIGTERM (signal.NotifyContext in main cancels apiCtx()).
+func isInterruptError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	// A download interrupted mid-flight surfaces as a wrapped url/net error whose
+	// root cause is context.Canceled; errors.Is above already unwraps it.
+	return false
+}
+
+// failUpdateInterrupted emits the terminal E_INTERRUPTED envelope (exit 130) on
+// stdout so an interrupted agent always receives a parseable terminal state. The
+// message states the post-state per the stage invariant: before the swap, "no
+// change, still on <current>".
+func failUpdateInterrupted(stage string, binaryReplaced bool, skillSyncStatus string) error {
+	msg := "update cancelled by signal; no change, still on " + normalizeReleaseVersion(version)
+	if binaryReplaced {
+		msg = "update cancelled by signal after the binary was replaced; binary is at " +
+			normalizeReleaseVersion(version) + ", Skill sync incomplete — run " + updateSkillSyncCommand()
+	}
+	return failUpdateStage(output.ErrInterrupted, ExitInterrupted, msg, stage, binaryReplaced, skillSyncStatus)
 }
 
 func printUpdateResult(result updateResult) {
@@ -421,6 +578,20 @@ func printUpdateResult(result updateResult) {
 	}
 	if result.URL != "" {
 		output.Gray("  " + result.URL)
+	}
+}
+
+// printUpdateResultPreview renders the optional read-only `update --dry-run`
+// preview. It returns NO confirm_token and NO expires_at — dry-run is no longer
+// a gate, just a plan preview the agent may inspect.
+func printUpdateResultPreview(result updateResult) {
+	if jsonMode {
+		printJSONSuccess(result)
+		return
+	}
+	output.Info(result.Message)
+	if result.Command != "" {
+		output.Gray("  " + result.Command)
 	}
 }
 
