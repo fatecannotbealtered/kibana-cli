@@ -1,10 +1,10 @@
 ---
 name: kibana-cli
-version: "1.1.8"
+version: "1.1.9"
 description: Kibana log query CLI for AI Agents that searches and aggregates ELK logs through Kibana Console Proxy. Triggers for Kibana, ELK, log search, log aggregation, trace-id lookup, index-pattern field discovery, multi-system context switching, and Kibana diagnostics.
 license: MIT
 user-invocable: true
-metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.8"}}
+metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.9"}}
 ---
 
 # kibana-cli
@@ -173,6 +173,14 @@ After a successful self-update, review `signature_status` / `checksum_verified`,
 ensure `skill_sync_status` is `synced`, read `data.previous_version`, and run
 `changelog --since <previous_version>` before continuing. For npm or Go managed
 installs, run the returned `data.command` when the update result requires it.
+
+When an update is available, the notice also rides along on **every** command's
+`meta.notices[]` (read-only from the local cache — no network, never a live
+check; absent when there is nothing to report). The notice is severity-graded:
+`warning` when the changelog delta since the running version contains a
+`security` entry or crosses a major version, otherwise `info`. Only the active
+checks (`update --check` / `doctor` / `context`) refresh the cache; business
+commands merely surface it.
 
 Update is staged work with one atomic commit point (the binary swap). Every
 failure and interruption envelope carries `stage`

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [1.1.9] - 2026-06-22
+
+### Added
+
+- The update-available notice now also rides along on **every** command's `meta.notices[]`, read **only from the local cache** (no network — cost is one local file read). It is omitted when the cache has nothing to report, and present on any command (not just `context`/`doctor`/`update --check`) while the cache holds an available-update notice. The fresh/active `data.notices` on `context`/`doctor`/`update --check` is unchanged.
+- Update notices are now **severity-graded** from the embedded CHANGELOG delta between the running version and the latest: `warning` when the delta contains a `security` entry or the latest crosses a major version, otherwise `info` (`critical` is reserved). Severity is computed at check time and stored in the cache, so the cached `meta.notices` carries the right level.
+
 ## [1.1.8] - 2026-06-21
 
 ### Changed

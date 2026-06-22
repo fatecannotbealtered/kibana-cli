@@ -48,6 +48,12 @@ const (
 	ErrUnknown         ErrorCode = "E_UNKNOWN"
 )
 
+// UpdateNoticesProvider, when set, supplies the cached update notice attached to
+// every envelope's meta.notices. It is wired by package cmd to avoid an import
+// cycle (cmd depends on output, not the reverse). The provider must read ONLY
+// the local cache and perform no network I/O.
+var UpdateNoticesProvider func() []any
+
 type Envelope struct {
 	OK            bool           `json:"ok"`
 	SchemaVersion string         `json:"schema_version"`
@@ -58,6 +64,16 @@ type Envelope struct {
 
 type EnvelopeMeta struct {
 	DurationMS int64 `json:"duration_ms"`
+	Notices    []any `json:"notices,omitempty"`
+}
+
+// metaNotices reads the cached update notice through the provider hook (if set).
+// Read-only from the local cache; no network I/O.
+func metaNotices() []any {
+	if UpdateNoticesProvider == nil {
+		return nil
+	}
+	return UpdateNoticesProvider()
 }
 
 type EnvelopeError struct {
@@ -72,7 +88,7 @@ func SuccessEnvelope(data any, durationMs int64) Envelope {
 		OK:            true,
 		SchemaVersion: SchemaVersion,
 		Data:          data,
-		Meta:          EnvelopeMeta{DurationMS: durationMs},
+		Meta:          EnvelopeMeta{DurationMS: durationMs, Notices: metaNotices()},
 	}
 }
 
@@ -89,7 +105,7 @@ func FailureEnvelope(code ErrorCode, message string, details map[string]any, dur
 			Details:   details,
 			Retryable: RetryableForErrorCode(code),
 		},
-		Meta: EnvelopeMeta{DurationMS: durationMs},
+		Meta: EnvelopeMeta{DurationMS: durationMs, Notices: metaNotices()},
 	}
 }
 

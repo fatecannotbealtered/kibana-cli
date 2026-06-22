@@ -151,6 +151,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "HTTP request timeout in seconds")
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "Select a stored context (system) by name; overrides KIBANA_CLI_CONTEXT and the current context")
 	installUpdateNoticeHelp(rootCmd)
+	output.UpdateNoticesProvider = cachedUpdateNoticesAsAny
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		lastExit = 0

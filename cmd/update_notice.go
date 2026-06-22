@@ -87,7 +87,7 @@ func updateNoticesFromValues(current, latest, installMethod, releaseURL, source 
 	command := updateNoticeRecommendedCommand(installMethod, latest)
 	notice := updateNotice{
 		Type:               "update_available",
-		Severity:           "info",
+		Severity:           updateNoticeSeverity(current, latest),
 		CurrentVersion:     current,
 		LatestVersion:      latest,
 		UpdateAvailable:    true,
@@ -107,6 +107,33 @@ func updateNoticesFromValues(current, latest, installMethod, releaseURL, source 
 	return []updateNotice{notice}
 }
 
+// updateNoticeSeverity grades an available-update notice from the embedded
+// CHANGELOG delta between the running version (current) and the latest. It
+// returns "warning" when the delta contains a security entry OR the latest
+// crosses a major version; otherwise "info". "critical" is reserved and never
+// emitted here (CLI-SPEC §14).
+func updateNoticeSeverity(current, latest string) string {
+	if majorVersion(latest) > majorVersion(current) {
+		return "warning"
+	}
+	for _, entry := range filterChangelogEntries(parseChangelog(changelogSource), current) {
+		if len(entry.Changes["security"]) > 0 {
+			return "warning"
+		}
+	}
+	return "info"
+}
+
+// majorVersion returns the first semver component of v, or -1 when it cannot be
+// parsed (so an unparseable version never spuriously triggers a major bump).
+func majorVersion(v string) int {
+	parts, ok := parseVersionParts(v)
+	if !ok {
+		return -1
+	}
+	return parts[0]
+}
+
 func updateNoticeRecommendedCommand(installMethod, latest string) string {
 	switch strings.ToLower(strings.TrimSpace(installMethod)) {
 	case "npm", "go":
@@ -114,6 +141,21 @@ func updateNoticeRecommendedCommand(installMethod, latest string) string {
 	default:
 		return "kibana-cli update --dry-run --compact"
 	}
+}
+
+// cachedUpdateNoticesAsAny adapts the cached update notices to the generic
+// []any the output layer expects, so the envelope builder can attach them to
+// meta.notices without importing package cmd. Reads ONLY the local cache.
+func cachedUpdateNoticesAsAny() []any {
+	notices := readCachedUpdateNotices()
+	if len(notices) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(notices))
+	for _, n := range notices {
+		out = append(out, n)
+	}
+	return out
 }
 
 func readCachedUpdateNotices() []updateNotice {
@@ -187,8 +229,19 @@ func updateNoticeDisabled() bool {
 	return value == "1" || value == "true" || value == "yes"
 }
 
+// updateNoticeTestCacheEnabled lets tests opt back into real cache I/O, which is
+// otherwise auto-disabled under the `.test` binary so unrelated tests never read
+// or write the user's cache. Production code never sets this.
+var updateNoticeTestCacheEnabled bool
+
 func updateNoticeAutoDisabled() bool {
-	return updateNoticeDisabled() || strings.HasSuffix(os.Args[0], ".test")
+	if updateNoticeDisabled() {
+		return true
+	}
+	if updateNoticeTestCacheEnabled {
+		return false
+	}
+	return strings.HasSuffix(os.Args[0], ".test")
 }
 
 func printUpdateNoticeHint(w io.Writer, notices []updateNotice) {
