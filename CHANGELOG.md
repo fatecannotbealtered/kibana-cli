@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- The cached update-available notice is now re-validated against the running version when read, not the version cached at write time. Within the 24h cache TTL after an upgrade, an already-current CLI no longer keeps advertising an update to a version it already runs; while still behind the latest, `current_version` and the notice message are refreshed to the running binary.
+
 ## [1.1.9] - 2026-06-22
 
 ### Added
