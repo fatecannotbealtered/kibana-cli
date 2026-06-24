@@ -183,6 +183,14 @@ func readCachedUpdateNotices() []updateNotice {
 		if notice.Type != "update_available" || !notice.UpdateAvailable {
 			continue
 		}
+		// Re-validate against the version running now, not the version cached at
+		// write time: within the cache TTL after an upgrade the entry would
+		// otherwise keep advertising an update to a version we are already on.
+		if !updateAvailable(version, notice.LatestVersion, false) {
+			continue
+		}
+		notice.CurrentVersion = normalizeReleaseVersion(version)
+		notice.Message = fmt.Sprintf("kibana-cli %s is available (current %s)", notice.LatestVersion, notice.CurrentVersion)
 		notice.Source = "cache"
 		notices = append(notices, notice)
 	}

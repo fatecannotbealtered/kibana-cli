@@ -232,3 +232,61 @@ func TestUpdateNoticeSeverity_PatchInfo(t *testing.T) {
 		t.Fatalf("patch delta: severity = %q, want info", got)
 	}
 }
+
+// A cached "update available" notice must not survive once the running binary
+// has caught up to (or passed) the cached latest version. Otherwise, for the
+// whole cache-TTL window after an upgrade, an already-current CLI keeps
+// advertising an update to the version it is already on.
+func TestReadCachedUpdateNotices_DropsStaleAfterUpgrade(t *testing.T) {
+	enableNoticeCacheForTest(t)
+	writeUpdateNoticeCache([]updateNotice{{
+		Type:            "update_available",
+		Severity:        "info",
+		Message:         "kibana-cli 1.1.9 is available (current 1.1.8)",
+		CurrentVersion:  "1.1.8",
+		LatestVersion:   "1.1.9",
+		UpdateAvailable: true,
+		CheckedAt:       time.Now().UTC().Format(time.RFC3339),
+		Source:          "doctor",
+	}})
+
+	orig := version
+	version = "1.1.9" // user upgraded to the cached latest
+	t.Cleanup(func() { version = orig })
+
+	if got := readCachedUpdateNotices(); len(got) != 0 {
+		t.Fatalf("expected no notice once running version caught up to cached latest, got %d: %+v", len(got), got)
+	}
+}
+
+// While the running version is still behind the cached latest, the notice is
+// kept, but its current_version/message reflect the running binary rather than
+// the (now-superseded) version cached at write time.
+func TestReadCachedUpdateNotices_RefreshesCurrentVersion(t *testing.T) {
+	enableNoticeCacheForTest(t)
+	writeUpdateNoticeCache([]updateNotice{{
+		Type:            "update_available",
+		Severity:        "info",
+		Message:         "kibana-cli 1.1.9 is available (current 1.1.7)",
+		CurrentVersion:  "1.1.7",
+		LatestVersion:   "1.1.9",
+		UpdateAvailable: true,
+		CheckedAt:       time.Now().UTC().Format(time.RFC3339),
+		Source:          "doctor",
+	}})
+
+	orig := version
+	version = "1.1.8" // upgraded past the cached current, still behind latest
+	t.Cleanup(func() { version = orig })
+
+	got := readCachedUpdateNotices()
+	if len(got) != 1 {
+		t.Fatalf("expected the notice to survive while still behind latest, got %d", len(got))
+	}
+	if got[0].CurrentVersion != "1.1.8" {
+		t.Errorf("current_version should reflect the running binary, got %q", got[0].CurrentVersion)
+	}
+	if want := "kibana-cli 1.1.9 is available (current 1.1.8)"; got[0].Message != want {
+		t.Errorf("message should reflect running version, got %q want %q", got[0].Message, want)
+	}
+}
