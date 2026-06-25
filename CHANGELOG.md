@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-06-25
+
+### Changed
+
+- `update` now replaces the running binary in place on Windows using the same cross-platform rename trick as on Unix (write `.<name>.new` → rename the in-use binary to `.<name>.old` → move `.new` into place → roll back on failure). Windows no longer returns `manual_update_required`; a successful self-update reports `status: "updated"` with `binary_replaced: true` on every platform.
+- `update` standardizes the target-version flag on `--target-version` (CLI-SPEC §2/§14). The previous `--version` flag is retained as a hidden, deprecated alias so existing callers keep working.
+
 ### Fixed
 
 - The cached update-available notice is now re-validated against the running version when read, not the version cached at write time. Within the 24h cache TTL after an upgrade, an already-current CLI no longer keeps advertising an update to a version it already runs; while still behind the latest, `current_version` and the notice message are refreshed to the running binary.
+- `update` no longer misclassifies a transient verify-stage failure as a non-retryable integrity failure. The `verify_signature` stage now splits failure modes: a signature/identity/transparency-log mismatch stays `E_INTEGRITY` (exit 1, non-retryable), while a network step inside verification — downloading the signature bundle or refreshing the Sigstore TUF trusted root — maps to the retryable network/timeout taxonomy (`E_NETWORK`/`E_TIMEOUT`, exit 7/8), and a SIGINT/SIGTERM during verify emits a terminal `E_INTERRUPTED` envelope (exit 130). Request timeouts during discover/download are now distinguished as `E_TIMEOUT` (exit 8) rather than collapsed into `E_NETWORK`.
+- The Sigstore trusted-root refresh during `update` is now cache-first and context-bound (`WithForceCache` + the command context), so a still-valid cached trusted root is reused without a network call and a refresh is cancelled on interrupt and bounded by the command timeout. The self-update result reports the trust-root source via `trust_root_source`; the code comments now describe the trust model truthfully (embedded TUF anchor + online `trusted_root.json` refresh), since sigstore-go v1.2.1 exposes no fully offline embedded trusted root.
 
 ## [1.1.9] - 2026-06-22
 

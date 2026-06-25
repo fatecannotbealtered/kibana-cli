@@ -513,7 +513,7 @@ func referenceSchemas() map[string]referenceDataSchema {
 		},
 		"update_report": {
 			Shape:  "object",
-			Fields: []string{"status", "message", "previous_version", "current_version", "target_version", "latest_version", "update_available", "install_method", "path", "asset", "url", "command", "hint", "dry_run", "checksum_verified", "signature_status", "signature_verified", "skill_sync_command", "skill_sync_status", "notices"},
+			Fields: []string{"status", "message", "previous_version", "current_version", "target_version", "latest_version", "update_available", "install_method", "path", "asset", "url", "command", "hint", "dry_run", "checksum_verified", "signature_status", "signature_verified", "trust_root_source", "skill_sync_command", "skill_sync_status", "notices"},
 		},
 		"group": {
 			Shape:  "object",

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,6 +32,14 @@ const (
 	updateSkillRepo               = "fatecannotbealtered/kibana-cli"
 	updateMaxErrorBodyLen         = 512
 	updateMaxSignatureBundleBytes = 1 << 20
+
+	// updateTrustRootSource describes — honestly — where the Sigstore trust
+	// material came from. The TUF anchor (root.json) is embedded in the binary,
+	// but the trusted_root.json target is refreshed from the public Sigstore TUF
+	// CDN (cache-first via WithForceCache). UNRESOLVED: a fully offline embedded
+	// trusted_root is not available in sigstore-go v1.2.1, so a cold cache still
+	// needs one network refresh. See verifySigstoreBundle.
+	updateTrustRootSource = "embedded-tuf-anchor+cached-trusted-root-refresh"
 )
 
 // Update runs as staged work with exactly one atomic commit point (the binary
@@ -47,15 +56,16 @@ const (
 )
 
 var (
-	updateRepo           = "fatecannotbealtered/kibana-cli"
-	updateGitHubAPIBase  = "https://api.github.com"
-	updateCheckOnly      bool
-	updateTargetVersion  string
-	updateExecutablePath = os.Executable
-	updateGOOS           = func() string { return runtime.GOOS }
-	updateGOARCH         = func() string { return runtime.GOARCH }
-	updateReplaceBinary  = replaceExecutable
-	updateSkillSync      = runUpdateSkillSync
+	updateRepo               = "fatecannotbealtered/kibana-cli"
+	updateGitHubAPIBase      = "https://api.github.com"
+	updateCheckOnly          bool
+	updateTargetVersion      string
+	updateTargetVersionAlias string
+	updateExecutablePath     = os.Executable
+	updateGOOS               = func() string { return runtime.GOOS }
+	updateGOARCH             = func() string { return runtime.GOARCH }
+	updateReplaceBinary      = replaceExecutable
+	updateSkillSync          = runUpdateSkillSync
 )
 
 var updateCmd = &cobra.Command{
@@ -76,7 +86,22 @@ unverifiable release is refused; there is no skip path.`,
 func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for updates without changing files")
-	updateCmd.Flags().StringVar(&updateTargetVersion, "version", "", "Install or check a specific release version (e.g. X.Y.Z or vX.Y.Z)")
+	updateCmd.Flags().StringVar(&updateTargetVersion, "target-version", "", "Install or check a specific release version (e.g. X.Y.Z or vX.Y.Z)")
+	// --version is the historical name for the target-version flag, kept as a
+	// hidden deprecated alias so existing callers do not break. CLI-SPEC §2/§14
+	// standardize on --target-version.
+	updateCmd.Flags().StringVar(&updateTargetVersionAlias, "version", "", "Deprecated alias for --target-version")
+	_ = updateCmd.Flags().MarkHidden("version")
+	_ = updateCmd.Flags().MarkDeprecated("version", "use --target-version")
+}
+
+// resolveUpdateTargetVersion folds the deprecated --version alias into the
+// canonical --target-version value. --target-version wins when both are set.
+func resolveUpdateTargetVersion() string {
+	if v := strings.TrimSpace(updateTargetVersion); v != "" {
+		return v
+	}
+	return strings.TrimSpace(updateTargetVersionAlias)
 }
 
 type updateRelease struct {
@@ -108,6 +133,7 @@ type updateResult struct {
 	ChecksumVerified  bool           `json:"checksum_verified,omitempty"`
 	SignatureStatus   string         `json:"signature_status,omitempty"`
 	SignatureVerified bool           `json:"signature_verified,omitempty"`
+	TrustRootSource   string         `json:"trust_root_source,omitempty"`
 	SkillSyncCommand  string         `json:"skill_sync_command,omitempty"`
 	SkillSyncStatus   string         `json:"skill_sync_status,omitempty"`
 	Notices           []updateNotice `json:"notices,omitempty"`
@@ -136,7 +162,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	// exempt from the §7 dry-run/confirm write gate; the safety guarantee is the
 	// in-process Sigstore verification, not an agent's review of a preview.
 	// --check and --dry-run stay as optional read-only flags.
-	targetFlag := strings.TrimSpace(updateTargetVersion)
+	targetFlag := resolveUpdateTargetVersion()
 	release, err := fetchUpdateRelease(apiCtx(), targetFlag)
 	if err != nil {
 		return handleUpdateError(err, updateStageDiscover, false, "not_run")
@@ -188,13 +214,6 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		printUpdateResult(result)
 		return nil
 	}
-	if updateGOOS() == "windows" {
-		result.Status = "manual_update_required"
-		result.Message = "Windows cannot safely replace the running executable; download the release asset and replace the binary after exiting"
-		result.Asset, _ = releaseAssetName(targetVersion)
-		printUpdateResult(result)
-		return nil
-	}
 	if installPath == "" {
 		return failUpdateStage(output.ErrConfig, ExitAuth, "could not determine current executable path", updateStageReplace, false, "not_run")
 	}
@@ -234,9 +253,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	}
 	signatureStatus, err := verifyChecksumSignature(apiCtx(), checksumData, signatureBundle, signatureBundleFound)
 	if err != nil {
-		// Integrity failure is non-retryable: a missing or invalid signature is
-		// a supply-chain red flag, not a transient blip an agent should retry.
-		return failUpdateStage(output.ErrIntegrity, ExitGeneral, "verifying release signature: "+err.Error(), updateStageVerifySignature, false, "not_run")
+		return handleVerifySignatureError(err, signatureStatus)
 	}
 	if err := verifyArchiveChecksum(archiveData, checksumData, assetName); err != nil {
 		return failUpdateStage(output.ErrIntegrity, ExitGeneral, err.Error(), updateStageVerifyChecksum, false, "not_run")
@@ -265,6 +282,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	result.ChecksumVerified = true
 	result.SignatureStatus = signatureStatus
 	result.SignatureVerified = signatureStatus == "verified"
+	result.TrustRootSource = updateTrustRootSource
 
 	if err := updateSkillSync(apiCtx(), updateSkillRepo); err != nil {
 		return failSkillSyncPartial(result, err)
@@ -397,15 +415,19 @@ func truncateUpdateMessage(s string, n int) string {
 // is always "verified" on the nil-error path.
 func verifyChecksumSignature(ctx context.Context, checksumData []byte, bundle updateAsset, bundleFound bool) (string, error) {
 	if !bundleFound {
+		// A genuinely unsigned release is an integrity refusal, not a network
+		// blip: there is nothing to retry. Keep it on the E_INTEGRITY path.
 		return "missing", errors.New("release does not include checksums.txt.sigstore.json; refusing to install an unsigned release")
 	}
 
 	bundleData, err := downloadUpdateURL(ctx, bundle.BrowserDownloadURL)
 	if err != nil {
-		return "download_failed", fmt.Errorf("downloading checksum signature bundle: %w", err)
+		// Downloading the signature bundle is a network step: a failure here is
+		// transient (network/timeout/interrupt), not an integrity failure.
+		return "download_failed", &updateRetryableVerifyError{fmt.Errorf("downloading checksum signature bundle: %w", err)}
 	}
 	if len(bundleData) > updateMaxSignatureBundleBytes {
-		return "download_failed", fmt.Errorf("checksum signature bundle exceeds %d bytes", updateMaxSignatureBundleBytes)
+		return "failed", fmt.Errorf("checksum signature bundle exceeds %d bytes", updateMaxSignatureBundleBytes)
 	}
 	tmpDir, err := os.MkdirTemp("", "kibana-cli-signature-*")
 	if err != nil {
@@ -422,10 +444,44 @@ func verifyChecksumSignature(ctx context.Context, checksumData []byte, bundle up
 		return "failed", fmt.Errorf("writing checksum signature bundle: %w", err)
 	}
 
-	if err := updateVerifySignature(checksumPath, bundlePath, updateSignerIdentityRegexp()); err != nil {
+	if err := updateVerifySignature(ctx, checksumPath, bundlePath, updateSignerIdentityRegexp()); err != nil {
 		return "failed", err
 	}
 	return "verified", nil
+}
+
+// updateRetryableVerifyError marks a verify-stage failure that is transient
+// (a network step inside signature verification — the bundle download or the
+// TUF trust-root refresh), so the agent should back off and re-run `update`
+// rather than treat it as a non-retryable supply-chain integrity failure.
+type updateRetryableVerifyError struct{ err error }
+
+func (e *updateRetryableVerifyError) Error() string { return e.err.Error() }
+func (e *updateRetryableVerifyError) Unwrap() error { return e.err }
+
+// handleVerifySignatureError classifies a verify_signature-stage failure by the
+// agent's next action, NOT by lumping everything into E_INTEGRITY:
+//
+//   - context cancelled (SIGINT/SIGTERM) -> E_INTERRUPTED (exit 130), retryable;
+//   - a network step (bundle download or TUF trust-root refresh) failing ->
+//     the network/timeout taxonomy (retryable), because the release may be
+//     perfectly valid and only the trust material was unreachable;
+//   - a signature, identity, or transparency-log mismatch -> E_INTEGRITY
+//     (exit 1, non-retryable): a forged or corrupt release is not a transient
+//     blip to loop on.
+func handleVerifySignatureError(err error, signatureStatus string) error {
+	if isInterruptError(err) {
+		return failUpdateInterrupted(updateStageVerifySignature, false, "not_run")
+	}
+	var trustErr *errTrustRootUnavailable
+	var retryErr *updateRetryableVerifyError
+	if errors.As(err, &trustErr) || errors.As(err, &retryErr) {
+		code, exit := classifyUpdateNetworkError(err)
+		return failUpdateStage(code, exit, "verifying release signature: "+err.Error(), updateStageVerifySignature, false, "not_run")
+	}
+	// Integrity failure is non-retryable: a missing or invalid signature is a
+	// supply-chain red flag, not a transient blip an agent should retry.
+	return failUpdateStage(output.ErrIntegrity, ExitGeneral, "verifying release signature: "+err.Error(), updateStageVerifySignature, false, "not_run")
 }
 
 func fetchUpdateRelease(ctx context.Context, target string) (*updateRelease, error) {
@@ -525,7 +581,43 @@ func handleUpdateError(err error, stage string, binaryReplaced bool, skillSyncSt
 		emitAgentFailure(st)
 		return ErrSilent
 	}
-	return failUpdateStage(output.ErrNetwork, ExitNetwork, err.Error(), stage, binaryReplaced, skillSyncStatus)
+	code, exit := classifyUpdateNetworkError(err)
+	return failUpdateStage(code, exit, err.Error(), stage, binaryReplaced, skillSyncStatus)
+}
+
+// classifyUpdateNetworkError maps a non-interrupt transport failure to the
+// retryable taxonomy: a timeout (client deadline or DeadlineExceeded) is
+// E_TIMEOUT (exit 8) so the agent backs off on a deadline distinctly from a
+// generic connection failure; an embedded HTTP status maps via the §6 table;
+// everything else is E_NETWORK (exit 7). All three are retryable transients,
+// never E_INTEGRITY.
+func classifyUpdateNetworkError(err error) (output.ErrorCode, int) {
+	if isUpdateTimeoutError(err) {
+		return output.ErrTimeout, ExitTimeout
+	}
+	var httpErr *updateHTTPError
+	if errors.As(err, &httpErr) {
+		return output.ErrorCodeFromStatus(httpErr.StatusCode), exitCodeForStatus(httpErr.StatusCode)
+	}
+	return output.ErrNetwork, ExitNetwork
+}
+
+// isUpdateTimeoutError reports whether err is a request timeout — either a
+// context deadline (the command --timeout budget elapsed) or a net.Error whose
+// Timeout() is true (the http.Client.Timeout fired). A cancelled context
+// (SIGINT) is handled separately as E_INTERRUPTED and is not a timeout.
+func isUpdateTimeoutError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return false
 }
 
 // isInterruptError reports whether err is the cancellation of the update context
@@ -565,7 +657,7 @@ func printUpdateResult(result updateResult) {
 		output.Success(result.Message)
 	case "up_to_date":
 		output.Success(result.Message)
-	case "package_manager_required", "manual_update_required":
+	case "package_manager_required":
 		output.Warn(result.Message)
 	default:
 		output.Info(result.Message)
@@ -849,44 +941,47 @@ func extractTarGzBinary(archiveData []byte, binaryName string) ([]byte, error) {
 	return nil, fmt.Errorf("%s not found in release archive", binaryName)
 }
 
-func replaceExecutable(path string, data []byte) error {
-	info, err := os.Stat(path)
+// replaceExecutable swaps the running binary in place with a cross-platform
+// rename trick: write .<base>.new, rename the in-use target out to .<base>.old,
+// move .new into place, and roll back from .old on failure. On Windows the
+// running image can be renamed (it is not deletable), so the same path works
+// without a .cmd helper or a wait-for-exit move loop; a .old left locked by the
+// running process is removed best-effort and otherwise ignored.
+func replaceExecutable(exePath string, binaryData []byte) error {
+	target := exePath
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		target = resolved
+	}
+	info, err := os.Stat(target)
 	if err != nil {
-		return err
+		return fmt.Errorf("stat executable %s: %w", target, err)
 	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".kibana-cli-update-*")
-	if err != nil {
-		return err
+	mode := info.Mode()
+	if mode.Perm() == 0 {
+		mode = 0o755
 	}
-	tmpPath := tmp.Name()
-	cleanupTmp := true
-	defer func() {
-		if cleanupTmp {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
+	dir := filepath.Dir(target)
+	base := filepath.Base(target)
+	newPath := filepath.Join(dir, "."+base+".new")
+	backupPath := filepath.Join(dir, "."+base+".old")
+
+	_ = os.Remove(newPath)
+	if err := os.WriteFile(newPath, binaryData, mode.Perm()); err != nil {
+		return fmt.Errorf("writing replacement binary %s: %w", newPath, err)
 	}
-	if err := tmp.Chmod(info.Mode()); err != nil {
-		_ = tmp.Close()
-		return err
+	if err := os.Chmod(newPath, mode.Perm()); err != nil {
+		_ = os.Remove(newPath)
+		return fmt.Errorf("setting executable mode on %s: %w", newPath, err)
 	}
-	if err := tmp.Close(); err != nil {
-		return err
+
+	_ = os.Remove(backupPath)
+	if err := os.Rename(target, backupPath); err != nil {
+		return fmt.Errorf("preparing to replace %s: %w; replacement left at %s", target, err, newPath)
 	}
-	backup := path + ".old"
-	_ = os.Remove(backup)
-	if err := os.Rename(path, backup); err != nil {
-		return err
+	if err := os.Rename(newPath, target); err != nil {
+		_ = os.Rename(backupPath, target)
+		return fmt.Errorf("replacing %s: %w; original restored", target, err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Rename(backup, path)
-		return err
-	}
-	cleanupTmp = false
-	_ = os.Remove(backup)
+	_ = os.Remove(backupPath)
 	return nil
 }

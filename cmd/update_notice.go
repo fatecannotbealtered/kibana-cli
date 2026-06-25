@@ -110,8 +110,7 @@ func updateNoticesFromValues(current, latest, installMethod, releaseURL, source 
 // updateNoticeSeverity grades an available-update notice from the embedded
 // CHANGELOG delta between the running version (current) and the latest. It
 // returns "warning" when the delta contains a security entry OR the latest
-// crosses a major version; otherwise "info". "critical" is reserved and never
-// emitted here (CLI-SPEC §14).
+// crosses a major version; otherwise "info" (CLI-SPEC §14).
 func updateNoticeSeverity(current, latest string) string {
 	if majorVersion(latest) > majorVersion(current) {
 		return "warning"

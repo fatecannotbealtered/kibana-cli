@@ -1,14 +1,27 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
+	"github.com/sigstore/sigstore-go/pkg/tuf"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
+
+// errTrustRootUnavailable marks a failure to obtain the Sigstore trusted root
+// (a TUF metadata refresh over the network). It is a transient/environmental
+// fault, NOT a signature-integrity failure: the release may be perfectly valid
+// but we could not reach or refresh the trust material. Callers map it to a
+// retryable network error rather than the non-retryable E_INTEGRITY used for a
+// signature or identity mismatch.
+type errTrustRootUnavailable struct{ err error }
+
+func (e *errTrustRootUnavailable) Error() string { return e.err.Error() }
+func (e *errTrustRootUnavailable) Unwrap() error { return e.err }
 
 // updateOIDCIssuer is the GitHub Actions OIDC issuer. The release workflow's
 // Sigstore certificate must be issued for this exact issuer.
@@ -25,26 +38,45 @@ func updateSignerIdentityRegexp() string {
 }
 
 // updateVerifySignature is the in-process Sigstore verification seam. Production
-// verifies the bundle against the embedded TUF trust root (no external cosign,
-// no user environment dependency); tests stub it to exercise the surrounding
-// fail-closed control flow without a live OIDC-signed bundle.
+// verifies the bundle against the Sigstore TUF trust material (no external
+// cosign, no user environment dependency); tests stub it to exercise the
+// surrounding fail-closed control flow without a live OIDC-signed bundle.
 var updateVerifySignature = verifySigstoreBundle
 
 // verifySigstoreBundle verifies that artifactPath (checksums.txt) is covered by
 // the Sigstore bundle at bundlePath, that the signing certificate's SAN matches
 // sanRegex, that its issuer is GitHub Actions, and that the signature is logged
-// in the transparency log. The trust root is bootstrapped from sigstore-go's
-// embedded TUF root.json, so the trust anchor ships inside this binary rather
-// than being fetched on faith.
-func verifySigstoreBundle(artifactPath, bundlePath, sanRegex string) error {
+// in the transparency log.
+//
+// Trust root sourcing — honest description (CLI-SPEC §14 / SEC-SPEC §5):
+//
+//   - The TUF trust ANCHOR (root.json) is embedded in the sigstore-go library
+//     and shipped inside this binary, so the chain is NOT trust-on-first-use:
+//     tuf.DefaultOptions().Root is the library's embedded root.
+//   - The trusted_root.json target itself is fetched/refreshed from the public
+//     Sigstore TUF CDN. We pass WithForceCache() so a previously cached, still
+//     valid trusted root is reused WITHOUT a network call, and bind the TUF
+//     background context to ctx so a refresh is cancelled on SIGINT and bounded
+//     by the command timeout. A refresh is still attempted when the cache is
+//     missing or its metadata has expired.
+//
+// UNRESOLVED (carried in the update result): a first-ever verify on a machine
+// with no TUF cache, or one whose cached metadata has expired, still performs a
+// network refresh of trusted_root.json — sigstore-go v1.2.1 exposes no fully
+// offline embedded trusted_root for the public-good instance. That refresh
+// failing surfaces as a retryable network error (errTrustRootUnavailable), not
+// the non-retryable E_INTEGRITY reserved for a signature/identity mismatch.
+func verifySigstoreBundle(ctx context.Context, artifactPath, bundlePath, sanRegex string) error {
 	b, err := bundle.LoadJSONFromPath(bundlePath)
 	if err != nil {
 		return fmt.Errorf("loading signature bundle: %w", err)
 	}
 
-	trustedRoot, err := root.FetchTrustedRoot()
+	opts := tuf.DefaultOptions().WithForceCache().WithContext(ctx)
+	trustedRoot, err := root.FetchTrustedRootWithOptions(opts)
 	if err != nil {
-		return fmt.Errorf("loading sigstore trust root: %w", err)
+		// Trust-material refresh failed (network/TUF), NOT a signature failure.
+		return &errTrustRootUnavailable{fmt.Errorf("loading sigstore trust root: %w", err)}
 	}
 
 	sev, err := verify.NewVerifier(trustedRoot,

@@ -175,23 +175,51 @@ func TestUpdate_BareExecutesWithoutToken(t *testing.T) {
 	}
 }
 
-func TestUpdate_WindowsManualUpdateRequired(t *testing.T) {
+func TestUpdate_WindowsInstallsInPlace(t *testing.T) {
 	home := setupTestHome(t)
-	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
-	defer srv.Close()
 	exe := filepath.Join(home, "bin", "kibana-cli.exe")
-	withUpdateHooks(t, srv.URL, exe, "windows", "arm64")
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("old"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Windows arm64 falls back to the amd64 asset.
+	withUpdateHooks(t, "", exe, "windows", "arm64")
+	archive := makeZip(t, "kibana-cli.exe", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assetName != "kibana-cli-1.1.1-windows-amd64.zip" {
+		t.Fatalf("unexpected windows asset name: %s", assetName)
+	}
+	assets := map[string][]byte{
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+	}
+	srv := newUpdateReleaseServer(t, "v1.1.1", assets)
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
 
 	out, code := runCLI(t, []string{"update", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	j := lastJSONLine(out)
-	if !strings.Contains(j, `"manual_update_required"`) {
-		t.Fatalf("expected manual update: %s", j)
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(j, `kibana-cli-1.1.1-windows-amd64.zip`) {
-		t.Fatalf("expected windows amd64 fallback asset: %s", j)
+	if string(data) != "new-binary" {
+		t.Fatalf("binary not replaced in place on windows: %q", data)
+	}
+	dataMap := envelopeData(t, out)
+	if dataMap["status"] != "updated" {
+		t.Fatalf("expected status updated on windows: %s", out)
+	}
+	if dataMap["current_version"] != "1.1.1" {
+		t.Fatalf("expected current_version 1.1.1: %s", out)
 	}
 }
 
@@ -671,7 +699,6 @@ func TestPrintUpdateResultText(t *testing.T) {
 		{Status: "updated", Message: "updated"},
 		{Status: "up_to_date", Message: "ok"},
 		{Status: "package_manager_required", Message: "pm", Command: "npm install", URL: "https://example.com"},
-		{Status: "manual_update_required", Message: "manual"},
 		{Status: "update_available", Message: "available"},
 	}
 	out := captureCLIOutput(t, func() {
@@ -720,7 +747,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	// In-process Sigstore verification is stubbed in tests; a live OIDC-signed
 	// bundle cannot be produced in a unit test. Fail-closed control flow is
 	// covered by overriding this with an error-returning stub.
-	updateVerifySignature = func(_, _, _ string) error { return nil }
+	updateVerifySignature = func(context.Context, string, string, string) error { return nil }
 }
 
 func newUpdateReleaseServer(t *testing.T, tag string, downloads map[string][]byte) *httptest.Server {
@@ -856,7 +883,9 @@ func TestUpdate_SignatureVerificationFailsClosed(t *testing.T) {
 	home := setupTestHome(t)
 	exe := filepath.Join(home, "bin", "kibana-cli")
 	withUpdateHooks(t, "", exe, "linux", "amd64")
-	updateVerifySignature = func(_, _, _ string) error { return errors.New("identity mismatch") }
+	updateVerifySignature = func(context.Context, string, string, string) error {
+		return errors.New("identity mismatch")
+	}
 	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
 	assetName, err := releaseAssetName("1.1.1")
 	if err != nil {
@@ -911,6 +940,189 @@ func TestUpdate_InterruptBeforeSwapEmitsEnvelope(t *testing.T) {
 		t.Fatalf("expected binary_replaced false: %s", j)
 	}
 }
+
+// --target-version is the canonical flag; --version is a hidden deprecated
+// alias. Both must select the same release.
+func TestUpdate_TargetVersionFlagAndAlias(t *testing.T) {
+	run := func(t *testing.T, flag string) {
+		home := setupTestHome(t)
+		exe := filepath.Join(home, "bin", "kibana-cli")
+		if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exe, []byte("old"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		withUpdateHooks(t, "", exe, "linux", "amd64")
+		archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+		assetName, err := releaseAssetName("1.1.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+			assetName:                     archive,
+			"checksums.txt":               checksumLine(assetName, archive),
+			"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+		})
+		defer srv.Close()
+		updateGitHubAPIBase = srv.URL
+
+		out, code := runCLI(t, []string{"update", flag, "v1.1.1", "--json"})
+		if code != ExitOK {
+			t.Fatalf("%s: exit %d out=%s", flag, code, out)
+		}
+		data := envelopeData(t, out)
+		if data["status"] != "updated" || data["current_version"] != "1.1.1" {
+			t.Fatalf("%s: unexpected result: %s", flag, out)
+		}
+	}
+	t.Run("targetVersion", func(t *testing.T) { run(t, "--target-version") })
+	t.Run("versionAlias", func(t *testing.T) { run(t, "--version") })
+}
+
+// A successful update surfaces an honest trust-root source string (embedded TUF
+// anchor + cached/refreshed trusted_root), so the unresolved network dependency
+// is visible to the agent rather than implied to be fully offline.
+func TestUpdate_TrustRootSourceSurfaced(t *testing.T) {
+	home := setupTestHome(t)
+	exe := filepath.Join(home, "bin", "kibana-cli")
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("old"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	withUpdateHooks(t, "", exe, "linux", "amd64")
+	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+	})
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
+	out, code := runCLI(t, []string{"update", "--target-version", "v1.1.1", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d out=%s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["trust_root_source"] != updateTrustRootSource {
+		t.Fatalf("expected trust_root_source %q: %s", updateTrustRootSource, out)
+	}
+}
+
+// A signature verification failure caused by an unreachable TUF trust root is a
+// transient network fault, NOT an integrity failure: it must be retryable and
+// must not surface E_INTEGRITY.
+func TestUpdate_VerifyTrustRootUnavailableIsRetryable(t *testing.T) {
+	home := setupTestHome(t)
+	exe := filepath.Join(home, "bin", "kibana-cli")
+	withUpdateHooks(t, "", exe, "linux", "amd64")
+	updateVerifySignature = func(context.Context, string, string, string) error {
+		return &errTrustRootUnavailable{errors.New("loading sigstore trust root: tuf refresh failed")}
+	}
+	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+	})
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
+	out, code := runCLI(t, []string{"update", "--target-version", "v1.1.1", "--json"})
+	// Trust-root refresh failure -> retryable network error, exit 7, NOT E_INTEGRITY.
+	if code != ExitNetwork {
+		t.Fatalf("exit %d (want %d) out=%s", code, ExitNetwork, out)
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, "E_NETWORK") {
+		t.Fatalf("expected E_NETWORK: %s", j)
+	}
+	if strings.Contains(j, "E_INTEGRITY") {
+		t.Fatalf("trust-root refresh failure must not be E_INTEGRITY: %s", j)
+	}
+	if !strings.Contains(j, `"retryable":true`) && !strings.Contains(j, `"retryable": true`) {
+		t.Fatalf("trust-root refresh failure must be retryable: %s", j)
+	}
+	details := envelopeErrorDetails(t, out)
+	if details["stage"] != updateStageVerifySignature || details["binary_replaced"] != false {
+		t.Fatalf("expected verify_signature stage, not committed: %s", out)
+	}
+	// The installed binary must be untouched.
+	if data, _ := os.ReadFile(exe); string(data) == "new-binary" {
+		t.Fatalf("binary must not be replaced on trust-root failure")
+	}
+}
+
+// SIGINT during signature verification still emits a terminal E_INTERRUPTED
+// envelope (exit 130) and leaves the binary untouched.
+func TestUpdate_VerifyInterruptEmitsEnvelope(t *testing.T) {
+	home := setupTestHome(t)
+	exe := filepath.Join(home, "bin", "kibana-cli")
+	withUpdateHooks(t, "", exe, "linux", "amd64")
+	updateVerifySignature = func(context.Context, string, string, string) error {
+		return context.Canceled
+	}
+	archive := makeTarGz(t, "kibana-cli", []byte("new-binary"))
+	assetName, err := releaseAssetName("1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newUpdateReleaseServer(t, "v1.1.1", map[string][]byte{
+		assetName:                     archive,
+		"checksums.txt":               checksumLine(assetName, archive),
+		"checksums.txt.sigstore.json": []byte(`{"bundle":"stub"}`),
+	})
+	defer srv.Close()
+	updateGitHubAPIBase = srv.URL
+	out, code := runCLI(t, []string{"update", "--target-version", "v1.1.1", "--json"})
+	if code != ExitInterrupted {
+		t.Fatalf("exit %d (want %d) out=%s", code, ExitInterrupted, out)
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, "E_INTERRUPTED") || !strings.Contains(j, "still on 1.1.0") {
+		t.Fatalf("expected interrupted terminal envelope: %s", j)
+	}
+	details := envelopeErrorDetails(t, out)
+	if details["stage"] != updateStageVerifySignature {
+		t.Fatalf("expected verify_signature stage: %s", out)
+	}
+}
+
+// classifyUpdateNetworkError maps a deadline distinctly from a generic network
+// failure, and never escalates a transport fault to a non-retryable code.
+func TestUpdate_ClassifyNetworkError(t *testing.T) {
+	if c, e := classifyUpdateNetworkError(context.DeadlineExceeded); c != output.ErrTimeout || e != ExitTimeout {
+		t.Fatalf("deadline -> got %v/%d want E_TIMEOUT/%d", c, e, ExitTimeout)
+	}
+	if c, e := classifyUpdateNetworkError(&timeoutNetError{}); c != output.ErrTimeout || e != ExitTimeout {
+		t.Fatalf("net timeout -> got %v/%d want E_TIMEOUT/%d", c, e, ExitTimeout)
+	}
+	if c, e := classifyUpdateNetworkError(errors.New("connection refused")); c != output.ErrNetwork || e != ExitNetwork {
+		t.Fatalf("generic -> got %v/%d want E_NETWORK/%d", c, e, ExitNetwork)
+	}
+	if c, e := classifyUpdateNetworkError(&updateHTTPError{StatusCode: 429}); c != output.ErrRateLimit || e != ExitNetwork {
+		t.Fatalf("429 -> got %v/%d want E_RATE_LIMITED/7", c, e)
+	}
+	if isUpdateTimeoutError(context.Canceled) {
+		t.Fatal("cancellation must not be classified as a timeout")
+	}
+}
+
+// timeoutNetError is a net.Error whose Timeout() reports true.
+type timeoutNetError struct{}
+
+func (*timeoutNetError) Error() string   { return "i/o timeout" }
+func (*timeoutNetError) Timeout() bool   { return true }
+func (*timeoutNetError) Temporary() bool { return true }
 
 func TestUpdate_NewErrorCodeMappings(t *testing.T) {
 	if output.RetryableForErrorCode(output.ErrIO) {
