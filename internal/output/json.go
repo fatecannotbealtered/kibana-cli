@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/fatecannotbealtered/kibana-cli/internal/contract"
 )
 
-const SchemaVersion = "1.0"
+// SchemaVersion is sourced from the canonical contract (contract/contract.json
+// via internal/contract/contract_gen.go), so the JSON schema version cannot drift
+// from the fleet contract.
+const SchemaVersion = contract.SchemaVersion
 
 // JSONCompact switches PrintJSON from pretty output to single-line JSON.
 var JSONCompact bool
@@ -109,13 +114,11 @@ func FailureEnvelope(code ErrorCode, message string, details map[string]any, dur
 	}
 }
 
+// RetryableForErrorCode reports whether an agent may retry an error code. Sourced
+// from the canonical contract (internal/contract) so it cannot drift from the
+// fleet's retryability table.
 func RetryableForErrorCode(code ErrorCode) bool {
-	switch code {
-	case ErrRateLimit, ErrServer, ErrNetwork, ErrTimeout, ErrInterrupted:
-		return true
-	default:
-		return false
-	}
+	return contract.Retryable(string(code))
 }
 
 func ErrorCodeFromStatus(statusCode int) ErrorCode {
@@ -193,29 +196,11 @@ func PrintErrorJSONWithCode(msg string, statusCode int, code ErrorCode) {
 // ExitCodeForErrorCode maps a semantic error code to its process exit code. It
 // is the single source of truth for the code->exit contract so the output layer
 // and the command layer cannot drift (see CLI-SPEC §6).
+// ExitCodeForErrorCode maps an error code to a process exit code. The mapping is
+// sourced from the canonical contract (internal/contract), so it cannot drift
+// from the fleet's E_* -> exit table.
 func ExitCodeForErrorCode(code ErrorCode) int {
-	switch code {
-	case ErrValidation:
-		return 2
-	case ErrNotFound:
-		return 3
-	case ErrAuth, ErrForbidden, ErrConfig:
-		return 4
-	case ErrConfirmRequired:
-		return 5
-	case ErrConflict:
-		return 6
-	case ErrRateLimit, ErrServer, ErrNetwork:
-		return 7
-	case ErrTimeout:
-		return 8
-	case ErrIntegrity, ErrIO:
-		return 1
-	case ErrInterrupted:
-		return 130
-	default:
-		return 1
-	}
+	return contract.ExitFor(string(code))
 }
 
 // ExitCodeForHTTP is the single source of truth mapping an upstream HTTP status
