@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-06-25
+
 ### Added
 
 - Canonical JSON contract is now single-sourced from the `ai-native-cli-spec` template (pinned via `.agent/SPEC_VERSION`). `contract/contract.json` is vendored and generates `internal/contract/contract_gen.go`; the error-code → exit → retryable mapping and `schema_version` now derive from it, so they cannot drift from the fleet contract. A new conformance test (`internal/output/contract_conformance_test.go`) asserts every emitted error code, the exit/retryable mapping, the envelope key sets, and `meta` keys match the contract, and a `check-spec` CI guard fails closed on drift of the vendored specs/contract or the generated module.
