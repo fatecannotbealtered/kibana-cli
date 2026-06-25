@@ -66,19 +66,28 @@ var (
 	updateGOARCH             = func() string { return runtime.GOARCH }
 	updateReplaceBinary      = replaceExecutable
 	updateSkillSync          = runUpdateSkillSync
+	updateRunPackageManager  = runPackageManagerInstall
 )
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Check for or install the latest kibana-cli release",
-	Long: `Check GitHub Releases for a newer kibana-cli version and update safely.
+	Long: `Check GitHub Releases for a newer kibana-cli version and update safely in one call.
 
-Package-manager installs are not modified in place. When kibana-cli is managed by
-npm or Go, the command prints the exact package-manager command to run instead.
-Standalone binaries are updated in place only after the Sigstore signature on
-checksums.txt is verified in-process against this repo's tagged release workflow
-identity and the archive SHA256 is verified against checksums.txt. An unsigned or
-unverifiable release is refused; there is no skip path.`,
+A bare ` + "`update`" + ` upgrades regardless of install method:
+  - Package-manager installs (npm / Go): the binary is OWNED by the package
+    manager, so instead of mutating its files in place, the command DRIVES the
+    manager — it runs the install command for you (e.g. npm install -g
+    @fateforge/kibana-cli@<version>), then syncs the Skill. Integrity is the
+    package manager's own; signature_status stays "not_checked". The new version
+    takes effect on the next invocation.
+  - Standalone binaries are replaced in place only after the Sigstore signature on
+    checksums.txt is verified in-process against this repo's tagged release workflow
+    identity and the archive SHA256 is verified against checksums.txt. An unsigned or
+    unverifiable release is refused; there is no skip path.
+
+--check and --dry-run are optional read-only flags: they report or preview the
+plan (including the package-manager command) without changing anything.`,
 	Args: cobra.NoArgs,
 	RunE: runUpdate,
 }
@@ -209,10 +218,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	if installMethod == "npm" || installMethod == "go" {
-		result.Status = "package_manager_required"
-		result.Message = "kibana-cli is managed by a package manager; run the suggested command to update"
-		printUpdateResult(result)
-		return nil
+		return runPackageManagerUpdate(result, installMethod, targetVersion)
 	}
 	if installPath == "" {
 		return failUpdateStage(output.ErrConfig, ExitAuth, "could not determine current executable path", updateStageReplace, false, "not_run")
@@ -398,6 +404,106 @@ func runUpdateSkillSync(ctx context.Context, repo string) error {
 		return err
 	}
 	return nil
+}
+
+// runPackageManagerUpdate handles `update` for a package-manager-managed install
+// (npm or Go). A standalone binary is replaced in place after in-process Sigstore
+// verification; a package-managed binary is OWNED by the package manager, so
+// replacing it in place would desync the manager's metadata. Instead the tool
+// DRIVES the package manager — it runs the exact install command on the user's
+// behalf (the same command `update --check` prints), then syncs the Skill, so a
+// bare `update` upgrades in one call regardless of install method. Integrity on
+// this path is the package manager's own (npm registry integrity/provenance), so
+// signature_status stays "not_checked". The new version takes effect on the next
+// invocation (this process is still the old image).
+func runPackageManagerUpdate(result updateResult, method, targetVersion string) error {
+	// --dry-run is an optional read-only preview: show the command, run nothing.
+	if dryRun {
+		result.DryRun = true
+		result.Status = "package_manager_preview"
+		result.Message = fmt.Sprintf("would update kibana-cli from %s to %s by running: %s", version, targetVersion, result.Command)
+		printUpdateResultPreview(result)
+		return nil
+	}
+
+	if err := updateRunPackageManager(apiCtx(), method, targetVersion); err != nil {
+		// The package manager owns download + integrity + replace; a failure here
+		// leaves the installed binary unchanged (binary_replaced:false).
+		return failPackageManagerStage(result, err)
+	}
+
+	// The package manager replaced the on-disk binary; this process is still the
+	// old image, so the new version is effective on the next invocation.
+	result.PreviousVersion = version
+	result.CurrentVersion = targetVersion
+	result.Status = "updated"
+	result.Message = fmt.Sprintf("updated kibana-cli from %s to %s via %s (effective on next run)", version, targetVersion, method)
+
+	if err := updateSkillSync(apiCtx(), updateSkillRepo); err != nil {
+		return failSkillSyncPartial(result, err)
+	}
+	result.SkillSyncStatus = "synced"
+	result.Hint = fmt.Sprintf("run \"kibana-cli changelog --since %s\" before continuing", normalizeReleaseVersion(result.PreviousVersion))
+	printUpdateResult(result)
+	return nil
+}
+
+// runPackageManagerInstall drives the package manager to install the target
+// version — the same command updateInstallCommand prints. argv is built directly
+// (no shell) so the version string cannot be reinterpreted by a shell.
+func runPackageManagerInstall(ctx context.Context, method, targetVersion string) error {
+	var name string
+	var args []string
+	switch method {
+	case "npm":
+		name = "npm"
+		args = []string{"install", "-g", updateNPMPackage + "@" + normalizeReleaseVersion(targetVersion)}
+	case "go":
+		name = "go"
+		args = []string{"install", updateGoPackage + "@" + normalizeReleaseTag(targetVersion)}
+	default:
+		return fmt.Errorf("unsupported package manager: %s", method)
+	}
+	command := exec.CommandContext(ctx, name, args...)
+	outputBytes, err := command.CombinedOutput()
+	if err != nil {
+		out := strings.TrimSpace(string(outputBytes))
+		if out != "" {
+			return fmt.Errorf("%w: %s", err, truncateUpdateMessage(out, 300))
+		}
+		return err
+	}
+	return nil
+}
+
+// failPackageManagerStage reports a failed package-manager-driven update. The
+// package manager owns download/integrity/replace, so a failure leaves the
+// installed binary unchanged (binary_replaced:false). The exact command is
+// surfaced so the agent can run it manually or relay it to the user.
+func failPackageManagerStage(result updateResult, err error) error {
+	msg := fmt.Sprintf("package-manager update failed: %s — run %q manually", strings.TrimSpace(err.Error()), result.Command)
+	details := updateStageDetails(updateStageReplace, version, false, "not_run")
+	details["install_method"] = result.InstallMethod
+	details["command"] = result.Command
+	st := AgentStatus{
+		OK:        false,
+		Status:    StatusAPIError,
+		Message:   msg,
+		Error:     msg,
+		Hint:      "run " + result.Command,
+		ErrorCode: output.ErrIO,
+		ExitCode:  ExitGeneral,
+	}
+	applyAgentExit(st)
+	if jsonMode {
+		output.PrintJSON(output.FailureEnvelope(st.ErrorCode, msg, details, elapsedDurationMs()))
+		return ErrSilent
+	}
+	output.Error(msg)
+	if st.Hint != "" {
+		output.AuxGray("  " + st.Hint)
+	}
+	return ErrSilent
 }
 
 func truncateUpdateMessage(s string, n int) string {

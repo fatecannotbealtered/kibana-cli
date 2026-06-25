@@ -59,7 +59,11 @@ func TestUpdate_CheckAvailable_JSON(t *testing.T) {
 	}
 }
 
-func TestUpdate_NPMInstallUsesPackageManager(t *testing.T) {
+// A bare `update` on an npm install now DRIVES npm: it runs `npm install -g
+// @pkg@<ver>` on the user's behalf (not just print it), then syncs the Skill,
+// and reports status "updated". signature_status stays "not_checked" (npm
+// provenance owns integrity on this path).
+func TestUpdate_NPMInstallDrivesPackageManager(t *testing.T) {
 	home := setupTestHome(t)
 	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
@@ -73,17 +77,40 @@ func TestUpdate_NPMInstallUsesPackageManager(t *testing.T) {
 	}
 	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
 
+	var gotMethod, gotVersion string
+	var skillSynced bool
+	updateRunPackageManager = func(_ context.Context, method, target string) error {
+		gotMethod, gotVersion = method, target
+		return nil
+	}
+	updateSkillSync = func(context.Context, string) error { skillSynced = true; return nil }
+
 	out, code := runCLI(t, []string{"update", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
+	if gotMethod != "npm" {
+		t.Fatalf("expected npm to be driven, got method %q", gotMethod)
+	}
+	if normalizeReleaseVersion(gotVersion) != "1.1.1" {
+		t.Fatalf("expected target 1.1.1 passed to npm, got %q", gotVersion)
+	}
+	if !skillSynced {
+		t.Fatalf("expected Skill sync to run after npm install")
+	}
 	j := lastJSONLine(out)
-	if !strings.Contains(j, `"package_manager_required"`) || !strings.Contains(j, `npm install -g`) {
-		t.Fatalf("expected npm update command: %s", j)
+	if !strings.Contains(j, `"status":"updated"`) && !strings.Contains(j, `"status": "updated"`) {
+		t.Fatalf("expected status updated: %s", j)
+	}
+	if !strings.Contains(j, `"skill_sync_status":"synced"`) && !strings.Contains(j, `"skill_sync_status": "synced"`) {
+		t.Fatalf("expected skill_sync_status synced: %s", j)
+	}
+	if !strings.Contains(j, `"signature_status":"not_checked"`) && !strings.Contains(j, `"signature_status": "not_checked"`) {
+		t.Fatalf("expected signature_status not_checked on npm path: %s", j)
 	}
 }
 
-func TestUpdate_GoInstallUsesPackageManager(t *testing.T) {
+func TestUpdate_GoInstallDrivesPackageManager(t *testing.T) {
 	home := setupTestHome(t)
 	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
@@ -92,16 +119,93 @@ func TestUpdate_GoInstallUsesPackageManager(t *testing.T) {
 	t.Setenv("GOBIN", gobin)
 	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
 
+	var gotMethod string
+	updateRunPackageManager = func(_ context.Context, method, _ string) error {
+		gotMethod = method
+		return nil
+	}
+
 	out, code := runCLI(t, []string{"update", "--json"})
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
+	}
+	if gotMethod != "go" {
+		t.Fatalf("expected go to be driven, got method %q", gotMethod)
 	}
 	j := lastJSONLine(out)
 	if !strings.Contains(j, `"install_method":"go"`) && !strings.Contains(j, `"install_method": "go"`) {
 		t.Fatalf("expected go install method: %s", j)
 	}
 	if !strings.Contains(j, `go install github.com/fatecannotbealtered/kibana-cli/cmd/kibana-cli@v1.1.1`) {
-		t.Fatalf("expected go install command: %s", j)
+		t.Fatalf("expected go install command in result: %s", j)
+	}
+}
+
+// --dry-run on a package-manager install is a read-only preview: it must NOT
+// invoke the package manager, and must report the command it WOULD run.
+func TestUpdate_PackageManagerDryRunDoesNotExecute(t *testing.T) {
+	home := setupTestHome(t)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
+	defer srv.Close()
+	pkgRoot := filepath.Join(home, "node_modules", "@fateforge", "kibana-cli")
+	exe := filepath.Join(pkgRoot, "bin", "kibana-cli")
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "package.json"), []byte(`{"name":"@fateforge/kibana-cli"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
+
+	called := false
+	updateRunPackageManager = func(context.Context, string, string) error { called = true; return nil }
+
+	out, code := runCLI(t, []string{"update", "--dry-run", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if called {
+		t.Fatalf("dry-run must not invoke the package manager")
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, `"dry_run":true`) && !strings.Contains(j, `"dry_run": true`) {
+		t.Fatalf("expected dry_run preview: %s", j)
+	}
+	if !strings.Contains(j, `npm install -g @fateforge/kibana-cli@1.1.1`) {
+		t.Fatalf("expected planned npm command: %s", j)
+	}
+}
+
+// When the package manager fails, the installed binary is unchanged: report
+// E_IO (exit 1), binary_replaced:false, and surface the command to run manually.
+func TestUpdate_PackageManagerFailureReportsUnchanged(t *testing.T) {
+	home := setupTestHome(t)
+	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
+	defer srv.Close()
+	pkgRoot := filepath.Join(home, "node_modules", "@fateforge", "kibana-cli")
+	exe := filepath.Join(pkgRoot, "bin", "kibana-cli")
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "package.json"), []byte(`{"name":"@fateforge/kibana-cli"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
+	updateRunPackageManager = func(context.Context, string, string) error { return errors.New("ETARGET no matching version") }
+
+	out, code := runCLI(t, []string{"update", "--json"})
+	if code != ExitGeneral {
+		t.Fatalf("expected exit %d, got %d: %s", ExitGeneral, code, out)
+	}
+	j := lastJSONLine(out)
+	if !strings.Contains(j, `"code":"E_IO"`) && !strings.Contains(j, `"code": "E_IO"`) {
+		t.Fatalf("expected E_IO: %s", j)
+	}
+	if !strings.Contains(j, `"binary_replaced":false`) && !strings.Contains(j, `"binary_replaced": false`) {
+		t.Fatalf("expected binary_replaced false: %s", j)
+	}
+	if !strings.Contains(j, `npm install -g @fateforge/kibana-cli@1.1.1`) {
+		t.Fatalf("expected manual command in failure: %s", j)
 	}
 }
 
@@ -720,6 +824,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	origGOARCH := updateGOARCH
 	origReplace := updateReplaceBinary
 	origSkillSync := updateSkillSync
+	origRunPM := updateRunPackageManager
 	origVersion := version
 	origVerifySig := updateVerifySignature
 	t.Cleanup(func() {
@@ -730,6 +835,7 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 		updateGOARCH = origGOARCH
 		updateReplaceBinary = origReplace
 		updateSkillSync = origSkillSync
+		updateRunPackageManager = origRunPM
 		version = origVersion
 		updateVerifySignature = origVerifySig
 	})
@@ -744,6 +850,10 @@ func withUpdateHooks(t *testing.T, apiBase, exe, goos, goarch string) {
 	updateGOOS = func() string { return goos }
 	updateGOARCH = func() string { return goarch }
 	updateSkillSync = func(context.Context, string) error { return nil }
+	// Package-manager-driven update is stubbed to a no-op success by default so
+	// tests never shell out to a real npm/go. Tests asserting failure or
+	// call-capture override this with their own closure.
+	updateRunPackageManager = func(context.Context, string, string) error { return nil }
 	// In-process Sigstore verification is stubbed in tests; a live OIDC-signed
 	// bundle cannot be produced in a unit test. Fail-closed control flow is
 	// covered by overriding this with an error-returning stub.

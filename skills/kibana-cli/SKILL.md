@@ -154,12 +154,20 @@ kibana-cli patterns infer --index 'sysA-app-*' --write --dry-run   # then --conf
 
 ## Update Workflow
 
-`update` is a SINGLE command with NO confirm token. A bare `update` performs the
-whole self-update in one call: resolve latest (or `--version`) → verify the
-Sigstore signature in-process → verify the checksum → replace the binary → sync
-the Skill directory. `--check` and `--dry-run` are OPTIONAL read-only flags
-(neither issues a confirm token); `update` is idempotent, so already-latest is a
-no-op `ok`.
+`update` is a SINGLE command with NO confirm token. A bare `update` upgrades in
+one call regardless of install method:
+- **Standalone binary**: resolve latest (or `--target-version`) → verify the
+  Sigstore signature in-process → verify the checksum → replace the binary → sync
+  the Skill directory. `signature_status: "verified"`.
+- **npm / Go managed install**: the binary is owned by the package manager, so
+  `update` DRIVES it — it runs `npm install -g @fateforge/kibana-cli@<version>`
+  (or `go install …@<version>`) for you, then syncs the Skill. Integrity is the
+  package manager's own, so `signature_status: "not_checked"`; the new version
+  takes effect on the next invocation. Status is `updated` on success.
+
+`--check` and `--dry-run` are OPTIONAL read-only flags (neither issues a confirm
+token; on a managed install they report/preview the package-manager command
+without running it); `update` is idempotent, so already-latest is a no-op `ok`.
 
 ```bash
 kibana-cli update --check      # optional: read-only probe, changes nothing
@@ -169,10 +177,11 @@ kibana-cli changelog --since <previous_version>
 kibana-cli reference --compact
 ```
 
-After a successful self-update, review `signature_status` / `checksum_verified`,
+After a successful update, review `signature_status` / `checksum_verified`,
 ensure `skill_sync_status` is `synced`, read `data.previous_version`, and run
-`changelog --since <previous_version>` before continuing. For npm or Go managed
-installs, run the returned `data.command` when the update result requires it.
+`changelog --since <previous_version>` before continuing. On a managed install
+`update` already ran the package-manager command for you; if it instead reports a
+failure (`E_IO`), `data.command` is the exact command to run manually.
 
 When an update is available, the notice also rides along on **every** command's
 `meta.notices[]` (read-only from the local cache — no network, never a live

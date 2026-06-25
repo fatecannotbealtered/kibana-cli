@@ -88,7 +88,7 @@ func referenceData(markdown string) map[string]any {
 			"permissions": []map[string]any{
 				{"tier": "read", "description": "context, doctor, reference, changelog, patterns, search, agg, objects, config show, auth status, update --check"},
 				{"tier": "write", "description": "auth login/logout, config init; always requires dry-run then confirm"},
-				{"tier": "self_update", "description": "update; single command (no confirm token), self-verifying via in-process Sigstore signature, then Skill sync"},
+				{"tier": "self_update", "description": "update; single command (no confirm token). Standalone binary: in-process Sigstore verify + atomic swap. npm/Go install: drives the package manager (npm install -g / go install) then Skill sync. Read-only --check/--dry-run preview only"},
 				{"tier": "dangerous", "description": "not implemented"},
 			},
 		},

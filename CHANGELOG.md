@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- `update` now upgrades package-manager installs in one call instead of only printing the command. When kibana-cli is managed by npm or Go, a bare `update` DRIVES the package manager — it runs `npm install -g @fateforge/kibana-cli@<version>` (or `go install …@<version>`) on your behalf, then syncs the Skill, and reports `status: "updated"`. The binary is never mutated in place under a package manager (that would desync its metadata); integrity stays the package manager's own, so `signature_status` remains `not_checked` on this path. Standalone-binary installs are unchanged (in-process Sigstore verify + atomic swap). `--check`/`--dry-run` stay read-only and now preview the package-manager command without running it. A package-manager failure reports `E_IO` (exit 1) with `binary_replaced: false` and the exact command to run manually.
+
 ## [1.1.10] - 2026-06-25
 
 ### Changed
