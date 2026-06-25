@@ -74,6 +74,7 @@ func referenceData(markdown string) map[string]any {
 	return map[string]any{
 		"tool":              toolName,
 		"version":           rootCmd.Version,
+		"risk_tier":         securityTier,
 		"schema_version":    output.SchemaVersion,
 		"skillMinVersion":   skillMinVersion,
 		"release_readiness": buildReleaseReadiness(),
@@ -488,7 +489,7 @@ func referenceSchemas() map[string]referenceDataSchema {
 		},
 		"reference": {
 			Shape:  "object",
-			Fields: []string{"tool", "version", "schema_version", "skillMinVersion", "release_readiness", "formats", "security", "query_conventions", "exit_codes", "error_codes", "commands", "schemas", "markdown"},
+			Fields: []string{"tool", "version", "risk_tier", "schema_version", "skillMinVersion", "release_readiness", "formats", "security", "query_conventions", "exit_codes", "error_codes", "commands", "schemas", "markdown"},
 		},
 		"auth_login": {
 			Shape:  "object",
