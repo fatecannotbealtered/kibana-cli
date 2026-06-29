@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-06-29
+
+### Fixed
+
+- `update` Sigstore signature verification now bounds the TUF trust-root refresh with an explicit wall-clock timeout in addition to the existing SIGINT cancellation and `WithForceCache` (cache-first) behavior. A hung Sigstore CDN on a cold or expired cache can no longer stall the `verify_signature` stage indefinitely, matching the bound the rest of the fleet enforces (CLI-SPEC §14).
+
 ## [1.1.12] - 2026-06-25
 
 ### Added

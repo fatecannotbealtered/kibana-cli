@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -72,7 +73,13 @@ func verifySigstoreBundle(ctx context.Context, artifactPath, bundlePath, sanRege
 		return fmt.Errorf("loading signature bundle: %w", err)
 	}
 
-	opts := tuf.DefaultOptions().WithForceCache().WithContext(ctx)
+	// Bound the TUF refresh with an explicit wall-clock timeout in addition to
+	// SIGINT cancellation, so a hung Sigstore CDN on a cold or expired cache
+	// cannot stall verify_signature indefinitely (CLI-SPEC §14). WithForceCache
+	// still skips the network entirely when a valid cached trusted root exists.
+	refreshCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	opts := tuf.DefaultOptions().WithForceCache().WithContext(refreshCtx)
 	trustedRoot, err := root.FetchTrustedRootWithOptions(opts)
 	if err != nil {
 		// Trust-material refresh failed (network/TUF), NOT a signature failure.
