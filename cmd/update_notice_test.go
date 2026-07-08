@@ -290,3 +290,19 @@ func TestReadCachedUpdateNotices_RefreshesCurrentVersion(t *testing.T) {
 		t.Errorf("message should reflect running version, got %q want %q", got[0].Message, want)
 	}
 }
+
+func TestUpdateNoticeAutoDisabledDetectsWindowsGoTestBinary(t *testing.T) {
+	origArgs := os.Args
+	origEnabled := updateNoticeTestCacheEnabled
+	os.Args = []string{`C:\tmp\kibana-cli.test.exe`}
+	updateNoticeTestCacheEnabled = false
+	t.Setenv(updateNoticeEnvOptOut, "")
+	t.Cleanup(func() {
+		os.Args = origArgs
+		updateNoticeTestCacheEnabled = origEnabled
+	})
+
+	if !updateNoticeAutoDisabled() {
+		t.Fatal("expected Windows Go test binary to disable update notice cache")
+	}
+}

@@ -65,6 +65,9 @@ func TestUpdate_CheckAvailable_JSON(t *testing.T) {
 // provenance owns integrity on this path).
 func TestUpdate_NPMInstallDrivesPackageManager(t *testing.T) {
 	home := setupTestHome(t)
+	updateNoticeTestCacheEnabled = true
+	t.Cleanup(func() { updateNoticeTestCacheEnabled = false })
+	seedUpdateNoticeCache(t, "warning")
 	srv := newUpdateReleaseServer(t, "v1.1.1", nil)
 	defer srv.Close()
 	pkgRoot := filepath.Join(home, "node_modules", "@fateforge", "kibana-cli")
@@ -107,6 +110,61 @@ func TestUpdate_NPMInstallDrivesPackageManager(t *testing.T) {
 	}
 	if !strings.Contains(j, `"signature_status":"not_checked"`) && !strings.Contains(j, `"signature_status": "not_checked"`) {
 		t.Fatalf("expected signature_status not_checked on npm path: %s", j)
+	}
+	data := envelopeData(t, out)
+	if data["previous_version"] != "1.1.0" || data["current_version"] != "1.1.1" || data["target_version"] != "1.1.1" {
+		t.Fatalf("unexpected final versions: %s", out)
+	}
+	if data["update_available"] != false {
+		t.Fatalf("successful update must report update_available=false: %s", out)
+	}
+	if _, present := metaFromOutput(t, out)["notices"]; present {
+		t.Fatalf("package-manager success must not emit stale meta.notices: %s", out)
+	}
+	if notices := readCachedUpdateNotices(); len(notices) != 0 {
+		t.Fatalf("cached notices after package-manager success = %+v, want none", notices)
+	}
+}
+
+func TestUpdate_PackageManagerNoOpDoesNotInstall(t *testing.T) {
+	home := setupTestHome(t)
+	updateNoticeTestCacheEnabled = true
+	t.Cleanup(func() { updateNoticeTestCacheEnabled = false })
+	seedUpdateNoticeCache(t, "warning")
+	srv := newUpdateReleaseServer(t, "v1.1.0", nil)
+	defer srv.Close()
+	pkgRoot := filepath.Join(home, "node_modules", "@fateforge", "kibana-cli")
+	exe := filepath.Join(pkgRoot, "bin", "kibana-cli")
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "package.json"), []byte(`{"name":"@fateforge/kibana-cli"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	withUpdateHooks(t, srv.URL, exe, "linux", "amd64")
+
+	called := false
+	updateRunPackageManager = func(context.Context, string, string) error {
+		called = true
+		return nil
+	}
+
+	out, code := runCLI(t, []string{"update", "--json"})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if called {
+		t.Fatalf("package manager must not run when already at target")
+	}
+	data := envelopeData(t, out)
+	if data["status"] != "up_to_date" || data["update_available"] != false {
+		t.Fatalf("expected up_to_date with update_available=false: %s", out)
+	}
+	if _, present := metaFromOutput(t, out)["notices"]; present {
+		t.Fatalf("no-op update must not emit stale meta.notices: %s", out)
+	}
+	if notices := readCachedUpdateNotices(); len(notices) != 0 {
+		t.Fatalf("cached notices after no-op = %+v, want none", notices)
 	}
 }
 
@@ -329,6 +387,10 @@ func TestUpdate_WindowsInstallsInPlace(t *testing.T) {
 
 func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 	home := setupTestHome(t)
+	updateNoticeTestCacheEnabled = true
+	t.Cleanup(func() { updateNoticeTestCacheEnabled = false })
+	seedUpdateNoticeCache(t, "warning")
+
 	exe := filepath.Join(home, "bin", "kibana-cli")
 	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
 		t.Fatal(err)
@@ -369,6 +431,12 @@ func TestUpdate_StandaloneBinaryInstallsVerifiedAsset(t *testing.T) {
 	dataMap := envelopeData(t, out)
 	if dataMap["previous_version"] != "1.1.0" || dataMap["current_version"] != "1.1.1" {
 		t.Fatalf("unexpected update versions: %s", out)
+	}
+	if dataMap["update_available"] != false {
+		t.Fatalf("successful update must report update_available=false: %s", out)
+	}
+	if got := readCachedUpdateNotices(); len(got) != 0 {
+		t.Fatalf("successful update must clear stale update notices, got %+v", got)
 	}
 	hint, _ := dataMap["hint"].(string)
 	if !strings.Contains(hint, "changelog --since 1.1.0") {
@@ -565,6 +633,9 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 
 	t.Run("skillSyncPartialSuccess", func(t *testing.T) {
 		home := setupTestHome(t)
+		updateNoticeTestCacheEnabled = true
+		t.Cleanup(func() { updateNoticeTestCacheEnabled = false })
+		seedUpdateNoticeCache(t, "warning")
 		exe := filepath.Join(home, "bin", "kibana-cli")
 		if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
 			t.Fatal(err)
@@ -614,6 +685,12 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		if details["current_version"] != "1.1.1" {
 			t.Fatalf("expected current_version 1.1.1 after swap: %s", out)
 		}
+		if details["target_version"] != "1.1.1" {
+			t.Fatalf("expected target_version 1.1.1 after swap: %s", out)
+		}
+		if details["update_available"] != false {
+			t.Fatalf("expected update_available=false after swap: %s", out)
+		}
 		if details["skill_sync_status"] != "failed" {
 			t.Fatalf("expected skill_sync_status failed: %s", out)
 		}
@@ -624,6 +701,12 @@ func TestUpdate_DownloadAndInstallFailures(t *testing.T) {
 		errObj, _ := payload["error"].(map[string]any)
 		if errObj["retryable"] != true {
 			t.Fatalf("skill sync partial success should be retryable: %s", out)
+		}
+		if _, present := metaFromOutput(t, out)["notices"]; present {
+			t.Fatalf("partial success must not emit stale meta.notices: %s", out)
+		}
+		if notices := readCachedUpdateNotices(); len(notices) != 0 {
+			t.Fatalf("cached notices after partial success = %+v, want none", notices)
 		}
 	})
 }

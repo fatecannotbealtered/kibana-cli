@@ -204,6 +204,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	}
 	// Idempotent: already on the latest (or requested) version is a no-op ok.
 	if !available {
+		writeUpdateNoticeCache(nil)
 		printUpdateResult(result)
 		return nil
 	}
@@ -285,10 +286,12 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 	// not a hard failure that loses the fact the binary already updated.
 	result.PreviousVersion = version
 	result.CurrentVersion = targetVersion
+	result.UpdateAvailable = false
 	result.ChecksumVerified = true
 	result.SignatureStatus = signatureStatus
 	result.SignatureVerified = signatureStatus == "verified"
 	result.TrustRootSource = updateTrustRootSource
+	writeUpdateNoticeCache(nil)
 
 	if err := updateSkillSync(apiCtx(), updateSkillRepo); err != nil {
 		return failSkillSyncPartial(result, err)
@@ -328,6 +331,8 @@ func failSkillSyncPartial(result updateResult, err error) error {
 	details := updateStageDetails(updateStageSkillSync, result.CurrentVersion, true, "failed")
 	details["skill_sync_command"] = result.SkillSyncCommand
 	details["previous_version"] = result.PreviousVersion
+	details["target_version"] = result.TargetVersion
+	details["update_available"] = false
 	details["signature_verified"] = result.SignatureVerified
 	details["signature_status"] = result.SignatureStatus
 	st := AgentStatus{
@@ -436,8 +441,10 @@ func runPackageManagerUpdate(result updateResult, method, targetVersion string) 
 	// old image, so the new version is effective on the next invocation.
 	result.PreviousVersion = version
 	result.CurrentVersion = targetVersion
+	result.UpdateAvailable = false
 	result.Status = "updated"
 	result.Message = fmt.Sprintf("updated kibana-cli from %s to %s via %s (effective on next run)", version, targetVersion, method)
+	writeUpdateNoticeCache(nil)
 
 	if err := updateSkillSync(apiCtx(), updateSkillRepo); err != nil {
 		return failSkillSyncPartial(result, err)

@@ -1,10 +1,10 @@
 ---
 name: kibana-cli
-version: "1.1.14"
+version: "1.1.15"
 description: Kibana log query CLI for AI Agents that searches and aggregates ELK logs through Kibana Console Proxy. Triggers for Kibana, ELK, log search, log aggregation, trace-id lookup, index-pattern field discovery, multi-system context switching, and Kibana diagnostics.
 license: MIT
 user-invocable: true
-metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.14"}}
+metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.15"}}
 ---
 
 # kibana-cli
@@ -168,6 +168,8 @@ one call regardless of install method:
 `--check` and `--dry-run` are OPTIONAL read-only flags (neither issues a confirm
 token; on a managed install they report/preview the package-manager command
 without running it); `update` is idempotent, so already-latest is a no-op `ok`.
+
+Successful update results are final-state: `current_version` must equal `target_version`, `update_available` must be `false`, and stale `update_available` notices must be cleared or suppressed before later commands attach `meta.notices`. A post-swap Skill-sync partial success must also expose `target_version` and `update_available:false`. An already-current install must return a no-op result without running a package-manager install command.
 
 ```bash
 kibana-cli update --check      # optional: read-only probe, changes nothing
