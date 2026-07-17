@@ -1,6 +1,9 @@
 package kibanaclient
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestBuildTraceQuery_msgMode(t *testing.T) {
 	q := buildTraceQuery("aabbccdd00112233445566778899aabb", nil, "msg", "msg")
@@ -104,6 +107,18 @@ func TestBuildQuery_broadDefault(t *testing.T) {
 	qs, ok := must[0]["query_string"].(map[string]any)
 	if !ok || qs["default_field"] != "*" {
 		t.Fatalf("expected broad query_string over *, got %#v", must[0])
+	}
+}
+
+func TestBuildQuery_precompiledClauseTakesPrecedence(t *testing.T) {
+	clause := map[string]any{"term": map[string]any{"msg.keyword": "exact"}}
+	q := buildQuery(SearchOptions{
+		Query:       "legacy lucene query",
+		QueryClause: clause,
+	})
+	must := q["bool"].(map[string]any)["must"].([]map[string]any)
+	if len(must) != 1 || !reflect.DeepEqual(must[0], clause) {
+		t.Fatalf("expected precompiled clause only, got %#v", must)
 	}
 }
 

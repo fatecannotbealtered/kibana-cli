@@ -1,10 +1,10 @@
 ---
 name: kibana-cli
-version: "1.1.15"
+version: "1.1.16"
 description: Kibana log query CLI for AI Agents that searches and aggregates ELK logs through Kibana Console Proxy. Triggers for Kibana, ELK, log search, log aggregation, trace-id lookup, index-pattern field discovery, multi-system context switching, and Kibana diagnostics.
 license: MIT
 user-invocable: true
-metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.15"}}
+metadata: {"requires":{"bins":["kibana-cli"],"min_version":"1.1.16"}}
 ---
 
 # kibana-cli
@@ -56,10 +56,15 @@ kibana-cli context
 kibana-cli reference --compact
 kibana-cli patterns fields --index 'app-test-log-*'
 kibana-cli search --index 'app-test-log-*' --level ERROR --from now-15m --limit 50 --compact
+kibana-cli search --index 'app-test-log-*' --query 'msg:"1" and msg:"2"' --query-language kql --from now-1d --limit 1 --compact
 kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --compact
 ```
 
 Prefer narrow time ranges. `search` defaults to `--from now-15m`; `agg` defaults to `--from now-1h`. Use `--fields` on query commands to reduce token volume. Use `--limit` and `--offset` for paged search and pattern results; `agg --limit` controls top-N buckets and has no stable cursor.
+
+`search` and `agg` default to Lucene for compatibility. When copying a Kibana Discover query, pass `--query-language kql`. KQL mode is a strict, fail-closed subset supporting ordinary field terms/phrases, case-insensitive boolean operators, grouping, lists, ranges, exists, value wildcards, nested groups, and escaping; metadata-dependent syntax such as wildcard field names fails closed. Invalid or unsupported KQL never falls back to Lucene. In the default Lucene selection use uppercase `AND` / `OR` / `NOT`; any unquoted lowercase KQL-style boolean token is rejected rather than broadened silently. Pass explicit `--query-language lucene` only when those lowercase words are intentionally ordinary Lucene terms. Always pass the entire expression as one shell argument; extra positional arguments are rejected.
+
+Read `context`, `contextSource`, `host`, `index`, `dataViewId`, `timeField`, `from`, `to`, and `queryLanguage` from query results before comparing counts. Query dry-runs expose the exact initial Elasticsearch request in `data.dsl`. A data-view dry-run performs a read-only Saved Objects lookup to resolve the final index/time field, but never sends `_search`.
 
 ## Multi-System Contexts
 
@@ -111,6 +116,8 @@ Trace lookup:
 kibana-cli search --index 'logs-*' --trace-id <trace-id> --from now-2h --compact
 ```
 
+Field-mode `--trace-id` is intentionally recall-first and includes a quoted all-fields fallback for heterogeneous indices. When matching a strict Discover field filter, use `--field <actual-trace-field>=<trace-id>` instead.
+
 Message-prefix trace lookup for MDC-style logs:
 
 ```bash
@@ -123,6 +130,8 @@ Data-view lookup:
 kibana-cli patterns list --compact
 kibana-cli search --data-view <data-view-id> --query 'timeout' --from now-30m --compact
 ```
+
+`--data-view` inherits only the index title and `timeFieldName`. If the data view has no time field, pass `--time-field` explicitly; the CLI fails closed instead of assuming `@timestamp`. It does not inherit Discover/Dashboard filters, a saved query, pinned filters, panel state, or URL time state. A Dashboard may have several panels and data views, so do not claim that one CLI query reproduces a whole Dashboard unless the user supplies the exact panel query and filters.
 
 Count by level:
 
@@ -217,4 +226,6 @@ Do not exfiltrate secrets found in logs. Prefer `--fields` and narrow windows to
 
 - "Find recent ERROR logs for order-svc in Kibana" should run `context`, `reference --compact`, then a narrow `search` with `--service`, `--level`, and `--from`.
 - "Count log levels for the last hour" should use `agg --terms level`, inspect top-level `ok`, and avoid parsing text output.
+- "Run the same KQL as Discover: msg:\"1\" and msg:\"2\"" should use one quoted shell argument plus `--query-language kql`, preserve the same context/data view/time range, and compare top-level `total`.
+- "The CLI count differs from Discover" should first compare `context`, `host`, `index`, `timeField`, time range, and `queryLanguage`; it must not widen the query or assume a whole Dashboard equals one saved query.
 - "Initialize field-map.yaml" should run `config init --dry-run`, review `data.preview`, then rerun with `--confirm <confirm_token>`.

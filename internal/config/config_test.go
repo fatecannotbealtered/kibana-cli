@@ -59,6 +59,26 @@ func TestSaveAndLoadDefaultContext(t *testing.T) {
 	}
 }
 
+func TestLoadConnectionMetaForDoesNotReadKeyring(t *testing.T) {
+	defer overrideHome(t)()
+	want := &Config{Host: "https://kibana.example.com", Username: "ops", Password: "secret"}
+	if err := Save(want, SaveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	keyring.MockInitWithError(errors.New("keyring unavailable"))
+	defer keyring.MockInit()
+	meta, err := LoadConnectionMetaFor("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Host != want.Host || meta.Username != want.Username || meta.ContextName != "default" || meta.Password != "" {
+		t.Fatalf("metadata=%+v", meta)
+	}
+	if _, err := LoadFor(""); err == nil {
+		t.Fatal("credential-resolving LoadFor should still read the unavailable keyring")
+	}
+}
+
 // TestEnvAuthHostAnchored: only a host anchors an env override, so a host set
 // without the rest errors; a lone user/password is ignored (it commonly feeds
 // `context add`) and must not break a keyring-backed context resolution.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
@@ -140,6 +141,65 @@ func TestClient_termsOnce_defaults(t *testing.T) {
 	}
 }
 
+func TestBuildAggBody_matchesInitialRequest(t *testing.T) {
+	var bodies []map[string]any
+	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		if r.URL.Path == "/api/console/proxy" {
+			var body map[string]any
+			payload, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(payload, &body)
+			bodies = append(bodies, body)
+			if len(bodies) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"hits": map[string]any{"total": 0},
+				"aggregations": map[string]any{
+					"terms_agg": map[string]any{"buckets": []any{}},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	defer srv.Close()
+
+	opts := AggOptions{
+		Index:       "logs-*",
+		TermsField:  "service",
+		QueryClause: map[string]any{"term": map[string]any{"msg.keyword": "exact"}},
+		From:        "now-1h",
+		To:          "now",
+	}
+	want := BuildAggBody(opts)
+	if want["track_total_hits"] != true {
+		t.Fatalf("aggregation total must be exact: %#v", want)
+	}
+	wantJSON, _ := json.Marshal(want)
+	var normalizedWant map[string]any
+	_ = json.Unmarshal(wantJSON, &normalizedWant)
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	if _, err := c.Aggregate(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected initial request plus .keyword retry, got %d", len(bodies))
+	}
+	if !reflect.DeepEqual(bodies[0], normalizedWant) {
+		t.Fatalf("initial request body differs from preview\ngot:  %#v\nwant: %#v", bodies[0], normalizedWant)
+	}
+	retryTerms := bodies[1]["aggs"].(map[string]any)["terms_agg"].(map[string]any)["terms"].(map[string]any)
+	if retryTerms["field"] != "service.keyword" {
+		t.Fatalf("retry field=%v", retryTerms["field"])
+	}
+}
+
 func TestClient_Aggregate_dateHistogramWithMetric(t *testing.T) {
 	var body map[string]any
 	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +230,7 @@ func TestClient_Aggregate_dateHistogramWithMetric(t *testing.T) {
 
 	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
 	res, err := c.Aggregate(context.Background(), AggOptions{
-		Index: "logs-*", AggType: AggTypeDateHistogram, Interval: "1h",
+		Index: "logs-*", AggType: AggTypeDateHistogram, Interval: " 1h ",
 		Metric: "avg", MetricField: "took_ms",
 	})
 	if err != nil {

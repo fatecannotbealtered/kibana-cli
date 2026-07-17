@@ -9,24 +9,27 @@ import (
 )
 
 type mockKibanaOptions struct {
-	AuthFail           bool
-	AuthStatus         int
-	SearchProbeFail    bool
-	SearchProbeStatus  int
-	ProxyStatus        int
-	IndexPatternFail   bool
-	IndexPatternStatus int
-	SearchNoHits       bool
-	SearchFail         bool
-	SearchFailStatus   int
-	SearchTotalGte     bool
-	SearchSource       map[string]any
-	EmptyPatterns      bool
-	EmptyFields        bool
-	SavedObjectsFail   bool
-	SavedObjectsStatus int
-	FieldsAPIFail      bool
-	FieldsAPIStatus    int
+	StatusFail          bool
+	StatusCode          int
+	AuthFail            bool
+	AuthStatus          int
+	SearchProbeFail     bool
+	SearchProbeStatus   int
+	ProxyStatus         int
+	IndexPatternFail    bool
+	IndexPatternStatus  int
+	DataViewNoTimeField bool
+	SearchNoHits        bool
+	SearchFail          bool
+	SearchFailStatus    int
+	SearchTotalGte      bool
+	SearchSource        map[string]any
+	EmptyPatterns       bool
+	EmptyFields         bool
+	SavedObjectsFail    bool
+	SavedObjectsStatus  int
+	FieldsAPIFail       bool
+	FieldsAPIStatus     int
 }
 
 // newMockKibanaServer returns a minimal Kibana API stub (Console Proxy + saved objects).
@@ -43,6 +46,15 @@ func newMockKibanaServerWith(opts mockKibanaOptions) *httptest.Server {
 func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKibanaOptions) {
 	switch {
 	case r.URL.Path == "/api/status":
+		if opts.StatusFail {
+			status := opts.StatusCode
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"message":"kibana status unavailable"}`))
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"version": map[string]any{"number": "7.10.0"},
 		})
@@ -106,8 +118,13 @@ func mockKibanaHandlerWith(w http.ResponseWriter, r *http.Request, opts mockKiba
 			_, _ = w.Write([]byte(`{"message":"index-pattern unavailable"}`))
 			return
 		}
+		attributes := map[string]any{"title": "logs-*"}
+		if !opts.DataViewNoTimeField {
+			attributes["timeFieldName"] = "event.time"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"attributes": map[string]any{"title": "logs-*"},
+			"id":         r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:],
+			"attributes": attributes,
 		})
 	case strings.HasPrefix(r.URL.Path, "/api/saved_objects/"):
 		if opts.SavedObjectsFail {

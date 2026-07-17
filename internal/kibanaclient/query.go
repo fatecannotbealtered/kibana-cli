@@ -8,8 +8,10 @@ import (
 
 // SearchOptions configures a log search.
 type SearchOptions struct {
-	Index         string
-	Query         string
+	Index string
+	Query string
+	// QueryClause is a precompiled Elasticsearch query and takes precedence over Query.
+	QueryClause   map[string]any
 	Fields        map[string]string
 	From          string
 	To            string
@@ -75,7 +77,9 @@ func buildQuery(opts SearchOptions) map[string]any {
 	if q := buildTraceQuery(opts.TraceID, opts.TraceFields, opts.TraceMode, msgField); q != nil {
 		must = append(must, q)
 	}
-	if q := strings.TrimSpace(opts.Query); q != "" {
+	if len(opts.QueryClause) > 0 {
+		must = append(must, opts.QueryClause)
+	} else if q := strings.TrimSpace(opts.Query); q != "" {
 		if opts.MsgOnly {
 			must = append(must, buildMessagePhraseQuery(opts.MessageFields, msgField, q))
 		} else {

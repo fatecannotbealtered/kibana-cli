@@ -20,6 +20,8 @@ type AggOptions struct {
 	LevelValue    string
 	LevelFields   []string
 	Query         string
+	// QueryClause is a precompiled Elasticsearch query and takes precedence over Query.
+	QueryClause   map[string]any
 	MsgOnly       bool
 	MessageField  string
 	MessageFields []string
@@ -44,12 +46,7 @@ const (
 // sub-aggregation per bucket. It is the general entry point; Terms remains for the
 // plain count-by-terms case and its .keyword retry.
 func (c *Client) Aggregate(ctx context.Context, opts AggOptions) (*AggResult, error) {
-	if opts.TimeField == "" {
-		opts.TimeField = "@timestamp"
-	}
-	if opts.BucketSize <= 0 {
-		opts.BucketSize = 10
-	}
+	opts = normalizeAggOptions(opts)
 	switch normalizeAggType(opts.AggType) {
 	case AggTypeDateHistogram:
 		r, err := c.dateHistogram(ctx, opts)
@@ -76,21 +73,7 @@ func (c *Client) Aggregate(ctx context.Context, opts AggOptions) (*AggResult, er
 }
 
 func (c *Client) dateHistogram(ctx context.Context, opts AggOptions) (*AggResult, error) {
-	interval := strings.TrimSpace(opts.Interval)
-	if interval == "" {
-		interval = "1h"
-	}
-	histo := map[string]any{
-		"field":          opts.TimeField,
-		"fixed_interval": interval,
-		"min_doc_count":  0,
-		"format":         "strict_date_optional_time",
-	}
-	agg := map[string]any{"date_histogram": histo}
-	if metric := metricSubAgg(opts); metric != nil {
-		agg["aggs"] = map[string]any{"metric": metric}
-	}
-	body := c.aggBody(opts, agg)
+	body := BuildAggBody(opts)
 	data, err := c.proxyAgg(ctx, opts.Index, body)
 	if err != nil {
 		return nil, err
@@ -115,13 +98,9 @@ func (c *Client) termsWithMetric(ctx context.Context, opts AggOptions) (*AggResu
 }
 
 func (c *Client) termsMetricOnce(ctx context.Context, opts AggOptions, field string) (*AggResult, error) {
-	agg := map[string]any{
-		"terms": map[string]any{"field": field, "size": opts.BucketSize},
-	}
-	if metric := metricSubAgg(opts); metric != nil {
-		agg["aggs"] = map[string]any{"metric": metric}
-	}
-	body := c.aggBody(opts, agg)
+	opts.AggType = AggTypeTerms
+	opts.TermsField = field
+	body := BuildAggBody(opts)
 	data, err := c.proxyAgg(ctx, opts.Index, body)
 	if err != nil {
 		return nil, err
@@ -129,14 +108,39 @@ func (c *Client) termsMetricOnce(ctx context.Context, opts AggOptions, field str
 	return parseBucketAgg(data, field, opts.Metric)
 }
 
-// aggBody assembles the size:0 search body wrapping a single named "terms_agg".
-func (c *Client) aggBody(opts AggOptions, agg map[string]any) map[string]any {
+// BuildAggBody returns the first Elasticsearch _search request body used by
+// Aggregate. A text-field .keyword retry is a later request and is not included.
+func BuildAggBody(opts AggOptions) map[string]any {
+	opts = normalizeAggOptions(opts)
+	var agg map[string]any
+	if normalizeAggType(opts.AggType) == AggTypeDateHistogram {
+		agg = map[string]any{
+			"date_histogram": map[string]any{
+				"field":          opts.TimeField,
+				"fixed_interval": opts.Interval,
+				"min_doc_count":  0,
+				"format":         "strict_date_optional_time",
+			},
+		}
+	} else {
+		agg = map[string]any{
+			"terms": map[string]any{
+				"field": strings.TrimSpace(opts.TermsField),
+				"size":  opts.BucketSize,
+			},
+		}
+	}
+	if metric := metricSubAgg(opts); metric != nil {
+		agg["aggs"] = map[string]any{"metric": metric}
+	}
+
 	searchOpts := SearchOptions{
 		Index:         opts.Index,
 		From:          opts.From,
 		To:            opts.To,
 		TimeField:     opts.TimeField,
 		Query:         opts.Query,
+		QueryClause:   opts.QueryClause,
 		MsgOnly:       opts.MsgOnly,
 		MessageField:  opts.MessageField,
 		MessageFields: opts.MessageFields,
@@ -146,10 +150,25 @@ func (c *Client) aggBody(opts AggOptions, agg map[string]any) map[string]any {
 		LevelFields:   opts.LevelFields,
 	}
 	return map[string]any{
-		"size":  0,
-		"query": buildQuery(searchOpts),
-		"aggs":  map[string]any{"terms_agg": agg},
+		"size":             0,
+		"track_total_hits": true,
+		"query":            buildQuery(searchOpts),
+		"aggs":             map[string]any{"terms_agg": agg},
 	}
+}
+
+func normalizeAggOptions(opts AggOptions) AggOptions {
+	if opts.TimeField == "" {
+		opts.TimeField = "@timestamp"
+	}
+	if opts.BucketSize <= 0 {
+		opts.BucketSize = 10
+	}
+	opts.Interval = strings.TrimSpace(opts.Interval)
+	if opts.Interval == "" {
+		opts.Interval = "1h"
+	}
+	return opts
 }
 
 func (c *Client) proxyAgg(ctx context.Context, index string, body map[string]any) ([]byte, error) {
@@ -186,12 +205,7 @@ func hasMetric(m string) bool {
 
 // Terms runs a terms aggregation (retries with .keyword on text-field errors).
 func (c *Client) Terms(ctx context.Context, opts AggOptions) (*AggResult, error) {
-	if opts.TimeField == "" {
-		opts.TimeField = "@timestamp"
-	}
-	if opts.BucketSize <= 0 {
-		opts.BucketSize = 10
-	}
+	opts = normalizeAggOptions(opts)
 	field := strings.TrimSpace(opts.TermsField)
 	result, err := c.termsOnce(ctx, opts, field)
 	if err == nil {
@@ -208,34 +222,10 @@ func (c *Client) Terms(ctx context.Context, opts AggOptions) (*AggResult, error)
 }
 
 func (c *Client) termsOnce(ctx context.Context, opts AggOptions, field string) (*AggResult, error) {
-	searchOpts := SearchOptions{
-		Index:         opts.Index,
-		From:          opts.From,
-		To:            opts.To,
-		TimeField:     opts.TimeField,
-		Query:         opts.Query,
-		MsgOnly:       opts.MsgOnly,
-		MessageField:  opts.MessageField,
-		MessageFields: opts.MessageFields,
-		ServiceValue:  opts.ServiceValue,
-		ServiceFields: opts.ServiceFields,
-		LevelValue:    opts.LevelValue,
-		LevelFields:   opts.LevelFields,
-	}
-	body := map[string]any{
-		"size":  0,
-		"query": buildQuery(searchOpts),
-		"aggs": map[string]any{
-			"terms_agg": map[string]any{
-				"terms": map[string]any{
-					"field": field,
-					"size":  opts.BucketSize,
-				},
-			},
-		},
-	}
-	path := strings.Trim(strings.TrimPrefix(opts.Index, "/"), "/") + "/_search"
-	data, err := c.Proxy(ctx, http.MethodPost, path, body)
+	opts.AggType = AggTypeTerms
+	opts.TermsField = field
+	body := BuildAggBody(opts)
+	data, err := c.proxyAgg(ctx, opts.Index, body)
 	if err != nil {
 		return nil, err
 	}

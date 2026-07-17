@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -92,8 +93,8 @@ func TestSearch_DryRun_JSON(t *testing.T) {
 	}
 }
 
-func TestSearch_DryRun_DataView_SkipsResolve(t *testing.T) {
-	srv := newMockKibanaServerWith(mockKibanaOptions{IndexPatternFail: true})
+func TestSearch_DryRun_DataView_ResolvesFinalTarget(t *testing.T) {
+	srv := newMockKibanaServer()
 	defer srv.Close()
 	home := setupTestHome(t)
 	writeFieldMap(t, home, testFieldMapYAML)
@@ -111,8 +112,38 @@ func TestSearch_DryRun_DataView_SkipsResolve(t *testing.T) {
 		t.Fatalf("json parse: %v out=%s", err, out)
 	}
 	payload = envelopeData(t, out)
-	if idx, _ := payload["index"].(string); idx != "<data-view:dv-1>" {
-		t.Fatalf("index=%q want placeholder json=%s", idx, j)
+	if idx, _ := payload["index"].(string); idx != "logs-*" {
+		t.Fatalf("index=%q want resolved title json=%s", idx, j)
+	}
+	if field, _ := payload["timeField"].(string); field != "event.time" {
+		t.Fatalf("timeField=%q want data-view field json=%s", field, j)
+	}
+}
+
+func TestQueryDryRun_DataViewNeverSendsSearch(t *testing.T) {
+	searchCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/console/proxy" {
+			searchCalls++
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		mockKibanaHandlerWith(w, r, mockKibanaOptions{})
+	}))
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, testFieldMapYAML)
+	for _, args := range [][]string{
+		{"search", "--data-view", "dv-1", "--dry-run", "--json"},
+		{"agg", "--data-view", "dv-1", "--terms", "level", "--dry-run", "--json"},
+	} {
+		out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), args)
+		if code != ExitOK {
+			t.Fatalf("args=%v exit=%d out=%s", args, code, out)
+		}
+	}
+	if searchCalls != 0 {
+		t.Fatalf("dry-run sent %d _search requests", searchCalls)
 	}
 }
 

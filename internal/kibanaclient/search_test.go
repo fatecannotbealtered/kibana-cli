@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
@@ -111,5 +112,40 @@ func TestClient_Search_searchAfterCursor(t *testing.T) {
 	sort, _ := body["sort"].([]any)
 	if len(sort) != 2 {
 		t.Fatalf("expected 2 sort keys (time + _id): %v", sort)
+	}
+}
+
+func TestBuildSearchBody_matchesRequest(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/status" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+			return
+		}
+		payload, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(payload, &got)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}},
+		})
+	}))
+	defer srv.Close()
+
+	opts := SearchOptions{
+		Index:       "logs-*",
+		QueryClause: map[string]any{"term": map[string]any{"msg.keyword": "exact"}},
+		From:        "now-1h",
+		To:          "now",
+		SortDesc:    true,
+	}
+	want := BuildSearchBody(opts)
+	wantJSON, _ := json.Marshal(want)
+	var normalizedWant map[string]any
+	_ = json.Unmarshal(wantJSON, &normalizedWant)
+	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
+	if _, err := c.Search(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, normalizedWant) {
+		t.Fatalf("request body differs from preview\ngot:  %#v\nwant: %#v", got, normalizedWant)
 	}
 }

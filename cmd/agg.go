@@ -17,6 +17,7 @@ import (
 var aggCmd = &cobra.Command{
 	Use:   "agg",
 	Short: "Aggregate log fields (e.g. count by level or service)",
+	Args:  cobra.NoArgs,
 	Long: `Run a terms aggregation on log indices via Kibana Console Proxy.
 
 Examples:
@@ -28,7 +29,7 @@ Examples:
 func init() {
 	rootCmd.AddCommand(aggCmd)
 	aggCmd.Flags().String("index", "", "Index pattern")
-	aggCmd.Flags().String("data-view", "", "Kibana data view / index-pattern id (resolves to index title)")
+	aggCmd.Flags().String("data-view", "", "Kibana data view / index-pattern id (resolves index title + time field; does not import Discover/Dashboard filters)")
 	aggCmd.Flags().String("profile", "", "Profile from field-map.yaml")
 	aggCmd.Flags().String("service", "", "Filter by logical service name")
 	aggCmd.Flags().String("level", "", "Filter by log level")
@@ -37,8 +38,9 @@ func init() {
 	aggCmd.Flags().String("interval", "1h", "date_histogram interval (e.g. 1h, 1d, 30m)")
 	aggCmd.Flags().String("metric", "", "Per-bucket metric: avg|sum|min|max|count")
 	aggCmd.Flags().String("metric-field", "", "Numeric field for --metric (not needed for count)")
-	aggCmd.Flags().String("query", "", "Additional text query; searches across ALL fields by default (use --precise to narrow to message)")
-	aggCmd.Flags().Bool("precise", false, "Restrict --query to message field(s) via match_phrase (opt-in)")
+	aggCmd.Flags().String("query", "", "Query text interpreted by --query-language; Lucene searches all fields by default")
+	aggCmd.Flags().String("query-language", queryLanguageLucene, "Query language: lucene|kql (KQL is a strict fail-closed subset)")
+	aggCmd.Flags().Bool("precise", false, "Treat the whole Lucene --query as a literal phrase on message field(s); does not parse boolean expressions")
 	aggCmd.Flags().String("from", "now-1h", "Time range start")
 	aggCmd.Flags().String("to", "now", "Time range end")
 	aggCmd.Flags().String("time-field", "", "Timestamp field")
@@ -48,6 +50,14 @@ func init() {
 }
 
 func runAgg(cmd *cobra.Command, _ []string) error {
+	queryLanguage, queryClause, err := compileFlagQuery(cmd)
+	if err != nil {
+		return err
+	}
+	context, contextSource, host, err := loadQueryConnectionMeta()
+	if err != nil {
+		return err
+	}
 	fm, err := loadFieldMapOrExit()
 	if err != nil {
 		return err
@@ -66,11 +76,11 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 		return failValidation("--terms is required for --agg-type terms")
 	}
 
-	var client *kibanaclient.Client
-	index, err := resolveAggIndex(cmd, &client)
+	target, err := resolveQueryTarget(cmd)
 	if err != nil {
 		return err
 	}
+	index := target.Index
 
 	resolved, err := fieldmap.ResolveSearchOptions(fm, profile, index, service, level)
 	if err != nil {
@@ -87,9 +97,9 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 	}
 	from, _ := cmd.Flags().GetString("from")
 	to, _ := cmd.Flags().GetString("to")
-	timeField, _ := cmd.Flags().GetString("time-field")
-	if timeField != "" {
-		resolved.TimeField = timeField
+	resolved.TimeField, err = resolveQueryTimeField(cmd, target, resolved.TimeField)
+	if err != nil {
+		return err
 	}
 	interval, _ := cmd.Flags().GetString("interval")
 	query, _ := cmd.Flags().GetString("query")
@@ -107,6 +117,7 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 		LevelValue:    level,
 		LevelFields:   resolved.LevelFields,
 		Query:         query,
+		QueryClause:   queryClause,
 		MsgOnly:       precise,
 		MessageField:  resolved.PrimaryMessageField(),
 		MessageFields: resolved.MessageFields,
@@ -115,16 +126,30 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 		Metric:        metric,
 		MetricField:   metricField,
 	}
-	if dryRunOutput("aggregate logs", map[string]any{
-		"index":      resolved.Index,
+	meta := queryOutputMeta{
+		Context:       context,
+		ContextSource: contextSource,
+		Host:          host,
+		Index:         resolved.Index,
+		DataViewID:    target.DataViewID,
+		TimeField:     resolved.TimeField,
+		From:          from,
+		To:            to,
+		QueryLanguage: queryLanguage,
+	}
+	preview := map[string]any{
 		"aggType":    aggType,
 		"termsField": termsField,
 		"interval":   interval,
 		"metric":     metric,
 		"buckets":    buckets,
-	}) {
+		"dsl":        kibanaclient.BuildAggBody(aggOpts),
+	}
+	addQueryOutputMeta(preview, meta)
+	if dryRunOutput("aggregate logs", preview) {
 		return nil
 	}
+	client := target.Client
 	if client == nil {
 		client, _, err = newKibanaClient()
 		if err != nil {
@@ -136,7 +161,7 @@ func runAgg(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return handleAPIError(err, jsonMode)
 	}
-	return printAggResult(result, getFieldsFlag(cmd), buckets)
+	return printAggResult(result, getFieldsFlag(cmd), buckets, meta)
 }
 
 func normalizeAggTypeFlag(cmd *cobra.Command) string {
@@ -174,30 +199,6 @@ func mustString(cmd *cobra.Command, name string) string {
 	return v
 }
 
-func resolveAggIndex(cmd *cobra.Command, clientRef **kibanaclient.Client) (string, error) {
-	index, _ := cmd.Flags().GetString("index")
-	dataView, _ := cmd.Flags().GetString("data-view")
-	if strings.TrimSpace(dataView) == "" {
-		return index, nil
-	}
-	if dryRun {
-		if strings.TrimSpace(index) != "" {
-			output.AuxWarn("--data-view overrides --index")
-		}
-		return dataViewDryRunIndex(strings.TrimSpace(dataView)), nil
-	}
-	client, _, err := newKibanaClient()
-	if err != nil {
-		return "", err
-	}
-	*clientRef = client
-	resolved, err := resolveIndexFromFlags(cmd, client)
-	if err != nil {
-		return "", handleAPIError(err, jsonMode)
-	}
-	return resolved, nil
-}
-
 func resolveTermsField(terms string, resolved fieldmap.ResolvedSearch, fm *fieldmap.Map, profile string) string {
 	switch terms {
 	case "level":
@@ -215,7 +216,7 @@ func resolveTermsField(terms string, resolved fieldmap.ResolvedSearch, fm *field
 	}
 }
 
-func printAggResult(result *kibanaclient.AggResult, fields []string, limit int) error {
+func printAggResult(result *kibanaclient.AggResult, fields []string, limit int, meta queryOutputMeta) error {
 	hasMetric := result.Metric != "" && result.Metric != "count"
 	if jsonMode {
 		buckets := make([]map[string]any, 0, len(result.Buckets))
@@ -241,13 +242,16 @@ func printAggResult(result *kibanaclient.AggResult, fields []string, limit int) 
 			"next_offset": nil,
 			"_untrusted":  []string{"buckets"},
 		}
+		addQueryOutputMeta(payload, meta)
 		if result.AggType != "" {
 			payload["aggType"] = result.AggType
 		}
 		if result.Metric != "" {
 			payload["metric"] = result.Metric
 		}
-		printJSONSuccess(projectTopLevelFields(payload, fields))
+		projected := projectTopLevelFields(payload, fields)
+		addQueryOutputMeta(projected, meta)
+		printJSONSuccess(projected)
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -264,6 +268,7 @@ func printAggResult(result *kibanaclient.AggResult, fields []string, limit int) 
 	}
 	_ = w.Flush()
 	output.AuxGray(fmt.Sprintf("  field=%s total=%d took=%dms", result.Field, result.Total, result.TookMs))
+	output.AuxGray("  " + queryOutputSummary(meta))
 	return nil
 }
 

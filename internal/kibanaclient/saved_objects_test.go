@@ -192,7 +192,11 @@ func TestResolveIndexPattern(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
 		case "/api/saved_objects/index-pattern/abc":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"attributes": map[string]string{"title": "logs-*"},
+				"id": "abc",
+				"attributes": map[string]string{
+					"title":         "logs-*",
+					"timeFieldName": "event.created",
+				},
 			})
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -201,7 +205,15 @@ func TestResolveIndexPattern(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	title, err := c.ResolveIndexPattern(context.Background(), "abc")
+	view, err := c.ResolveDataView(context.Background(), "abc")
+	if err != nil || view.ID != "abc" || view.Title != "logs-*" || view.TimeFieldName != "event.created" {
+		t.Fatalf("view=%+v err=%v", view, err)
+	}
+	title, err := c.ResolveDataViewTitle(context.Background(), "abc")
+	if err != nil || title != "logs-*" {
+		t.Fatalf("compat title=%q err=%v", title, err)
+	}
+	title, err = c.ResolveIndexPattern(context.Background(), "abc")
 	if err != nil || title != "logs-*" {
 		t.Fatalf("title=%q err=%v", title, err)
 	}

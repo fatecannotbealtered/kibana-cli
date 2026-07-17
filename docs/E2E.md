@@ -38,4 +38,22 @@ kibana-cli search --index 'logs-*' --from now-15m --limit 1 --fields '@timestamp
 kibana-cli agg --index 'logs-*' --terms level --from now-1h --compact
 ```
 
+For Discover parity, use an absolute window and compare both query modes without returning raw logs:
+
+```bash
+kibana-cli search --context <context> --data-view <data-view-id> \
+  --query 'msg:"1" and msg:"2"' --query-language kql \
+  --from '<absolute-start>' --to '<absolute-end>' --limit 1 --compact
+
+kibana-cli search --context <context> --data-view <data-view-id> \
+  --query 'msg:"1" AND msg:"2"' --query-language lucene \
+  --from '<absolute-start>' --to '<absolute-end>' --limit 1 --compact
+
+kibana-cli agg --context <context> --data-view <data-view-id> --terms level \
+  --query 'msg:"1" and msg:"2"' --query-language kql \
+  --from '<absolute-start>' --to '<absolute-end>' --compact
+```
+
+Assert the returned `context`, `host`, `index`, `dataViewId`, `timeField`, `from`, `to`, and `queryLanguage` before comparing `total`. Also verify that lowercase KQL-style booleans in default Lucene mode and unquoted extra positional arguments return `E_VALIDATION` without sending `_search`.
+
 Do not commit live output, credentials, internal hostnames, or logs.

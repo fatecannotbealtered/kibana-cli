@@ -133,6 +133,39 @@ func LoadFor(contextFlag string) (*Config, error) {
 		applyVersionEnv(cfg)
 		return cfg, nil
 	}
+	cfg, err := loadStoredConnectionMeta(contextFlag)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.ContextName != "" {
+		// A full env triad short-circuits above, so reaching here means env auth is
+		// not in effect — a lone KIBANA_CLI_PASSWORD must not suppress the keyring.
+		if cfg.usesKeyringStore() {
+			if err := loadSecretFromKeyring(cfg); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return cfg, nil
+}
+
+// LoadConnectionMetaFor resolves the effective host/context metadata without
+// reading a credential from the OS keyring. It is used by read-only previews
+// that need to report the real target but do not execute a Kibana request.
+func LoadConnectionMetaFor(contextFlag string) (*Config, error) {
+	if err := validateEnvAuthOverride(); err != nil {
+		return nil, err
+	}
+	if envAuthComplete() {
+		host, user, _, _ := envAuthVars()
+		cfg := &Config{Host: host, Username: user, ContextName: "env"}
+		applyVersionEnv(cfg)
+		return cfg, nil
+	}
+	return loadStoredConnectionMeta(contextFlag)
+}
+
+func loadStoredConnectionMeta(contextFlag string) (*Config, error) {
 	store, err := LoadStore()
 	if err != nil {
 		return nil, err
@@ -152,13 +185,6 @@ func LoadFor(contextFlag string) (*Config, error) {
 		cfg.KibanaVersion = entry.KibanaVersion
 		cfg.DefaultIndex = entry.DefaultIndex
 		cfg.FieldMapFile = entry.FieldMapFile
-		// A full env triad short-circuits above, so reaching here means env auth is
-		// not in effect — a lone KIBANA_CLI_PASSWORD must not suppress the keyring.
-		if cfg.usesKeyringStore() {
-			if err := loadSecretFromKeyring(cfg); err != nil {
-				return nil, err
-			}
-		}
 	}
 	applyVersionEnv(cfg)
 	return cfg, nil

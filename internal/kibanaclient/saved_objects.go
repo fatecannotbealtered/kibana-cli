@@ -17,6 +17,13 @@ type IndexPattern struct {
 	Title string `json:"title"`
 }
 
+// DataView is the resolved index target and time field from a Kibana data view.
+type DataView struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	TimeFieldName string `json:"timeFieldName,omitempty"`
+}
+
 // ListIndexPatterns returns saved index-pattern objects (paginated).
 func (c *Client) ListIndexPatterns(ctx context.Context) ([]IndexPattern, error) {
 	if err := c.EnsureVersion(ctx); err != nil {
@@ -199,39 +206,63 @@ func (c *Client) kibanaGET(ctx context.Context, u string) ([]byte, error) {
 	return data, nil
 }
 
-// ResolveIndexPattern returns the index pattern title for a Kibana data view id.
-func (c *Client) ResolveIndexPattern(ctx context.Context, id string) (string, error) {
+// ResolveDataView returns the index pattern title and configured time field for
+// a Kibana data view id.
+func (c *Client) ResolveDataView(ctx context.Context, id string) (*DataView, error) {
 	if err := c.EnsureVersion(ctx); err != nil {
-		return "", err
+		return nil, err
 	}
 	u := fmt.Sprintf("%s/api/saved_objects/index-pattern/%s", c.baseURL, url.PathEscape(id))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header = c.proxyHeaders()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	data, readErr := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if readErr != nil {
-		return "", readErr
+		return nil, readErr
 	}
 	if resp.StatusCode >= 400 {
-		return "", parseAPIError(resp.StatusCode, data)
+		return nil, parseAPIError(resp.StatusCode, data)
 	}
 	var raw struct {
+		ID         string `json:"id"`
 		Attributes struct {
-			Title string `json:"title"`
+			Title         string `json:"title"`
+			TimeFieldName string `json:"timeFieldName"`
 		} `json:"attributes"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return "", err
+		return nil, err
 	}
 	if raw.Attributes.Title == "" {
-		return "", fmt.Errorf("index-pattern %s has no title", id)
+		return nil, fmt.Errorf("index-pattern %s has no title", id)
 	}
-	return raw.Attributes.Title, nil
+	if raw.ID == "" {
+		raw.ID = id
+	}
+	return &DataView{
+		ID:            raw.ID,
+		Title:         raw.Attributes.Title,
+		TimeFieldName: raw.Attributes.TimeFieldName,
+	}, nil
+}
+
+// ResolveDataViewTitle preserves the title-only data view lookup API.
+func (c *Client) ResolveDataViewTitle(ctx context.Context, id string) (string, error) {
+	view, err := c.ResolveDataView(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return view.Title, nil
+}
+
+// ResolveIndexPattern is the legacy name for ResolveDataViewTitle.
+func (c *Client) ResolveIndexPattern(ctx context.Context, id string) (string, error) {
+	return c.ResolveDataViewTitle(ctx, id)
 }

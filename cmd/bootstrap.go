@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 	"github.com/fatecannotbealtered/kibana-cli/internal/kibanaclient"
+	"github.com/fatecannotbealtered/kibana-cli/internal/output"
 )
 
 // bootstrapOutcome is the shared doctor/context validation result.
@@ -57,13 +59,17 @@ func runBootstrapCheck() (*bootstrapOutcome, error) {
 	vr, err := client.Validate(apiCtx())
 	out.LatencyMs = time.Since(start).Milliseconds()
 	if err != nil || !vr.Valid {
-		detail := "authentication failed"
 		if err != nil {
-			detail = err.Error()
+			out.AgentStatus = agentBootstrapFailure(err)
+		} else {
+			out.AgentStatus = agentAuthFailed("authentication failed")
 		}
-		out.AgentStatus = agentAuthFailed(detail)
 		out.AuthValid = false
-		out.AuthError = out.Message
+		if out.ErrorCode == output.ErrAuth {
+			out.AuthError = out.Message
+		} else {
+			out.SearchError = out.Message
+		}
 		applyAgentExit(out.AgentStatus)
 		return out, nil
 	}
@@ -79,6 +85,33 @@ func runBootstrapCheck() (*bootstrapOutcome, error) {
 	}
 	applyAgentExit(out.AgentStatus)
 	return out, nil
+}
+
+func agentBootstrapFailure(err error) AgentStatus {
+	statusCode := 0
+	var apiErr *kibanaclient.APIError
+	if errors.As(err, &apiErr) {
+		statusCode = apiErr.StatusCode
+	}
+	code, exit := classifySearchProbeError(err.Error(), statusCode)
+	if code == output.ErrUnknown {
+		code = output.ErrNetwork
+	}
+	if code == output.ErrAuth {
+		st := agentAuthFailed(err.Error())
+		st.StatusCode = statusCode
+		return st
+	}
+	return AgentStatus{
+		OK:         false,
+		Status:     StatusAPIError,
+		Message:    err.Error(),
+		Error:      err.Error(),
+		Hint:       output.HintForErrorCode(code),
+		ErrorCode:  code,
+		StatusCode: statusCode,
+		ExitCode:   exit,
+	}
 }
 
 func applyBootstrapToContext(out *bootstrapOutcome, k *contextKibana) {

@@ -41,7 +41,7 @@ func TestPrintAggResult_Table(t *testing.T) {
 			Total:   10,
 			TookMs:  3,
 			Buckets: []kibanaclient.AggBucket{{Key: "ERROR", Count: 2}},
-		}, nil, 10); err != nil {
+		}, nil, 10, queryOutputMeta{}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -67,6 +67,9 @@ func TestAgg_JSONFieldsProjection(t *testing.T) {
 	if data["field"] == nil || data["total"] == nil || data["buckets"] != nil {
 		t.Fatalf("unexpected projection: %s", out)
 	}
+	if data["context"] != "env" || data["host"] != srv.URL || data["index"] != "logs-*" {
+		t.Fatalf("projection removed provenance: %s", out)
+	}
 	if _, ok := data["_untrusted"]; ok {
 		t.Fatalf("unexpected _untrusted marker for omitted buckets: %s", out)
 	}
@@ -85,7 +88,8 @@ func TestAgg_TableOutput(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, "ERROR") || !strings.Contains(out, "KEY") {
+	if !strings.Contains(out, "ERROR") || !strings.Contains(out, "KEY") ||
+		!strings.Contains(out, "context=env") || !strings.Contains(out, "host="+srv.URL) {
 		t.Fatalf("unexpected: %s", out)
 	}
 }

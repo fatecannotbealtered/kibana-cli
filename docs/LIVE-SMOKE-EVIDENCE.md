@@ -47,6 +47,29 @@ asserted.
 
 All v1.1.3 new commands are live-verified.
 
+## 2026-07-17 — Discover/KQL parity and query provenance
+
+Re-run against a configured real Kibana **7.7.1** test deployment. Evidence is
+sanitized: no hostname, account, credentials, returned log body, or raw hit is
+recorded here. Commands used one fixed absolute 24-hour window and returned only
+count/provenance summaries.
+
+| Check | Result | Sanitized evidence |
+|---|---|---|
+| Data-view phrase query in the intended test context | PASS | `total: 32`; resolved data view/index, `timeField: @timestamp`, and `queryLanguage: kql` were reported |
+| Same index/query/window in a different configured test context | PASS | `total: 0`; output identified the different context |
+| `msg:"1" and msg:"2"` in KQL | PASS | exact total matched both equivalents below and was greater than 10,000 |
+| Uppercase Lucene equivalent | PASS | same exact total as KQL |
+| Explicit Elasticsearch bool DSL equivalent | PASS | same exact total as KQL |
+| `agg` KQL and Lucene equivalents | PASS | same exact total as search; `track_total_hits: true` avoids the 10,000 cap |
+| Search/agg dry-run | PASS | resolved provenance plus complete initial `dsl`; no `_search` issued by dry-run |
+| Lowercase KQL-like boolean under default Lucene | PASS | `E_VALIDATION`, exit 2, non-retryable |
+| Unquoted expression split into positional args | PASS | `E_VALIDATION`, exit 2, non-retryable |
+
+This verifies the reported count discrepancy was reproducible from both query
+language and context selection, and that the repaired CLI makes both inputs
+explicit while matching the equivalent Elasticsearch bool query.
+
 ### Credential-at-rest
 
 - After `auth login`, the configured password does **not** appear in any file

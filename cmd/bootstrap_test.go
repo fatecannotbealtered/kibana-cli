@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +122,94 @@ func TestRunBootstrapCheck_AuthFailed(t *testing.T) {
 	}
 	if lastExit != ExitAuth {
 		t.Fatalf("exit=%d", lastExit)
+	}
+}
+
+func TestRunBootstrapCheck_StatusFailuresUseHTTPErrorTaxonomy(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		errorCode  output.ErrorCode
+		exitCode   int
+		retryable  bool
+	}{
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, errorCode: output.ErrAuth, exitCode: ExitAuth},
+		{name: "forbidden", statusCode: http.StatusForbidden, errorCode: output.ErrForbidden, exitCode: ExitForbidden},
+		{name: "bad_gateway", statusCode: http.StatusBadGateway, errorCode: output.ErrServer, exitCode: ExitNetwork, retryable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newMockKibanaServerWith(mockKibanaOptions{StatusFail: true, StatusCode: tt.statusCode})
+			defer srv.Close()
+			setupTestHome(t)
+			t.Setenv("KIBANA_CLI_HOST", srv.URL)
+			t.Setenv("KIBANA_CLI_USER", "ops")
+			t.Setenv("KIBANA_CLI_PASSWORD", "secret")
+			origExit := lastExit
+			defer func() { lastExit = origExit }()
+			lastExit = 0
+
+			out, err := runBootstrapCheck()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.ErrorCode != tt.errorCode || out.StatusCode != tt.statusCode {
+				t.Fatalf("status=%s errorCode=%s statusCode=%d", out.Status, out.ErrorCode, out.StatusCode)
+			}
+			if out.ExitCode != tt.exitCode || lastExit != tt.exitCode {
+				t.Fatalf("out.exit=%d lastExit=%d", out.ExitCode, lastExit)
+			}
+			if got := output.RetryableForErrorCode(out.ErrorCode); got != tt.retryable {
+				t.Fatalf("retryable=%v want %v", got, tt.retryable)
+			}
+		})
+	}
+}
+
+func TestContextBootstrapFailureEnvelope(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		code       output.ErrorCode
+		exitCode   int
+		retryable  bool
+	}{
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, code: output.ErrAuth, exitCode: ExitAuth},
+		{name: "forbidden", statusCode: http.StatusForbidden, code: output.ErrForbidden, exitCode: ExitForbidden},
+		{name: "bad_gateway", statusCode: http.StatusBadGateway, code: output.ErrServer, exitCode: ExitNetwork, retryable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newMockKibanaServerWith(mockKibanaOptions{StatusFail: true, StatusCode: tt.statusCode})
+			defer srv.Close()
+			out, exitCode := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{"context", "--json"})
+			if exitCode != tt.exitCode {
+				t.Fatalf("exit=%d want=%d out=%s", exitCode, tt.exitCode, out)
+			}
+			payload := envelopePayload(t, out)
+			errObj := payload["error"].(map[string]any)
+			if errObj["code"] != string(tt.code) || errObj["retryable"] != tt.retryable {
+				t.Fatalf("error=%v", errObj)
+			}
+			details := errObj["details"].(map[string]any)
+			if details["statusCode"] != float64(tt.statusCode) {
+				t.Fatalf("statusCode=%v want=%d", details["statusCode"], tt.statusCode)
+			}
+		})
+	}
+}
+
+func TestContextBootstrapNetworkFailureIsRetryable(t *testing.T) {
+	srv := newMockKibanaServer()
+	host := srv.URL
+	srv.Close()
+	out, exitCode := runCLIWithEnv(t, searchMockEnv(host), []string{"context", "--json"})
+	if exitCode != ExitNetwork {
+		t.Fatalf("exit=%d out=%s", exitCode, out)
+	}
+	errObj := envelopePayload(t, out)["error"].(map[string]any)
+	if errObj["code"] != string(output.ErrNetwork) || errObj["retryable"] != true {
+		t.Fatalf("error=%v", errObj)
 	}
 }
 

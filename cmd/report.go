@@ -196,6 +196,10 @@ func classifySearchProbeError(detail string, statusCode int) (output.ErrorCode, 
 		return output.ErrForbidden, ExitForbidden
 	case 404:
 		return output.ErrNotFound, ExitNotFound
+	case 408:
+		return output.ErrTimeout, ExitTimeout
+	case 409:
+		return output.ErrConflict, ExitConflict
 	case 429:
 		return output.ErrRateLimit, ExitRateLimit
 	}

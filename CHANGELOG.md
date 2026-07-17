@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-07-17
+
+### Added
+
+- `search` and `agg` now accept `--query-language lucene|kql`. KQL is compiled locally to Elasticsearch DSL with case-insensitive boolean operators, grouping, field lists, ranges, exists, value wildcards, nested groups, escaping, and fail-closed validation for syntax that needs unavailable field metadata.
+- Query results and dry-runs now report the effective context/host, index/data view, time field/range, and query language. Dry-runs expose the exact initial Elasticsearch request body in `data.dsl`.
+
+### Fixed
+
+- Queries such as `msg:"1" and msg:"2"` or `timeout and error` can no longer be silently interpreted with broad Lucene semantics under the default language selection: use explicit KQL, uppercase Lucene `AND`/`OR`/`NOT`, or explicit Lucene when lowercase words are intentional terms.
+- `search` and `agg` now reject extra positional arguments, preventing an unquoted shell expression from being truncated to its first token.
+- Data views now contribute both their index title and `timeFieldName`; explicit `--time-field` still has highest priority.
+- Data views without `timeFieldName` now require explicit `--time-field` instead of silently applying the default time range to `@timestamp`.
+- `agg --dry-run` now previews the same initial request body used by execution, including query and aggregation clauses.
+- `agg` now requests exact hit totals, so query counts above Elasticsearch's 10,000 tracking threshold are no longer reported as 10,000.
+- Bootstrap and API failures preserve the HTTP/network taxonomy: 5xx/network failures are retryable server/network errors instead of authentication failures, HTTP 408 maps to timeout, and HTTP 409 maps to conflict.
+
+### Changed
+
+- A query dry-run with `--data-view` now performs a read-only Saved Objects lookup to produce an execution-equivalent preview. It still never sends `_search` or an aggregation request.
+- `--data-view` is documented as Discover data-view resolution only; it does not import Dashboard panels, filters, saved queries, pinned filters, or URL state.
+
 ## [1.1.15] - 2026-07-08
 
 ### Fixed

@@ -94,10 +94,13 @@ func referenceData(markdown string) map[string]any {
 			},
 		},
 		"query_conventions": map[string]any{
-			"fields":     "Query commands support --fields in JSON mode; _untrusted markers are preserved only for returned fields.",
-			"pagination": "search and patterns support --limit plus --offset; search also offers a stable --search-after cursor (next_search_after token) for large time-ordered sets; objects list supports --limit/--offset; agg supports --limit for top-N buckets and has no stable cursor.",
-			"sort":       "search defaults to descending event time; patterns keep Kibana Saved Objects order; agg keeps Elasticsearch terms or date_histogram order.",
-			"raw_dsl":    "search --dsl <json> sends a raw Elasticsearch _search body through the Console Proxy, bypassing the flag query builder; returned hits keep _untrusted tagging.",
+			"fields":         "Query commands support --fields in JSON mode; _untrusted markers are preserved only for returned fields.",
+			"pagination":     "search and patterns support --limit plus --offset; search also offers a stable --search-after cursor (next_search_after token) for large time-ordered sets; objects list supports --limit/--offset; agg supports --limit for top-N buckets and has no stable cursor.",
+			"sort":           "search defaults to descending event time; patterns keep Kibana Saved Objects order; agg keeps Elasticsearch terms or date_histogram order.",
+			"query_language": "search/agg default to Lucene for compatibility. Use --query-language kql for the supported fail-closed KQL subset. The default Lucene selection rejects unquoted lowercase KQL boolean tokens instead of broadening them silently; explicit --query-language lucene permits them as ordinary terms. Quote the whole expression as one shell argument.",
+			"data_view":      "--data-view resolves the index title and timeFieldName only. It does not import Discover/Dashboard filters, saved queries, pinned filters, panel state, or URL time state.",
+			"dry_run":        "search/agg dry-run emits the exact initial Elasticsearch request body in data.dsl. With --data-view it performs a read-only Saved Objects lookup so the preview matches execution; it never sends _search.",
+			"raw_dsl":        "search --dsl <json> sends a raw Elasticsearch _search body through the Console Proxy, bypassing the flag query builder; returned hits keep _untrusted tagging.",
 		},
 		"exit_codes":  exitCodeReference(),
 		"error_codes": errorCodeReference(),
@@ -362,12 +365,14 @@ func examplesForCommand(path string) []string {
 	case "kibana-cli search":
 		return []string{
 			"kibana-cli search --index 'app-test-log-*' --query timeout --from now-15m --limit 20 --compact",
+			"kibana-cli search --index 'app-test-log-*' --query 'msg:\"1\" and msg:\"2\"' --query-language kql --from now-1d --limit 20 --compact",
 			"kibana-cli search --index 'app-test-log-*' --limit 100 --search-after <next_search_after> --compact",
 			"kibana-cli search --index 'app-test-log-*' --dsl '{\"query\":{\"match_all\":{}},\"size\":5}' --compact",
 		}
 	case "kibana-cli agg":
 		return []string{
 			"kibana-cli agg --index 'app-test-log-*' --terms level --from now-1h --limit 10 --compact",
+			"kibana-cli agg --index 'app-test-log-*' --terms level --query 'msg:\"1\" and msg:\"2\"' --query-language kql --from now-1d --compact",
 			"kibana-cli agg --index 'app-test-log-*' --agg-type date_histogram --interval 1h --metric avg --metric-field took_ms --compact",
 		}
 	case "kibana-cli patterns list":
@@ -423,12 +428,12 @@ func referenceSchemas() map[string]referenceDataSchema {
 	return map[string]referenceDataSchema{
 		"search_result": {
 			Shape:           "object",
-			Fields:          []string{"index", "profile", "total", "totalRelation", "tookMs", "hits", "count", "limit", "offset", "has_more", "next_offset", "next_search_after", "limit_capped", "limit_max", "traceMode", "zeroReason", "hint", "diagnostics"},
+			Fields:          []string{"context", "contextSource", "host", "index", "dataViewId", "timeField", "from", "to", "queryLanguage", "profile", "total", "totalRelation", "tookMs", "hits", "count", "limit", "offset", "has_more", "next_offset", "next_search_after", "limit_capped", "limit_max", "traceMode", "zeroReason", "hint", "diagnostics", "action", "dry_run", "dsl", "query", "search_after"},
 			UntrustedFields: []string{"hits"},
 		},
 		"agg_result": {
 			Shape:           "object",
-			Fields:          []string{"field", "aggType", "metric", "total", "tookMs", "buckets", "count", "limit", "has_more", "next_offset", "_untrusted"},
+			Fields:          []string{"context", "contextSource", "host", "index", "dataViewId", "timeField", "from", "to", "queryLanguage", "field", "aggType", "metric", "total", "tookMs", "buckets", "count", "limit", "has_more", "next_offset", "_untrusted", "action", "dry_run", "dsl", "termsField", "interval"},
 			UntrustedFields: []string{"buckets"},
 		},
 		"objects_list": {

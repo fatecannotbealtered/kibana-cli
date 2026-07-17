@@ -79,7 +79,7 @@ func printContext(result *contextResult) {
 		if msg == "" {
 			msg = result.Error
 		}
-		output.PrintJSON(output.FailureEnvelope(result.ErrorCode, msg, map[string]any{
+		details := map[string]any{
 			"status":          result.Status,
 			"hint":            result.Hint,
 			"exitCode":        result.ExitCode,
@@ -91,7 +91,11 @@ func printContext(result *contextResult) {
 			"activeContext":   result.ActiveContext,
 			"kibana":          result.Kibana,
 			"notices":         result.Notices,
-		}, elapsedDurationMs()))
+		}
+		if result.StatusCode > 0 {
+			details["statusCode"] = result.StatusCode
+		}
+		output.PrintJSON(output.FailureEnvelope(result.ErrorCode, msg, details, elapsedDurationMs()))
 		return
 	}
 	fmt.Println()

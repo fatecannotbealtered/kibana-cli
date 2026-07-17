@@ -130,7 +130,7 @@ func printDoctor(result *doctorResult) {
 		if msg == "" {
 			msg = result.Error
 		}
-		output.PrintJSON(output.FailureEnvelope(result.ErrorCode, msg, map[string]any{
+		details := map[string]any{
 			"status":    result.Status,
 			"hint":      result.Hint,
 			"exitCode":  result.ExitCode,
@@ -152,7 +152,11 @@ func printDoctor(result *doctorResult) {
 				"searchReachable": result.SearchReachable,
 				"searchError":     result.SearchError,
 			},
-		}, elapsedDurationMs()))
+		}
+		if result.StatusCode > 0 {
+			details["statusCode"] = result.StatusCode
+		}
+		output.PrintJSON(output.FailureEnvelope(result.ErrorCode, msg, details, elapsedDurationMs()))
 		return
 	}
 	fmt.Println()

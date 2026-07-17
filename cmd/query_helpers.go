@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -30,26 +32,113 @@ func loadFieldMapOrExit() (*fieldmap.Map, error) {
 	return fm, nil
 }
 
-func dataViewDryRunIndex(id string) string {
-	return "<data-view:" + id + ">"
+type queryTarget struct {
+	Index             string
+	DataViewID        string
+	DataViewTimeField string
+	Client            *kibanaclient.Client
 }
 
-func resolveIndexFromFlags(cmd *cobra.Command, client *kibanaclient.Client) (string, error) {
+func resolveQueryTarget(cmd *cobra.Command) (queryTarget, error) {
 	index, _ := cmd.Flags().GetString("index")
-	dataView, _ := cmd.Flags().GetString("data-view")
-	if strings.TrimSpace(dataView) != "" && strings.TrimSpace(index) != "" {
+	dataViewID, _ := cmd.Flags().GetString("data-view")
+	dataViewID = strings.TrimSpace(dataViewID)
+	if dataViewID == "" {
+		return queryTarget{Index: index}, nil
+	}
+	if strings.TrimSpace(index) != "" {
 		output.AuxWarn("--data-view overrides --index")
 	}
-	if strings.TrimSpace(dataView) != "" {
-		id := strings.TrimSpace(dataView)
-		if dryRun {
-			return dataViewDryRunIndex(id), nil
-		}
-		title, err := client.ResolveIndexPattern(apiCtx(), id)
-		if err != nil {
-			return "", err
-		}
-		return title, nil
+	client, _, err := newKibanaClient()
+	if err != nil {
+		return queryTarget{}, err
 	}
-	return index, nil
+	view, err := client.ResolveDataView(apiCtx(), dataViewID)
+	if err != nil {
+		return queryTarget{}, handleAPIError(err, jsonMode)
+	}
+	return queryTarget{
+		Index:             view.Title,
+		DataViewID:        view.ID,
+		DataViewTimeField: view.TimeFieldName,
+		Client:            client,
+	}, nil
+}
+
+func resolveQueryTimeField(cmd *cobra.Command, target queryTarget, fallback string) (string, error) {
+	explicit, _ := cmd.Flags().GetString("time-field")
+	if explicit = strings.TrimSpace(explicit); explicit != "" {
+		return explicit, nil
+	}
+	if target.DataViewID != "" {
+		if field := strings.TrimSpace(target.DataViewTimeField); field != "" {
+			return field, nil
+		}
+		return "", failValidation("data view " + target.DataViewID + " has no timeFieldName; pass --time-field explicitly")
+	}
+	return fallback, nil
+}
+
+type queryOutputMeta struct {
+	Context       string
+	ContextSource string
+	Host          string
+	Index         string
+	DataViewID    string
+	TimeField     string
+	From          string
+	To            string
+	QueryLanguage string
+}
+
+func loadQueryConnectionMeta() (context, source, host string, err error) {
+	cfg, loadErr := config.LoadConnectionMetaFor(contextName)
+	if loadErr != nil {
+		return "", "", "", failConfig(loadErr.Error())
+	}
+	return cfg.ContextName, queryContextSource(cfg.ContextName), strings.TrimRight(cfg.Host, "/"), nil
+}
+
+func queryContextSource(resolvedContext string) string {
+	if resolvedContext == "env" {
+		return "environment_auth"
+	}
+	if strings.TrimSpace(contextName) != "" {
+		return "flag"
+	}
+	if strings.TrimSpace(os.Getenv("KIBANA_CLI_CONTEXT")) != "" {
+		return "environment"
+	}
+	if resolvedContext != "" {
+		return "current"
+	}
+	return "none"
+}
+
+func addQueryOutputMeta(detail map[string]any, meta queryOutputMeta) {
+	detail["context"] = meta.Context
+	detail["contextSource"] = meta.ContextSource
+	detail["host"] = meta.Host
+	detail["index"] = meta.Index
+	detail["dataViewId"] = meta.DataViewID
+	detail["timeField"] = meta.TimeField
+	detail["from"] = meta.From
+	detail["to"] = meta.To
+	detail["queryLanguage"] = meta.QueryLanguage
+}
+
+func queryOutputSummary(meta queryOutputMeta) string {
+	return fmt.Sprintf(
+		"context=%s contextSource=%s host=%s index=%s dataViewId=%s timeField=%s from=%s to=%s queryLanguage=%s",
+		emptyLabel(meta.Context), emptyLabel(meta.ContextSource), emptyLabel(meta.Host),
+		emptyLabel(meta.Index), emptyLabel(meta.DataViewID), emptyLabel(meta.TimeField),
+		emptyLabel(meta.From), emptyLabel(meta.To), emptyLabel(meta.QueryLanguage),
+	)
+}
+
+func emptyLabel(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }

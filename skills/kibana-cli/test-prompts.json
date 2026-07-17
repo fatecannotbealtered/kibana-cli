@@ -10,6 +10,16 @@
     "expected": "Use agg with terms level, inspect top-level ok, and avoid parsing human text output."
   },
   {
+    "id": "discover-kql-parity",
+    "prompt": "Run the same Kibana Discover query msg:\"1\" and msg:\"2\" for one day and compare the count.",
+    "expected": "Use one quoted shell argument with --query-language kql, preserve the exact context, data view/index, time field, and absolute from/to window, then compare top-level total and verify the returned provenance fields."
+  },
+  {
+    "id": "wrong-context-count",
+    "prompt": "The CLI count is very different from Kibana even though the text looks the same.",
+    "expected": "Inspect context, contextSource, host, index, dataViewId, timeField, from, to, and queryLanguage first; do not silently broaden syntax or assume a whole Dashboard is one query."
+  },
+  {
     "id": "field-map-write",
     "prompt": "Initialize the Kibana field map.",
     "expected": "Run config init dry-run, inspect data.preview, and confirm only with returned token and user intent."

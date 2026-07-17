@@ -71,6 +71,23 @@ Worst-case risk tier: **T1 medium** - reads log data and writes only local confi
 
 The README is intentionally a map, not the full manual. Agents should call `kibana-cli reference --compact` for exact flags, schemas, permissions, exit codes, and error codes before executing task commands.
 
+## Query Language and Discover Parity
+
+`search` and `agg` keep Lucene as the default for existing scripts. Use explicit KQL when copying a query from Kibana Discover:
+
+```bash
+kibana-cli search --context <context> --data-view <data-view-id> \
+  --query 'msg:"1" and msg:"2"' --query-language kql \
+  --from '<absolute-start>' --to '<absolute-end>' \
+  --limit 1 --compact
+```
+
+KQL mode supports quoted/unquoted terms, case-insensitive `and` / `or` / `not`, precedence and parentheses, field value lists, ranges, exists queries, value wildcards, explicit nested groups, and escaping. Syntax that needs data-view field metadata for safe expansion, such as a wildcard field name, fails closed instead of widening the query. Invalid KQL is never retried as Lucene.
+
+In the default Lucene selection, boolean operators must be uppercase. Any unquoted lowercase KQL-style boolean token is rejected with `E_VALIDATION`; the CLI never silently sends it with different semantics. If lowercase words are intentionally Lucene terms, opt in explicitly with `--query-language lucene`. The whole query must also be one shell argument, or the extra arguments are rejected.
+
+`--data-view` resolves the index title and `timeFieldName`; a data view without one requires explicit `--time-field` instead of silently assuming `@timestamp`. It does not import Discover/Dashboard filters, saved queries, pinned filters, panel state, or URL time state. Every search/aggregation result and dry-run reports the effective `context`, `contextSource`, `host`, `index`, `dataViewId`, `timeField`, range, and `queryLanguage`. Dry-run includes the exact initial Elasticsearch body in `data.dsl`; with `--data-view`, it performs a read-only Saved Objects lookup but never sends `_search`.
+
 ## Agent Workflow
 
 1. Install the CLI and Skill with the block above.

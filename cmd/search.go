@@ -17,10 +17,11 @@ import (
 var searchCmd = &cobra.Command{
 	Use:   "search",
 	Short: "Search service logs via Kibana",
+	Args:  cobra.NoArgs,
 	Long: `Search logs through Kibana Console Proxy (_search).
 
 Use field-map.yaml (--profile / --service) when indices use different field names.
-Use --data-view with a Kibana data view id to resolve the index pattern title.
+Use --data-view with a Kibana data view id to resolve the index pattern title and time field.
 
 Examples:
   kibana-cli search --profile java-app --service order-svc --level ERROR --from now-30m
@@ -32,15 +33,16 @@ Examples:
 func init() {
 	rootCmd.AddCommand(searchCmd)
 	searchCmd.Flags().String("index", "", "Index or index pattern (overrides profile)")
-	searchCmd.Flags().String("data-view", "", "Kibana data view / index-pattern id (resolves to index title)")
+	searchCmd.Flags().String("data-view", "", "Kibana data view / index-pattern id (resolves index title + time field; does not import Discover/Dashboard filters)")
 	searchCmd.Flags().String("profile", "", "Profile name from field-map.yaml")
 	searchCmd.Flags().String("service", "", "Logical service name (maps to multiple fields)")
 	searchCmd.Flags().String("level", "", "Log level (maps across level_fields)")
 	searchCmd.Flags().String("trace-id", "", "Trace ID (uses trace_mode / trace_field from field-map or flags)")
 	searchCmd.Flags().String("trace-mode", "", "Override trace lookup: field|msg (for heterogeneous indices)")
 	searchCmd.Flags().StringArray("trace-field", nil, "Override trace id fields (repeatable, e.g. log_traceId)")
-	searchCmd.Flags().String("query", "", "Keyword/Lucene query; searches across ALL fields by default (use --precise to narrow to message)")
-	searchCmd.Flags().Bool("precise", false, "Restrict --query to message field(s) via match_phrase (opt-in; default searches all fields)")
+	searchCmd.Flags().String("query", "", "Query text interpreted by --query-language; Lucene searches all fields by default")
+	searchCmd.Flags().String("query-language", queryLanguageLucene, "Query language: lucene|kql (KQL is a strict fail-closed subset)")
+	searchCmd.Flags().Bool("precise", false, "Treat the whole Lucene --query as a literal phrase on message field(s); does not parse boolean expressions")
 	searchCmd.Flags().String("from", "now-15m", "Range start (date math, e.g. now-15m)")
 	searchCmd.Flags().String("to", "now", "Range end")
 	searchCmd.Flags().String("time-field", "", "Timestamp field (default from profile or @timestamp)")
@@ -57,7 +59,18 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		return failValidation("--fields is only supported with --format json")
 	}
 	if dsl, _ := cmd.Flags().GetString("dsl"); strings.TrimSpace(dsl) != "" {
+		if err := validateRawDSLQueryFlags(cmd); err != nil {
+			return err
+		}
 		return runSearchDSL(cmd, dsl)
+	}
+	queryLanguage, queryClause, err := compileFlagQuery(cmd)
+	if err != nil {
+		return err
+	}
+	context, contextSource, host, err := loadQueryConnectionMeta()
+	if err != nil {
+		return err
 	}
 	fm, err := loadFieldMapOrExit()
 	if err != nil {
@@ -68,11 +81,11 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	level, _ := cmd.Flags().GetString("level")
 	traceID, _ := cmd.Flags().GetString("trace-id")
 
-	var client *kibanaclient.Client
-	index, err := resolveSearchIndex(cmd, &client)
+	target, err := resolveQueryTarget(cmd)
 	if err != nil {
 		return err
 	}
+	index := target.Index
 	// Fall back to the active context's default index when the caller named
 	// neither an index nor a profile.
 	if strings.TrimSpace(index) == "" && strings.TrimSpace(profile) == "" {
@@ -88,9 +101,9 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	if err := config.ValidateIndexTarget(resolved.Index); err != nil {
 		return failValidation(err.Error())
 	}
-	timeField, _ := cmd.Flags().GetString("time-field")
-	if timeField != "" {
-		resolved.TimeField = timeField
+	resolved.TimeField, err = resolveQueryTimeField(cmd, target, resolved.TimeField)
+	if err != nil {
+		return err
 	}
 	if tm, _ := cmd.Flags().GetString("trace-mode"); strings.TrimSpace(tm) != "" {
 		resolved.TraceMode = fieldmap.NormalizeTraceMode(tm)
@@ -132,6 +145,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 	opts := kibanaclient.SearchOptions{
 		Index:         resolved.Index,
 		Query:         query,
+		QueryClause:   queryClause,
 		MsgOnly:       precise,
 		Fields:        fields,
 		From:          from,
@@ -151,16 +165,31 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		MessageFields: resolved.MessageFields,
 		SearchAfter:   searchAfter,
 	}
-	if dryRunOutput("search logs", map[string]any{
-		"index":        resolved.Index,
+	meta := queryOutputMeta{
+		Context:       context,
+		ContextSource: contextSource,
+		Host:          host,
+		Index:         resolved.Index,
+		DataViewID:    target.DataViewID,
+		TimeField:     resolved.TimeField,
+		From:          from,
+		To:            to,
+		QueryLanguage: queryLanguage,
+	}
+	searchBody := kibanaclient.BuildSearchBody(opts)
+	preview := map[string]any{
 		"profile":      resolved.Profile,
-		"query":        kibanaclient.BuildQuery(opts),
+		"query":        searchBody["query"],
+		"dsl":          searchBody,
 		"limit":        limit,
 		"offset":       offset,
 		"search_after": searchAfter,
-	}) {
+	}
+	addQueryOutputMeta(preview, meta)
+	if dryRunOutput("search logs", preview) {
 		return nil
 	}
+	client := target.Client
 	if client == nil {
 		client, _, err = newKibanaClient()
 		if err != nil {
@@ -191,6 +220,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 			"limit":   limit,
 			"offset":  offset,
 		}
+		addQueryOutputMeta(payload, meta)
 		usingCursor := len(searchAfter) > 0
 		hasMore := int64(offset+len(hits)) < result.Total
 		if usingCursor {
@@ -238,6 +268,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		if _, hint, _ := explainZeroHits(client, opts, precise); hint != "" {
 			output.AuxGray("  " + hint)
 		}
+		output.AuxGray("  " + queryOutputSummary(meta))
 		return nil
 	}
 	for _, h := range result.Hits {
@@ -255,6 +286,7 @@ func runSearch(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("%s  %-8s  %-16s  %s%s\n", ts, lvl, svc, traceHint, msg)
 	}
 	output.AuxGray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, resolved.Index, result.TookMs))
+	output.AuxGray("  " + queryOutputSummary(meta))
 	return nil
 }
 
@@ -266,23 +298,38 @@ func runSearchDSL(cmd *cobra.Command, dsl string) error {
 	if err := json.Unmarshal([]byte(dsl), &body); err != nil {
 		return failValidation("invalid --dsl JSON: " + err.Error())
 	}
-	var client *kibanaclient.Client
-	index, err := resolveSearchIndex(cmd, &client)
+	context, contextSource, host, err := loadQueryConnectionMeta()
 	if err != nil {
 		return err
 	}
+	target, err := resolveQueryTarget(cmd)
+	if err != nil {
+		return err
+	}
+	index := target.Index
 	index = strings.TrimSpace(index)
+	if index == "" {
+		index = "*"
+	}
 	if index != "" && index != "*" {
 		if err := config.ValidateIndexTarget(index); err != nil {
 			return failValidation(err.Error())
 		}
 	}
-	if dryRunOutput("search logs (raw dsl)", map[string]any{
-		"index": index,
-		"dsl":   body,
-	}) {
+	meta := queryOutputMeta{
+		Context:       context,
+		ContextSource: contextSource,
+		Host:          host,
+		Index:         index,
+		DataViewID:    target.DataViewID,
+		QueryLanguage: "dsl",
+	}
+	preview := map[string]any{"dsl": body}
+	addQueryOutputMeta(preview, meta)
+	if dryRunOutput("search logs (raw dsl)", preview) {
 		return nil
 	}
+	client := target.Client
 	if client == nil {
 		client, _, err = newKibanaClient()
 		if err != nil {
@@ -296,21 +343,22 @@ func runSearchDSL(cmd *cobra.Command, dsl string) error {
 	hits := output.FlattenSearchHits(result.Hits, getFieldsFlag(cmd), output.NormalizeSpec{})
 	if jsonMode {
 		payload := map[string]any{
-			"index":      index,
 			"tookMs":     result.TookMs,
 			"total":      result.Total,
 			"hits":       hits,
 			"count":      len(hits),
 			"_untrusted": []string{"hits"},
 		}
+		addQueryOutputMeta(payload, meta)
 		if result.TotalRelation != "" {
 			payload["totalRelation"] = result.TotalRelation
 		}
-		printJSONSuccess(projectTopLevelFields(payload, getFieldsFlag(cmd)))
+		printJSONSuccess(payload)
 		return nil
 	}
 	if len(result.Hits) == 0 {
 		output.Info("No hits.")
+		output.AuxGray("  " + queryOutputSummary(meta))
 		return nil
 	}
 	for _, h := range result.Hits {
@@ -325,6 +373,7 @@ func runSearchDSL(cmd *cobra.Command, dsl string) error {
 		indexLabel = "*"
 	}
 	output.AuxGray(fmt.Sprintf("  %d of %d hits on %s (took %dms)", len(result.Hits), result.Total, indexLabel, result.TookMs))
+	output.AuxGray("  " + queryOutputSummary(meta))
 	return nil
 }
 
@@ -355,30 +404,6 @@ func decodeSearchAfter(token string) ([]any, error) {
 		return nil, fmt.Errorf("invalid --search-after token: empty cursor")
 	}
 	return sort, nil
-}
-
-func resolveSearchIndex(cmd *cobra.Command, clientRef **kibanaclient.Client) (string, error) {
-	index, _ := cmd.Flags().GetString("index")
-	dataView, _ := cmd.Flags().GetString("data-view")
-	if strings.TrimSpace(dataView) == "" {
-		return index, nil
-	}
-	if dryRun {
-		if strings.TrimSpace(index) != "" {
-			output.AuxWarn("--data-view overrides --index")
-		}
-		return dataViewDryRunIndex(strings.TrimSpace(dataView)), nil
-	}
-	client, _, err := newKibanaClient()
-	if err != nil {
-		return "", err
-	}
-	*clientRef = client
-	resolved, err := resolveIndexFromFlags(cmd, client)
-	if err != nil {
-		return "", handleAPIError(err, jsonMode)
-	}
-	return resolved, nil
 }
 
 func mustStringArrayFlag(cmd *cobra.Command, name string) []string {
@@ -442,6 +467,7 @@ func explainZeroHits(client *kibanaclient.Client, opts kibanaclient.SearchOption
 	if q := strings.TrimSpace(opts.Query); q != "" {
 		broad := base
 		broad.Query = q // MsgOnly stays false: search all fields
+		broad.QueryClause = opts.QueryClause
 		if broadTotal, err := client.Count(apiCtx(), broad); err == nil {
 			probes["broadMatchTotal"] = broadTotal
 			if broadTotal > 0 {

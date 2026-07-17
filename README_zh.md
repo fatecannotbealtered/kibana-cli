@@ -71,6 +71,23 @@ PowerShell 使用 `$env:NAME = "value"` 设置同样的环境变量。真实密�
 
 README 只做地图，不做完整手册。Agent 在执行任务命令前，应调用 `kibana-cli reference --compact` 获取准确的 flags、schemas、权限、退出码和错误码。
 
+## 查询语言与 Discover 对齐
+
+`search` 和 `agg` 为兼容现有脚本，默认仍使用 Lucene。从 Kibana Discover 复制查询时应显式选择 KQL：
+
+```bash
+kibana-cli search --context <context> --data-view <data-view-id> \
+  --query 'msg:"1" and msg:"2"' --query-language kql \
+  --from '<absolute-start>' --to '<absolute-end>' \
+  --limit 1 --compact
+```
+
+KQL 模式支持带引号/不带引号的 term、不区分大小写的 `and` / `or` / `not`、优先级与括号、字段值列表、范围、exists、值通配符、显式 nested 分组与转义。需要 data view 字段元数据才能安全展开的语法（例如字段名通配符）会直接报错，不会放宽查询；非法 KQL 也绝不会回退成 Lucene。
+
+默认 Lucene 选择下，布尔操作符必须大写。任何引号外的小写 KQL 风格布尔 token 都会返回 `E_VALIDATION`，不会再按另一种语义静默发送。如果这些小写单词确实是 Lucene 普通 term，应显式传 `--query-language lucene`。整段查询还必须作为一个 shell 参数传入，否则多余参数会被拒绝。
+
+`--data-view` 只解析索引 title 与 `timeFieldName`；如果该 data view 没有时间字段，必须显式传 `--time-field`，不会静默假设 `@timestamp`。它不会导入 Discover/Dashboard 的 filters、saved query、pinned filters、panel 状态或 URL 时间状态。每次搜索/聚合及 dry-run 都会返回实际 `context`、`contextSource`、`host`、`index`、`dataViewId`、`timeField`、时间范围和 `queryLanguage`。dry-run 的 `data.dsl` 是真实首次 Elasticsearch 请求体；使用 `--data-view` 时会进行只读 Saved Objects 查询，但不会发送 `_search`。
+
 ## Agent 工作流
 
 1. 用上面的代码块安装 CLI 和 Skill。

@@ -78,3 +78,38 @@ func TestReference_AgentSpecFields(t *testing.T) {
 		t.Fatalf("reference missing security tier: %s", out)
 	}
 }
+
+func TestReference_QueryLanguageAndProvenanceContract(t *testing.T) {
+	data := referenceData("")
+	conventions := data["query_conventions"].(map[string]any)
+	for _, key := range []string{"query_language", "data_view", "dry_run"} {
+		if conventions[key] == nil {
+			t.Fatalf("query_conventions missing %s", key)
+		}
+	}
+	for _, schemaName := range []string{"search_result", "agg_result"} {
+		fields := referenceSchemas()[schemaName].Fields
+		joined := "," + strings.Join(fields, ",") + ","
+		for _, field := range []string{"context", "contextSource", "host", "index", "dataViewId", "timeField", "from", "to", "queryLanguage"} {
+			if !strings.Contains(joined, ","+field+",") {
+				t.Fatalf("%s missing %s", schemaName, field)
+			}
+		}
+	}
+	for schemaName, required := range map[string][]string{
+		"search_result": {"action", "dry_run", "dsl", "query", "search_after"},
+		"agg_result":    {"action", "dry_run", "dsl", "termsField", "interval"},
+	} {
+		joined := "," + strings.Join(referenceSchemas()[schemaName].Fields, ",") + ","
+		for _, field := range required {
+			if !strings.Contains(joined, ","+field+",") {
+				t.Fatalf("%s missing dry-run field %s", schemaName, field)
+			}
+		}
+	}
+	for _, command := range []*cobra.Command{searchCmd, aggCmd} {
+		if command.Flags().Lookup("query-language") == nil {
+			t.Fatalf("%s missing --query-language", command.CommandPath())
+		}
+	}
+}

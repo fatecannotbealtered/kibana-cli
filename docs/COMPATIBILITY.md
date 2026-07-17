@@ -44,8 +44,18 @@ Optional `KIBANA_CLI_KIBANA_VERSION` avoids an extra status round-trip.
 | `GET /api/saved_objects/_find?type=index-pattern` | `patterns list` |
 | `GET /api/saved_objects/index-pattern/{id}` | `search --data-view`, `agg --data-view` |
 
+## Query-language compatibility
+
+- Lucene remains the default for backward compatibility; its boolean operators must be uppercase.
+- `--query-language kql` compiles supported Kibana 7.10 KQL syntax locally to Elasticsearch DSL. There is no Kibana 7.7/7.10 server endpoint that converts KQL for the CLI.
+- Metadata-independent syntax is supported: field terms/phrases, case-insensitive booleans, grouping/lists, ranges, exists, value wildcards, explicit nested groups, and escaping.
+- Syntax that cannot be expanded safely without data-view field metadata, including wildcard field names other than the single all-fields `*`, fails closed with `E_VALIDATION`.
+- `--data-view` resolves `title` and `timeFieldName`; a view without a time field requires explicit `--time-field`. It does not reproduce Discover/Dashboard application state.
+
 ## Limitations
 
 - Requires Console Proxy enabled on your Kibana (standard on Kibana 7.x).
 - User needs index read privileges.
 - `agg` on `text` fields retries with `.keyword` when the backend returns 400.
+- Kibana Advanced Settings such as `query:allowLeadingWildcards` and custom date timezone settings are not imported. Value wildcards follow the CLI's documented behavior; use raw `--dsl` when exact deployment-specific settings are required.
+- `--trace-id` in field mode is intentionally recall-first: configured trace fields are ORed with a quoted all-fields fallback for heterogeneous indices. To reproduce a strict Discover field filter, use `--field traceId=<id>` (or the actual field name) instead.

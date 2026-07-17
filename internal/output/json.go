@@ -129,6 +129,10 @@ func ErrorCodeFromStatus(statusCode int) ErrorCode {
 		return ErrForbidden
 	case 404:
 		return ErrNotFound
+	case 408:
+		return ErrTimeout
+	case 409:
+		return ErrConflict
 	case 429:
 		return ErrRateLimit
 	default:
@@ -214,6 +218,10 @@ func ExitCodeForHTTP(statusCode int) int {
 		return 4
 	case statusCode == 404:
 		return 3
+	case statusCode == 408:
+		return 8
+	case statusCode == 409:
+		return 6
 	case statusCode == 429:
 		return 7
 	case statusCode >= 500:

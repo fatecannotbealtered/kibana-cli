@@ -45,6 +45,8 @@ func TestClassifySearchProbeError(t *testing.T) {
 		{name: "rate limit", statusCode: 429, wantCode: output.ErrRateLimit, wantExit: ExitRateLimit},
 		{name: "forbidden", statusCode: 403, wantCode: output.ErrForbidden, wantExit: ExitForbidden},
 		{name: "auth", statusCode: 401, wantCode: output.ErrAuth, wantExit: ExitAuth},
+		{name: "request timeout", statusCode: 408, wantCode: output.ErrTimeout, wantExit: ExitTimeout},
+		{name: "conflict", statusCode: 409, wantCode: output.ErrConflict, wantExit: ExitConflict},
 		{name: "server", statusCode: 502, wantCode: output.ErrServer, wantExit: ExitNetwork},
 		{name: "dial", detail: "dial tcp: connection refused", wantCode: output.ErrNetwork, wantExit: ExitNetwork},
 		{name: "context canceled", detail: "context canceled", wantCode: output.ErrNetwork, wantExit: ExitNetwork},

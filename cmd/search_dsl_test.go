@@ -57,6 +57,24 @@ func TestSearch_DSL_DryRun(t *testing.T) {
 	}
 }
 
+func TestSearch_DSL_FieldsKeepTopLevelResultAndProvenance(t *testing.T) {
+	srv := newMockKibanaServer()
+	defer srv.Close()
+	home := setupTestHome(t)
+	writeFieldMap(t, home, searchExtraFieldMap)
+	out, code := runCLIWithEnv(t, searchMockEnv(srv.URL), []string{
+		"search", "--index", "logs-*", "--dsl", `{"query":{"match_all":{}},"size":1}`,
+		"--fields", "_id", "--json",
+	})
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	data := envelopeData(t, out)
+	if data["total"] == nil || data["context"] != "env" || data["host"] != srv.URL || data["index"] != "logs-*" {
+		t.Fatalf("top-level result/provenance removed: %s", out)
+	}
+}
+
 func TestSearch_SearchAfter_Cursor(t *testing.T) {
 	srv := newMockKibanaServerWith(mockKibanaOptions{SearchTotalGte: true})
 	defer srv.Close()

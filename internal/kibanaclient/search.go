@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// Search runs a log search via Console Proxy.
-func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
+// BuildSearchBody returns the final Elasticsearch _search request body used by
+// Search, including defaults and pagination state.
+func BuildSearchBody(opts SearchOptions) map[string]any {
 	if opts.TimeField == "" {
 		opts.TimeField = "@timestamp"
 	}
@@ -37,6 +38,12 @@ func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult,
 	if usingCursor {
 		body["search_after"] = opts.SearchAfter
 	}
+	return body
+}
+
+// Search runs a log search via Console Proxy.
+func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
+	body := BuildSearchBody(opts)
 	path := strings.Trim(strings.TrimPrefix(opts.Index, "/"), "/") + "/_search"
 	data, err := c.Proxy(ctx, http.MethodPost, path, body)
 	if err != nil {
