@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- Raise the Go toolchain to 1.26.6 to clear four reachable Go standard-library
+  vulnerabilities reported by `govulncheck`: GO-2026-6218 (`net/url`),
+  GO-2026-6090 (`crypto/tls`), GO-2026-5972 (`encoding/asn1`), and
+  GO-2026-5026 (`net/http`).
+
+### Changed
+
+- **An unbracketed IPv6 host is now rejected.** `KIBANA_HOST=http://::1:5601`
+  used to be accepted because older Go versions parsed it leniently; the
+  GO-2026-6218 fix in `net/url` now reports `invalid port "::1:5601" after
+  host`, and `ValidateKibanaHost` surfaces that. Write the RFC 3986 form
+  instead: `http://[::1]:5601`. Bracketed IPv6, hostnames, and IPv4 are
+  unaffected.
+
 ## [1.1.16] - 2026-07-17
 
 ### Added
