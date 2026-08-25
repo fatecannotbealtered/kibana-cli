@@ -23,6 +23,14 @@ All notable changes to this project will be documented in this file.
   host`, and `ValidateKibanaHost` surfaces that. Write the RFC 3986 form
   instead: `http://[::1]:5601`. Bracketed IPv6, hostnames, and IPv4 are
   unaffected.
+  The rejection now also says what to write: the error carries a bracketed
+  suggestion built from the host you gave (`http://::1:5601` ->
+  `http://[::1]:5601`). Go's own message names the symptom, `invalid port
+  "::1:5601" after host`, but not the fix, and the address is usually pasted
+  from somewhere it is legitimately written bare — `ping ::1`, a container
+  inspect, a config field that holds an address rather than a URL — so the
+  missing brackets are not obvious. The suggestion is only offered after
+  confirming it parses, so it never trades one confusing error for another.
 - Sync the vendored spec to `ai-native-cli-spec@v1.6.0`. Besides the audit rule
   above, CLI-SPEC §14 now states the `update` final-state contract explicitly:
   the idempotent no-op check runs before any package-manager command, and both
