@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-08-26
+
 ### Security
 
 - Raise the Go toolchain to 1.26.6 to clear four reachable Go standard-library
