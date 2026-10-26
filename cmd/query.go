@@ -85,6 +85,9 @@ type logQuery struct {
 	defaulted map[string]bool
 	// client is the client --data-view was resolved with; nil until one is needed.
 	client *kibanaclient.Client
+	// dataViewTime is the --data-view data view's own time field ("" when it has
+	// none), whatever --time-field says.
+	dataViewTime string
 }
 
 // resolveLogQuery reads the query flags, the field map and the settings. It reads
@@ -132,6 +135,7 @@ func resolveLogQuery(app *aicli.App, cmd *cobra.Command, fallbackIndex string) (
 			return nil, readError(err)
 		}
 		q.client, q.DataView, index, viewTime = client, "index-pattern/"+view.ID, view.Title, strings.TrimSpace(view.TimeFieldName)
+		q.dataViewTime = viewTime
 	}
 	if index == "" && profile == "" {
 		def, _, e := app.Setting(nil, "default_index")

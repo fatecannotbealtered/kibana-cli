@@ -23,6 +23,9 @@ import (
 
 const logEvidence = "simulated:cmd/log_test.go"
 
+// discoverEvidence is the simulated evidence of --discover-url.
+const discoverEvidence = "simulated:cmd/discover_test.go"
+
 // The live runs of scripts/live-run.py every read command passed (VER-005): Kibana
 // 9.5.2 with a read-only account, on an index with the usual field names and on one
 // with the IoT names (log_level, log_app, msg).
@@ -98,7 +101,10 @@ func addLogSearch(app *aicli.App, parent *cobra.Command) {
 		scope := q.scope()
 		scope["limit"], scope["offset"] = limit, offset
 		explain(cmd, scope, opts.Index, kibanaclient.BuildSearchBody(opts))
+		// Before the page: a default page fits the budget with the link in scope.
+		untrusted := addDiscoverURL(app, cmd, client, q, searchLink(q, opts), scope)
 		page := hitsPage(app, cmd, res, view, limit, offset, scope)
+		page.Untrusted = untrusted
 		if res.Total == 0 && len(res.Hits) == 0 {
 			zeroHits(app, cmd.Context(), client, opts, q, scope)
 		}
@@ -110,17 +116,20 @@ func addLogSearch(app *aicli.App, parent *cobra.Command) {
 	c.Flags().StringSlice("source-fields", nil, "Source fields to add as source_fields, like http.status (a name keeps the fields under it)")
 	c.Flags().String("dsl", "", "A whole _search body as JSON; still a search on the index")
 	c.Flags().Bool("explain", false, "Add the request sent to scope.request")
+	discoverFlag(c)
 	parent.AddCommand(c)
 	app.Register(c, aicli.Meta{
 		Summary: "Search log documents by time range, service, level, trace id, text or exact field values, newest first",
 		Effects: []aicli.Effect{aicli.Observe}, Output: "log_hit_page", ErrorCodes: kibanaReadCodes,
-		Maturity: aicli.Verified, Evidence: []string{logEvidence, liveEvidenceSvc, liveEvidenceIoT},
+		// --discover-url (2.1) voids the live records until live-run.py runs again.
+		Maturity: aicli.Experimental, Evidence: []string{logEvidence, discoverEvidence},
 		Positional: "query", RenamedFlags: queryRenamedFlags(map[string]string{"size": "limit"}),
 		Params: withParams(queryParams(), map[string]aicli.ParamDoc{"dsl": {Type: "json"}, "limit": {Unit: "hits"}}),
 		Examples: []string{
 			"kibana-cli log search --index 'app-log-*' --level ERROR --since 1h",
 			"kibana-cli log search --index 'app-log-*' --trace-id 4bf92f3577b34da6a3ce929d0e0e4736 --since 1d",
 			"kibana-cli log search timeout --data-view index-pattern/17f4cc60 --service order-svc --since 30m --source-fields http.status",
+			"kibana-cli log search --index 'app-log-*' --level ERROR --since 1h --discover-url",
 		}})
 }
 
@@ -326,7 +335,16 @@ func runDSLSearch(app *aicli.App, cmd *cobra.Command, raw string) error {
 	if q.DataView != "" {
 		scope["data_view"] = q.DataView
 	}
+	// The body has no CLI time range: the link's time picker covers everything up to
+	// the search, and the body's query (match_all when it has none) is the filter.
+	query := body["query"]
+	if query == nil {
+		query = map[string]any{"match_all": map[string]any{}}
+	}
+	untrusted := addDiscoverURL(app, cmd, client, q, discoverRequest{query: query, since: dslLinkSince, until: isoTime(timeNow(app)),
+		label: []string{"--dsl query"}}, scope)
 	page := hitsPage(app, cmd, res, view, max(size, 1), 0, scope)
+	page.Untrusted = untrusted
 	// The body may page itself (from, search_after); only the first page's position
 	// is known here, so more hits are reported without a way to continue.
 	if page.HasMore {
@@ -492,10 +510,12 @@ func addLogAggregate(app *aicli.App, parent *cobra.Command) {
 		}
 		shardNotice(app, res.Shards, res.TimedOut, scope)
 		explain(cmd, scope, opts.Index, kibanaclient.BuildAggBody(opts))
+		page.Untrusted = addDiscoverURL(app, cmd, client, q, searchLink(q, opts.SearchOptions()), scope)
 		return app.List(cmd, page)
 	}}
 	queryFlags(c, "1h")
 	c.Flags().Bool("explain", false, "Add the first request sent to scope.request")
+	discoverFlag(c)
 	c.Flags().String("terms", "", "Field to count by; service and level use the field map's fields")
 	c.Flags().String("agg-type", kibanaclient.AggTypeTerms, "terms (per value) or date_histogram (per time bucket)")
 	c.Flags().String("interval", "1h", "Date histogram bucket: 30s, 5m, 1h, 1d")
@@ -511,12 +531,14 @@ func addLogAggregate(app *aicli.App, parent *cobra.Command) {
 	app.Register(c, aicli.Meta{
 		Summary: "Count log documents per value of a field (top services, error counts per level) or per time bucket, with an optional metric",
 		Effects: []aicli.Effect{aicli.Observe}, Output: "log_bucket_page", ErrorCodes: kibanaReadCodes,
-		Maturity: aicli.Verified, Evidence: []string{logEvidence, liveEvidenceSvc, liveEvidenceIoT},
+		// --discover-url (2.1) voids the live records until live-run.py runs again.
+		Maturity: aicli.Experimental, Evidence: []string{logEvidence, discoverEvidence},
 		Params: params, RenamedFlags: queryRenamedFlags(map[string]string{"buckets": "limit"}),
 		Examples: []string{
 			"kibana-cli log aggregate --index 'app-log-*' --terms service --level ERROR --since 1h",
 			"kibana-cli log aggregate --index 'app-log-*' --agg-type date_histogram --interval 5m --level ERROR --since 6h",
 			"kibana-cli log aggregate --index 'app-log-*' --terms service --metric avg --metric-field duration_ms --since 1h",
+			"kibana-cli log aggregate --index 'app-log-*' --terms service --level ERROR --since 1h --discover-url",
 		}})
 }
 
