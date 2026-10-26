@@ -5,61 +5,44 @@ import (
 	"testing"
 )
 
-func TestAllowedIndexPrefixesEmpty(t *testing.T) {
-	t.Setenv(envAllowedIndexPrefixes, "")
-	if got := AllowedIndexPrefixes(); got != nil {
-		t.Fatalf("got %v", got)
+func TestParseIndexPrefixes(t *testing.T) {
+	if got := ParseIndexPrefixes(""); got != nil {
+		t.Fatalf("empty: %v", got)
 	}
-}
-
-func TestAllowedIndexPrefixesParsing(t *testing.T) {
-	t.Setenv(envAllowedIndexPrefixes, " logs- , ,app- , ")
-	got := AllowedIndexPrefixes()
+	got := ParseIndexPrefixes(" logs- , ,app- , ")
 	if len(got) != 2 || got[0] != "logs-" || got[1] != "app-" {
 		t.Fatalf("got %v", got)
 	}
 }
 
-func TestValidateIndexTargetRequired(t *testing.T) {
-	if err := ValidateIndexTarget("  "); err == nil {
-		t.Fatal("expected error")
+func TestValidateIndexTargetRefusesUnsafeIndices(t *testing.T) {
+	for _, index := range []string{"  ", "_security", "-metrics", "logs/../secret", "logs/x", `logs\x`,
+		"logs?pretty", "logs#x", "logs x", "logs,", "a,,b", "logs..x", `"logs"`, "logs&a=b"} {
+		if err := ValidateIndexTarget(index, nil); err == nil {
+			t.Errorf("%q should be refused", index)
+		}
 	}
-}
-
-func TestValidateIndexTargetBlocksSystemIndices(t *testing.T) {
-	if err := ValidateIndexTarget("_security"); err == nil {
-		t.Fatal("expected error")
-	}
-	if err := ValidateIndexTarget("-metrics"); err == nil {
-		t.Fatal("expected error for dash prefix")
-	}
-}
-
-func TestValidateIndexTargetRejectsPathTraversal(t *testing.T) {
-	for _, index := range []string{"logs/../secret", "logs/x", `logs\x`} {
-		if err := ValidateIndexTarget(index); err == nil {
-			t.Fatalf("expected error for %q", index)
+	for _, index := range []string{"app-log-*", "logs-2026.10.23", "*", "a-*,b-*", "remote:logs-*", "logs+x"} {
+		if err := ValidateIndexTarget(index, nil); err != nil {
+			t.Errorf("%q: %v", index, err)
 		}
 	}
 }
 
-func TestValidateIndexTargetNoAllowlist(t *testing.T) {
-	t.Setenv(envAllowedIndexPrefixes, "")
-	if err := ValidateIndexTarget("any-index"); err != nil {
+func TestValidateIndexTargetAllowlistChecksEveryPart(t *testing.T) {
+	prefixes := []string{"logs-", "app-"}
+	if err := ValidateIndexTarget("logs-*", prefixes); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestValidateIndexTargetAllowlist(t *testing.T) {
-	t.Setenv(envAllowedIndexPrefixes, "logs-,app-")
-	if err := ValidateIndexTarget("metrics-*"); err == nil {
-		t.Fatal("expected allowlist error")
+	for _, index := range []string{"metrics-*", "*", "logs-*,metrics-*", ".ds-metrics-x-2026.10.25-000001"} {
+		err := ValidateIndexTarget(index, prefixes)
+		if err == nil || !strings.Contains(err.Error(), "allowed_index_prefixes") {
+			t.Errorf("%q: %v", index, err)
+		}
 	}
-	err := ValidateIndexTarget("metrics-*")
-	if err == nil || !strings.Contains(err.Error(), "KIBANA_CLI_ALLOWED_INDEX_PREFIXES") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if err := ValidateIndexTarget("logs-*"); err != nil {
-		t.Fatal(err)
+	// A data stream's backing index, as a hit's _index names it, is allowed when its
+	// stream is.
+	if err := ValidateIndexTarget(".ds-logs-app-default-2026.10.25-000001", prefixes); err != nil {
+		t.Fatalf("backing index: %v", err)
 	}
 }

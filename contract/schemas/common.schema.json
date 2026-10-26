@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:common:2.0",
+  "title": "common",
+  "description": "Shared definitions of the ai-native-cli-spec 2.0 machine contract (contract/contract.json). The other schemas reference these by URN; common itself describes no instance. Regular expressions are ECMA-262 compatible and anchored.",
+  "$defs": {
+    "text": {
+      "description": "A non-empty string.",
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "description": "A lowercase snake_case name: keys, field names, kinds, check names, schema names and enum values (CLI-007).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "field_path": {
+      "description": "A field name or dotted field path inside one output object; [] marks every element of an array (e.g. author.name, labels[]).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\\[\\])?(?:\\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\\[\\])?)*$"
+    },
+    "tool_name": {
+      "description": "The tool's kebab-case name as installed on PATH (e.g. gitlab-cli).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "flag_name": {
+      "description": "A parameter or flag name without the leading dashes, kebab-case (e.g. add-labels).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "command_path": {
+      "description": "A canonical command path: space-separated kebab-case words (e.g. \"mr update\", \"operation show\") (CLI-021).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?: [a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$"
+    },
+    "timestamp": {
+      "description": "ISO 8601 UTC with the Z suffix (CLI-007).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?Z$"
+    },
+    "timestamp_or_null": {
+      "description": "A timestamp, or null when there is none.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?Z$"
+    },
+    "date": {
+      "description": "A calendar date, YYYY-MM-DD.",
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$"
+    },
+    "semver": {
+      "description": "A strict semantic version (https://semver.org) without a leading v. Versions the tool reports are always in this form; a leading v is accepted only on input (CLI-070).",
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "spec_version": {
+      "description": "The ai-native-cli-spec version a tool follows: a 2.x.y semantic version (CLI-080).",
+      "$ref": "#/$defs/semver",
+      "pattern": "^2\\."
+    },
+    "schema_version": {
+      "description": "The envelope schema version (CLI-002, CLI-080).",
+      "const": "2.0"
+    },
+    "sha256_hex": {
+      "description": "A SHA-256 digest as 64 lowercase hex characters.",
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "operation_id": {
+      "description": "A single operation id: op_ plus 26 lowercase base32 characters (CLI-058).",
+      "type": "string",
+      "minLength": 29,
+      "maxLength": 29,
+      "pattern": "^op_[a-z2-7]{26}$"
+    },
+    "batch_id": {
+      "description": "A batch operation id: opb_ plus 26 lowercase base32 characters (CLI-058, CLI-063).",
+      "type": "string",
+      "minLength": 30,
+      "maxLength": 30,
+      "pattern": "^opb_[a-z2-7]{26}$"
+    },
+    "any_operation_id": {
+      "description": "A single or a batch operation id.",
+      "type": "string",
+      "minLength": 29,
+      "maxLength": 30,
+      "pattern": "^opb?_[a-z2-7]{26}$"
+    },
+    "confirm_token": {
+      "description": "A confirm token in its only accepted encoding: ct2_, the 26-character id part of the operation id, _, and 32 lowercase hex characters of the keyed MAC (CLI-055).",
+      "type": "string",
+      "minLength": 63,
+      "maxLength": 63,
+      "pattern": "^ct2_[a-z2-7]{26}_[0-9a-f]{32}$"
+    },
+    "confirm_token_or_null": {
+      "description": "A confirm token, or null when the preview cannot be applied (CLI-051).",
+      "type": ["string", "null"],
+      "minLength": 63,
+      "maxLength": 63,
+      "pattern": "^ct2_[a-z2-7]{26}_[0-9a-f]{32}$"
+    },
+    "error_code": {
+      "description": "An error code: E_ and upper-case snake case (CLI-010, CLI-018).",
+      "type": "string",
+      "pattern": "^E_[A-Z0-9][A-Z0-9_]*$"
+    },
+    "core_error_code": {
+      "description": "The core error codes of contract.json error_codes.core.",
+      "enum": [
+        "E_USAGE", "E_VALIDATION", "E_AMBIGUOUS", "E_UNSUPPORTED", "E_NOT_FOUND", "E_AUTH", "E_FORBIDDEN", "E_CONFIG",
+        "E_CONFIRMATION_REQUIRED", "E_CONFLICT", "E_OUTCOME_UNKNOWN", "E_NETWORK", "E_RATE_LIMITED", "E_SERVER", "E_TIMEOUT",
+        "E_HUMAN_REQUIRED", "E_PARTIAL", "E_VERIFY_FAILED", "E_VERIFY_INCOMPLETE", "E_INTEGRITY", "E_IO", "E_INTERRUPTED", "E_UNKNOWN"
+      ]
+    },
+    "retryable_core_code": {
+      "description": "Core codes whose retryable is true.",
+      "enum": ["E_NETWORK", "E_RATE_LIMITED", "E_SERVER", "E_TIMEOUT", "E_INTERRUPTED"]
+    },
+    "non_retryable_core_code": {
+      "description": "Core codes whose retryable is false.",
+      "enum": [
+        "E_USAGE", "E_VALIDATION", "E_AMBIGUOUS", "E_UNSUPPORTED", "E_NOT_FOUND", "E_AUTH", "E_FORBIDDEN", "E_CONFIG",
+        "E_CONFIRMATION_REQUIRED", "E_CONFLICT", "E_OUTCOME_UNKNOWN", "E_HUMAN_REQUIRED", "E_PARTIAL", "E_VERIFY_FAILED",
+        "E_VERIFY_INCOMPLETE", "E_INTEGRITY", "E_IO", "E_UNKNOWN"
+      ]
+    },
+    "error_exit": {
+      "description": "An exit code an error may use (contract.json exit_codes without 0).",
+      "enum": [1, 2, 3, 4, 5, 6, 7, 8, 9, 130]
+    },
+    "effect": {
+      "description": "A declared effect (CLI-025).",
+      "enum": ["observe", "change", "deliver", "configure", "artifact", "persist"]
+    },
+    "write_effect": {
+      "description": "An effect that makes a command a write (CLI-025).",
+      "enum": ["change", "deliver", "configure", "artifact", "persist"]
+    },
+    "effects": {
+      "description": "A non-empty set of effects.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/effect"}
+    },
+    "write_effects": {
+      "description": "The effects of a write: a set of effects with at least one effect other than observe (CLI-025, CLI-050).",
+      "$ref": "#/$defs/effects",
+      "contains": {"$ref": "#/$defs/write_effect"}
+    },
+    "risk_tier": {
+      "description": "SEC-001 risk tier.",
+      "enum": ["T0", "T1", "T2"]
+    },
+    "maturity": {
+      "description": "Command maturity (CLI-027, VER-005).",
+      "enum": ["draft", "experimental", "verified", "stable"]
+    },
+    "dispatch_state": {
+      "description": "Whether a state-changing request reached the upstream (CLI-011): reads, usage and validation rejections and everything before the gate's apply step are not_started (a read that gets a 404 is not_started); a write whose request reached the upstream is dispatched; unknown when the tool cannot tell.",
+      "enum": ["not_started", "dispatched", "unknown"]
+    },
+    "problem": {
+      "description": "Usage, validation and confirmation problems (CLI-012).",
+      "enum": [
+        "unknown_command", "unknown_flag", "unexpected_argument", "missing_parameter", "invalid_value",
+        "conflicting_flags", "unsupported_format", "input_too_large", "confirmation_required", "dangerous_flag_required"
+      ]
+    },
+    "conflict": {
+      "description": "E_CONFLICT subtypes (CLI-013). upstream_conflict is the upstream's refusal because of its current state (HTTP 409 or 412, CLI-016); state_drift is the gate's finding that the target changed since the dry run.",
+      "enum": [
+        "token_mismatch", "token_expired", "token_used", "state_drift", "scope_changed",
+        "unresolved_operation", "lock_held", "upstream_conflict", "idempotency_mismatch", "idempotency_resolved"
+      ]
+    },
+    "gate_conflict": {
+      "description": "The conflicts the gate finds itself, before anything is sent (CLI-013, CLI-057): their errors are always not_started.",
+      "enum": ["token_mismatch", "token_expired", "token_used", "state_drift", "scope_changed", "unresolved_operation", "lock_held", "idempotency_resolved"]
+    },
+    "human_action": {
+      "description": "What a person must do for E_HUMAN_REQUIRED (CLI-065).",
+      "enum": ["sign_in", "approve", "solve_challenge", "scan_qr", "install_component", "other"]
+    },
+    "duration_ms": {
+      "description": "Wall time of the call in whole milliseconds (CLI-004).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "http_status": {
+      "description": "An upstream HTTP status code (CLI-016).",
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "untrusted_path": {
+      "description": "A path in meta.untrusted (CLI-046): dot-separated keys from the envelope root, [] for every element of an array. Only data and error.details can carry external content.",
+      "type": "string",
+      "pattern": "^(?:data(?:\\[\\])*|error\\.details)(?:\\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\\[\\])*)*$"
+    },
+    "target": {
+      "description": "What a write acts on (CLI-051, CLI-059): the resource key (its ref, matched by scope selectors), and optionally its kind and a short label for people.",
+      "type": "object",
+      "properties": {
+        "key": {"$ref": "#/$defs/text"},
+        "kind": {"$ref": "#/$defs/name"},
+        "label": {"$ref": "#/$defs/text"}
+      },
+      "required": ["key"],
+      "additionalProperties": false
+    },
+    "change": {
+      "description": "One planned change in a preview: the field and its before/after values, or the values added and removed, or a note.",
+      "type": "object",
+      "properties": {
+        "field": {"$ref": "#/$defs/text"},
+        "before": true,
+        "after": true,
+        "add": true,
+        "remove": true,
+        "note": {"$ref": "#/$defs/text"}
+      },
+      "required": ["field"],
+      "additionalProperties": false
+    },
+    "block": {
+      "description": "Why a preview cannot be applied.",
+      "type": "object",
+      "properties": {
+        "kind": {"$ref": "#/$defs/name"},
+        "message": {"$ref": "#/$defs/text"}
+      },
+      "required": ["kind", "message"],
+      "additionalProperties": false
+    },
+    "candidate": {
+      "description": "One match of an ambiguous name (CLI-048).",
+      "type": "object",
+      "properties": {
+        "ref": {"$ref": "#/$defs/text"},
+        "label": {"$ref": "#/$defs/text"}
+      },
+      "required": ["ref", "label"],
+      "additionalProperties": false
+    },
+    "absent": {
+      "description": "Used under properties to forbid a key.",
+      "not": {}
+    },
+    "dangerous_rule": {
+      "description": "deliver and configure make a command dangerous (CLI-025). Apply to objects with effects and dangerous.",
+      "if": {
+        "required": ["effects"],
+        "properties": {"effects": {"type": "array", "contains": {"enum": ["deliver", "configure"]}}}
+      },
+      "then": {"properties": {"dangerous": {"const": true}}}
+    },
+    "command_type_rule": {
+      "description": "A command is type write exactly when it declares an effect other than observe (CLI-025). Apply to objects with type and effects.",
+      "if": {"required": ["type"], "properties": {"type": {"const": "write"}}},
+      "then": {"properties": {"effects": {"contains": {"$ref": "#/$defs/write_effect"}}}},
+      "else": {"properties": {"effects": {"items": {"const": "observe"}}}}
+    },
+    "core_retryable_rule": {
+      "description": "A core code carries the retryable value of contract.json error_codes.core (CLI-010). Apply to objects with code and retryable.",
+      "allOf": [
+        {
+          "if": {"required": ["code"], "properties": {"code": {"$ref": "#/$defs/retryable_core_code"}}},
+          "then": {"properties": {"retryable": {"const": true}}}
+        },
+        {
+          "if": {"required": ["code"], "properties": {"code": {"$ref": "#/$defs/non_retryable_core_code"}}},
+          "then": {"properties": {"retryable": {"const": false}}}
+        }
+      ]
+    },
+    "token_issue_rule": {
+      "description": "A confirm token and its expiry are issued exactly when the preview can be applied (CLI-051). Apply to dry-run data and confirmation-required details.",
+      "if": {
+        "required": ["preview"],
+        "properties": {"preview": {"required": ["can_apply"], "properties": {"can_apply": {"const": false}}}}
+      },
+      "then": {"properties": {"confirm_token": {"type": "null"}, "expires_at": {"type": "null"}}},
+      "else": {"properties": {"confirm_token": {"type": "string"}, "expires_at": {"type": "string"}}}
+    }
+  }
+}

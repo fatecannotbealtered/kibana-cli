@@ -1,0 +1,1703 @@
+{
+ "record": "live",
+ "schema": "VER-005 live record",
+ "tool": "kibana-cli",
+ "version": "1.1.18-0.20261025191458-94d020622478",
+ "commit": "94d020622478a9bebeb2f18575322e08d5233b54",
+ "branch": "migrate/spec-2.0",
+ "spec": {
+  "version": "2.0.1",
+  "validator": "scripts/live-run.py: contract/schemas/*.json (JSON Schema 2020-12 subset), CLI-007 names, size budgets and exit codes from contract/contract.json; plus template/python/aicli/validate.py of the spec checkout"
+ },
+ "upstream": {
+  "product": "Kibana",
+  "version": null,
+  "version_source": "unknown",
+  "url": "http://127.0.0.1:5609",
+  "data_views": 3,
+  "index": "svc-log-*",
+  "data_stream_hits": 0
+ },
+ "mode": "environment",
+ "ran_at": "2026-10-25T19:15:18Z",
+ "finished_at": "2026-10-25T19:15:23Z",
+ "isolation": {
+  "home": "HOME, USERPROFILE, APPDATA, LOCALAPPDATA, TEMP, TMP and XDG_* pointed into a fresh run folder; KIBANA_CLI_STATE_DIR inside it; deleted after the run",
+  "scope": "KIBANA_CLI_SCOPE_FILE named a file that does not exist, so no write could be granted",
+  "credentials": "environment mode: KIBANA_CLI_HOST, KIBANA_CLI_USER and KIBANA_CLI_PASSWORD from the environment; the OS keyring was not used; the password was scanned for in every output and never recorded",
+  "writes": "none: only read commands ran; the field map read by F02 and L11 was written by this script into the run folder"
+ },
+ "secret_scan": {
+  "secrets_checked": 1,
+  "hits": 0
+ },
+ "summary": {
+  "calls": 39,
+  "passed": 39,
+  "failed": [],
+  "envelopes_checked": 38,
+  "envelopes_valid": 38,
+  "tool_commands": 15,
+  "verified": 11,
+  "not_run": 4
+ },
+ "verified_commands": [
+  "auth status",
+  "field-map get",
+  "log aggregate",
+  "log get",
+  "log search",
+  "object get",
+  "object list",
+  "pattern fields",
+  "pattern infer",
+  "pattern list",
+  "profile list"
+ ],
+ "commands_failed": [],
+ "commands_not_run": [
+  "auth login",
+  "auth logout",
+  "field-map add-profile",
+  "field-map init"
+ ],
+ "doctor": {
+  "credentials": "pass",
+  "connectivity": "pass",
+  "state_store": "pass",
+  "authorization": "warn",
+  "settings": "pass",
+  "version": "warn",
+  "console_proxy": "pass",
+  "kibana_version": "pass"
+ },
+ "calls": [
+  {
+   "id": "B01",
+   "area": "builtins",
+   "command": "",
+   "argv": [
+    "kibana-cli",
+    "--version"
+   ],
+   "exit": 0,
+   "duration_ms": 125,
+   "expect": "prints the version",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "b004796aa486af07066a60a2e4408bf4a73e32e8bb9a27d25c644aa53e22bf07",
+   "stdout_chars": 184,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "schema_version",
+     "spec_version",
+     "tool",
+     "version"
+    ]
+   }
+  },
+  {
+   "id": "B02",
+   "area": "builtins",
+   "command": "context",
+   "argv": [
+    "kibana-cli",
+    "context"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "local state, no request",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "0d6b7aa23439170fdca36652c1844c2c4df973cdf471c803ac5c0ecfe6f0a3ee",
+   "stdout_chars": 908,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "account",
+     "allowed_index_prefixes",
+     "authorization",
+     "credentials",
+     "field_map",
+     "host",
+     "kibana_version",
+     "profile",
+     "spec_version",
+     "state",
+     "tool",
+     "version"
+    ]
+   }
+  },
+  {
+   "id": "B03",
+   "area": "builtins",
+   "command": "doctor",
+   "argv": [
+    "kibana-cli",
+    "doctor"
+   ],
+   "exit": 0,
+   "duration_ms": 1547,
+   "expect": "connectivity, credentials and console_proxy pass",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "5312b4a55fd19def4b1dd2092823596a706019621fb34a9f978aa99f2181c50d",
+   "stdout_chars": 1348,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "checks"
+    ]
+   }
+  },
+  {
+   "id": "B04",
+   "area": "builtins",
+   "command": "reference",
+   "argv": [
+    "kibana-cli",
+    "reference",
+    "--index"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "every command, within 8,000 characters",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "5ae6d8a411f326cfdb6d24a052bdd93ddcf077747ed0e02dcc5273c901f524b6",
+   "stdout_chars": 4959,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "commands",
+     "tool",
+     "version"
+    ]
+   }
+  },
+  {
+   "id": "B05",
+   "area": "builtins",
+   "command": "reference",
+   "argv": [
+    "kibana-cli",
+    "reference",
+    "--command",
+    "log search"
+   ],
+   "exit": 0,
+   "duration_ms": 77,
+   "expect": "one command, within 6,000 characters",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "ccfacecc651adc544a8cd4b2efaa0b7f830b6ce7a94ec9f76782aed03cc4dc1c",
+   "stdout_chars": 5266,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "command",
+     "error_codes",
+     "schemas",
+     "tool",
+     "version"
+    ]
+   }
+  },
+  {
+   "id": "B06",
+   "area": "builtins",
+   "command": "changelog",
+   "argv": [
+    "kibana-cli",
+    "changelog",
+    "--since",
+    "1.1.17"
+   ],
+   "exit": 0,
+   "duration_ms": 79,
+   "expect": "the 2.0 entries",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "e4046669bf4efadd07b8b3ffa87f83a531bef0d2920097133d9b668d314d9650",
+   "stdout_chars": 6404,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "current_version",
+     "entries",
+     "since"
+    ],
+    "count": 1
+   }
+  },
+  {
+   "id": "B07",
+   "area": "builtins",
+   "command": "operation list",
+   "argv": [
+    "kibana-cli",
+    "operation",
+    "list"
+   ],
+   "exit": 0,
+   "duration_ms": 77,
+   "expect": "no operations (nothing was written)",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "3845bbd8c5026fa5f8b9c626cbd7ebba607f6d9dcf9089f9ac6e3e5f0aa434bc",
+   "stdout_chars": 419,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "created_at_desc",
+    "scope_keys": [
+     "batch_items",
+     "journal",
+     "state"
+    ]
+   }
+  },
+  {
+   "id": "A01",
+   "area": "auth",
+   "command": "auth status",
+   "argv": [
+    "kibana-cli",
+    "auth",
+    "status"
+   ],
+   "exit": 0,
+   "duration_ms": 125,
+   "expect": "the account, its roles and the Kibana version source",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "53f1ca09e3886020a0bc671b3f37d49cbc6afbffef28732d916ae493c62da395",
+   "stdout_chars": 296,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "account",
+     "credentials_source",
+     "host",
+     "kibana_version",
+     "kibana_version_source",
+     "profile",
+     "roles",
+     "user"
+    ],
+    "untrusted": [
+     "data.account",
+     "data.roles"
+    ]
+   }
+  },
+  {
+   "id": "A02",
+   "area": "profile",
+   "command": "profile list",
+   "argv": [
+    "kibana-cli",
+    "profile",
+    "list"
+   ],
+   "exit": 0,
+   "duration_ms": 77,
+   "expect": "the profiles of the scratch settings.json, no secret",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "119fece2de5bdf5c65bed3fc491f24af25ba0274fd1b574aa60163ebaae77932",
+   "stdout_chars": 266,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "file_order",
+    "scope_keys": [
+     "settings_file"
+    ]
+   }
+  },
+  {
+   "id": "P01",
+   "area": "pattern",
+   "command": "pattern list",
+   "argv": [
+    "kibana-cli",
+    "pattern",
+    "list",
+    "--limit",
+    "100"
+   ],
+   "exit": 0,
+   "duration_ms": 94,
+   "expect": "every data view with its ref",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "7727fe0e7f6b1b05b65f523a30d08d18dbead7945f8724065c9a7fc7f216fce1",
+   "stdout_chars": 665,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 3,
+    "total": 3,
+    "has_more": false,
+    "sort": "title_asc",
+    "scope_keys": [
+     "limit",
+     "offset"
+    ],
+    "untrusted": [
+     "data.items[].name",
+     "data.items[].title"
+    ]
+   }
+  },
+  {
+   "id": "P02",
+   "area": "pattern",
+   "command": "pattern fields",
+   "argv": [
+    "kibana-cli",
+    "pattern",
+    "fields",
+    "--index",
+    "svc-log-*",
+    "--limit",
+    "200"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "the fields of the index",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "a3cfae914e650369687cf49b8c5df7f7ed53f474632d40df04b3b71a9c1604b4",
+   "stdout_chars": 1486,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 13,
+    "total": 13,
+    "has_more": false,
+    "sort": "name_asc",
+    "scope_keys": [
+     "index",
+     "limit",
+     "offset"
+    ],
+    "untrusted": [
+     "data.items[].es_types",
+     "data.items[].name"
+    ]
+   }
+  },
+  {
+   "id": "P03",
+   "area": "pattern",
+   "command": "pattern fields",
+   "argv": [
+    "kibana-cli",
+    "pattern",
+    "fields",
+    "--data-view",
+    "index-pattern/fa7b8885-f802-4c12-aec8-3c80ced57064",
+    "--limit",
+    "50"
+   ],
+   "exit": 0,
+   "duration_ms": 108,
+   "expect": "the fields of a data view, by its ref",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "c3b3c7118733bb333abfd8d64e4755f2d971b0b236b01d54dd937bb02d3af9b7",
+   "stdout_chars": 1550,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 13,
+    "total": 13,
+    "has_more": false,
+    "sort": "name_asc",
+    "scope_keys": [
+     "data_view",
+     "index",
+     "limit",
+     "offset"
+    ],
+    "untrusted": [
+     "data.items[].es_types",
+     "data.items[].name"
+    ]
+   }
+  },
+  {
+   "id": "O01",
+   "area": "object",
+   "command": "object get",
+   "argv": [
+    "kibana-cli",
+    "object",
+    "get",
+    "index-pattern/fa7b8885-f802-4c12-aec8-3c80ced57064"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "the data view as a saved object",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "51b524e040afaa239c0ef5c23fc803c363918f7d6bd90695ce14356ffe83bc74",
+   "stdout_chars": 317,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "id",
+     "ref",
+     "references",
+     "title",
+     "type",
+     "updated_at"
+    ],
+    "untrusted": [
+     "data.references",
+     "data.title"
+    ]
+   }
+  },
+  {
+   "id": "P04",
+   "area": "pattern",
+   "command": "pattern infer",
+   "argv": [
+    "kibana-cli",
+    "pattern",
+    "infer",
+    "--index",
+    "svc-log-*",
+    "--name",
+    "live"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "a field-map profile and its add-profile line",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "48fff38390c9d920f3f5229d4fa938ba854ef93e8452ea29e5bc75358c48d352",
+   "stdout_chars": 789,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "index",
+     "next_command",
+     "notes",
+     "profile",
+     "profile_name",
+     "yaml"
+    ]
+   }
+  },
+  {
+   "id": "F01",
+   "area": "field-map",
+   "command": "field-map get",
+   "argv": [
+    "kibana-cli",
+    "field-map",
+    "get"
+   ],
+   "exit": 3,
+   "duration_ms": 79,
+   "expect": "no field map yet",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "7c44a20d020c312d5d548e9e2593059b105cb02fa517d5de3fad04a677ef2314",
+   "stdout_chars": 450,
+   "summary": {
+    "ok": false,
+    "code": "E_NOT_FOUND",
+    "dispatch_state": "not_started"
+   }
+  },
+  {
+   "id": "F02",
+   "area": "field-map",
+   "command": "field-map get",
+   "argv": [
+    "kibana-cli",
+    "field-map",
+    "get"
+   ],
+   "exit": 0,
+   "duration_ms": 77,
+   "expect": "the inferred profile",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "0cd6361170d97aa5977a5db75aa815094b9fd47f426a75c70ebe48efc80113bf",
+   "stdout_chars": 431,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "defaults",
+     "index_rules",
+     "path",
+     "profiles",
+     "services",
+     "version"
+    ]
+   }
+  },
+  {
+   "id": "L01",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--limit",
+    "5"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "the newest hits with refs, total and scope",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "d176d72b9b8483bb43ed455d2b1586190d7c77eced55b3bdf4617404e76dd242",
+   "stdout_chars": 1397,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 5,
+    "total": 300,
+    "has_more": true,
+    "next_offset": 5,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L02",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--limit",
+    "2",
+    "--offset",
+    "2"
+   ],
+   "exit": 0,
+   "duration_ms": 93,
+   "expect": "the second page",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "dc72d72ae43cdd8aa269fb668f5dfc81fb16c07fa67ac2180ccc4bed090f3346",
+   "stdout_chars": 813,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 2,
+    "total": 300,
+    "has_more": true,
+    "next_offset": 4,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L03",
+   "area": "log",
+   "command": "log get",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "get",
+    "svc-log-2026.10.25/qtESdKEBHZKB2sunzXmP"
+   ],
+   "exit": 0,
+   "duration_ms": 94,
+   "expect": "the whole document",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "c0cb16d1e07b67521fe89b3789891bac77c3ff548ad33223ce46a963ecd32684",
+   "stdout_chars": 644,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "id",
+     "index",
+     "level",
+     "message",
+     "ref",
+     "service",
+     "source",
+     "timestamp",
+     "trace_id"
+    ],
+    "untrusted": [
+     "data.level",
+     "data.message",
+     "data.service",
+     "data.source",
+     "data.trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L04",
+   "area": "log",
+   "command": "log get",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "get",
+    "svc-log-2026.10.25/qtESdKEBHZKB2sunzXmP",
+    "--format",
+    "raw"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "Kibana's JSON unchanged",
+   "envelope_valid": null,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "b98001890d6d805eb9b4b35d7356d6aad4bce9b965c50a3e14a80fca7a1f8c23",
+   "stdout_chars": 216,
+   "summary": {}
+  },
+  {
+   "id": "E01",
+   "area": "errors",
+   "command": "log get",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "get",
+    "svc-log-2026.10.25/kibana-cli-live-run-no-such-id"
+   ],
+   "exit": 3,
+   "duration_ms": 109,
+   "expect": "a missing document",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "55a1e5e887460bcf52ea40296502e3eb1c93c3b3e1ee95d36bbe19a635072612",
+   "stdout_chars": 368,
+   "summary": {
+    "ok": false,
+    "code": "E_NOT_FOUND",
+    "dispatch_state": "not_started"
+   }
+  },
+  {
+   "id": "L05",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--level",
+    "ERROR",
+    "--limit",
+    "1"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "the error count in total",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "ca970448d2baad3aa3aa69d0cc584d2f7e964e163ed18e5ba899453aa74d8020",
+   "stdout_chars": 633,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 1,
+    "total": 57,
+    "has_more": true,
+    "next_offset": 1,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "level",
+     "limit",
+     "offset",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L06",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--query",
+    "error",
+    "--limit",
+    "1"
+   ],
+   "exit": 0,
+   "duration_ms": 94,
+   "expect": "a Lucene query",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "875422fe159b7317aa098736306616bd10bd494010887b9c6ea9644effb12c00",
+   "stdout_chars": 659,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 1,
+    "total": 57,
+    "has_more": true,
+    "next_offset": 1,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "query",
+     "query_language",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L07",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--query-language",
+    "kql",
+    "--query",
+    "not kibana_cli_live_run_field:x",
+    "--limit",
+    "1"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "a KQL query",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "8e7c978cde8f7c9aecad196a814af0650f25a6ec148800bb2acdf881138e3f94",
+   "stdout_chars": 683,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 1,
+    "total": 300,
+    "has_more": true,
+    "next_offset": 1,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "query",
+     "query_language",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L08",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--limit",
+    "1",
+    "--explain"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "the request in scope.request",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "21f4f707b626ff1d9bf0ef9a2294a819fd514658788781be14c87f717278e2bf",
+   "stdout_chars": 974,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 1,
+    "total": 300,
+    "has_more": true,
+    "next_offset": 1,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "request",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L09",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--dsl",
+    "{\"query\":{\"match_all\":{}},\"size\":1}"
+   ],
+   "exit": 0,
+   "duration_ms": 94,
+   "expect": "a whole _search body",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "86b2b33fedac1a8c329b202e47fa642912800b01d1c6a872b89652dd173494a3",
+   "stdout_chars": 690,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "continuation_reason",
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 1,
+    "total": 300,
+    "has_more": true,
+    "sort": "upstream",
+    "scope_keys": [
+     "index",
+     "order",
+     "query_language",
+     "time_field"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L10",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--query",
+    "kibana_cli_live_run_no_such_token_7f3a",
+    "--limit",
+    "1"
+   ],
+   "exit": 0,
+   "duration_ms": 140,
+   "expect": "zero hits, explained",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "65d58d5d3fed1f233e88b6911b7108280edca9b7107d2771d75d4db8d1b4183e",
+   "stdout_chars": 633,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "query",
+     "query_language",
+     "since",
+     "time_field",
+     "until",
+     "zero_hits"
+    ],
+    "zero_hits_reason": "filters_excluded_all",
+    "notices": [
+     "zero_hits"
+    ]
+   }
+  },
+  {
+   "id": "L11",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--field-profile",
+    "live",
+    "--limit",
+    "1"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "the inferred field profile",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "2a51d96fd3ded5e8782ccbd1620b9a8da460389715f43f4ef9d176561e525318",
+   "stdout_chars": 618,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "next_offset",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 1,
+    "total": 300,
+    "has_more": true,
+    "next_offset": 1,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L12",
+   "area": "log",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--trace-id",
+    "trace1000"
+   ],
+   "exit": 0,
+   "duration_ms": 94,
+   "expect": "the hits of one trace",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "c83d6cfdfcec392a1dcacbc20d77a2c523577d74ec06282076a84533b98ee723",
+   "stdout_chars": 2206,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 9,
+    "total": 9,
+    "has_more": false,
+    "sort": "timestamp_desc",
+    "scope_keys": [
+     "field_profile",
+     "index",
+     "limit",
+     "offset",
+     "since",
+     "time_field",
+     "trace_id",
+     "trace_mode",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].level",
+     "data.items[].message",
+     "data.items[].service",
+     "data.items[].trace_id"
+    ]
+   }
+  },
+  {
+   "id": "L13",
+   "area": "log",
+   "command": "log aggregate",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "aggregate",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--terms",
+    "level",
+    "--field-profile",
+    "live"
+   ],
+   "exit": 0,
+   "duration_ms": 125,
+   "expect": "counts per level",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "9ba12f797f429b62909280d2a7ac60360bba28e11e7fac58ccadb63493acb947",
+   "stdout_chars": 489,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 3,
+    "total": 3,
+    "has_more": false,
+    "sort": "count_desc",
+    "scope_keys": [
+     "agg_type",
+     "field",
+     "field_profile",
+     "index",
+     "limit",
+     "matched_documents",
+     "other_documents",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].key"
+    ]
+   }
+  },
+  {
+   "id": "L14",
+   "area": "log",
+   "command": "log aggregate",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "aggregate",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--terms",
+    "service",
+    "--limit",
+    "5",
+    "--field-profile",
+    "live"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "the top services",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "bcb62ed609cf71b35446cd230f9a03e0869698f72a61c5e4e19c6f50544f5419",
+   "stdout_chars": 503,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 3,
+    "total": 3,
+    "has_more": false,
+    "sort": "count_desc",
+    "scope_keys": [
+     "agg_type",
+     "field",
+     "field_profile",
+     "index",
+     "limit",
+     "matched_documents",
+     "other_documents",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].key"
+    ]
+   }
+  },
+  {
+   "id": "L15",
+   "area": "log",
+   "command": "log aggregate",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "aggregate",
+    "--index",
+    "svc-log-*",
+    "--since",
+    "7d",
+    "--agg-type",
+    "date_histogram",
+    "--interval",
+    "6h"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "counts per time bucket",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "88a2bfc5988cf9a23abb329ddedec0622f967bbd5c478c7b634e2bd6b3bfd29c",
+   "stdout_chars": 1687,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 29,
+    "total": 29,
+    "has_more": false,
+    "sort": "key_asc",
+    "scope_keys": [
+     "agg_type",
+     "field_profile",
+     "index",
+     "interval",
+     "matched_documents",
+     "since",
+     "time_field",
+     "until"
+    ],
+    "untrusted": [
+     "data.items[].key"
+    ]
+   }
+  },
+  {
+   "id": "O10",
+   "area": "object",
+   "command": "object list",
+   "argv": [
+    "kibana-cli",
+    "object",
+    "list",
+    "--type",
+    "dashboard",
+    "--limit",
+    "5"
+   ],
+   "exit": 0,
+   "duration_ms": 108,
+   "expect": "dashboard objects",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "0ae499faef17b165cd965f84832ec0310695d52e16f6f6dd60729441e4fb70f7",
+   "stdout_chars": 251,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "upstream",
+    "scope_keys": [
+     "limit",
+     "offset",
+     "order",
+     "type"
+    ]
+   }
+  },
+  {
+   "id": "O11",
+   "area": "object",
+   "command": "object list",
+   "argv": [
+    "kibana-cli",
+    "object",
+    "list",
+    "--type",
+    "visualization",
+    "--limit",
+    "5"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "visualization objects",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "9ecc29ad864504605c1e79abdeb6ebf314acb85b0c45fc65dccb8c29ff4d5597",
+   "stdout_chars": 255,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "upstream",
+    "scope_keys": [
+     "limit",
+     "offset",
+     "order",
+     "type"
+    ]
+   }
+  },
+  {
+   "id": "O12",
+   "area": "object",
+   "command": "object list",
+   "argv": [
+    "kibana-cli",
+    "object",
+    "list",
+    "--type",
+    "lens",
+    "--limit",
+    "5"
+   ],
+   "exit": 0,
+   "duration_ms": 92,
+   "expect": "lens objects",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "026ee844920655ce07f1ad655690c099018540b1167ec88a1e4ecb9551146b71",
+   "stdout_chars": 246,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "upstream",
+    "scope_keys": [
+     "limit",
+     "offset",
+     "order",
+     "type"
+    ]
+   }
+  },
+  {
+   "id": "O13",
+   "area": "object",
+   "command": "object list",
+   "argv": [
+    "kibana-cli",
+    "object",
+    "list",
+    "--type",
+    "search",
+    "--limit",
+    "5"
+   ],
+   "exit": 0,
+   "duration_ms": 93,
+   "expect": "search objects",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "17bedf4b57a597741fb0f1562be7e3fc2bf270b54930e12fe7bea746875ff5f6",
+   "stdout_chars": 248,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 0,
+    "total": 0,
+    "has_more": false,
+    "sort": "upstream",
+    "scope_keys": [
+     "limit",
+     "offset",
+     "order",
+     "type"
+    ]
+   }
+  },
+  {
+   "id": "O14",
+   "area": "object",
+   "command": "object list",
+   "argv": [
+    "kibana-cli",
+    "object",
+    "list",
+    "--type",
+    "index-pattern",
+    "--limit",
+    "5"
+   ],
+   "exit": 0,
+   "duration_ms": 109,
+   "expect": "index-pattern objects",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "f7fa2422f3f02a45d03c4253b4b0b54f239f12a310a3274f759e97e7d7934203",
+   "stdout_chars": 664,
+   "summary": {
+    "ok": true,
+    "data_keys": [
+     "count",
+     "has_more",
+     "items",
+     "scope",
+     "sort",
+     "total"
+    ],
+    "count": 3,
+    "total": 3,
+    "has_more": false,
+    "sort": "upstream",
+    "scope_keys": [
+     "limit",
+     "offset",
+     "order",
+     "type"
+    ],
+    "untrusted": [
+     "data.items[].title"
+    ]
+   }
+  },
+  {
+   "id": "E02",
+   "area": "errors",
+   "command": "log search",
+   "argv": [
+    "kibana-cli",
+    "log",
+    "search",
+    "--index",
+    "_kibana_cli_live_system"
+   ],
+   "exit": 2,
+   "duration_ms": 78,
+   "expect": "a system index is refused",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "32579f7438945b56f562660cca323b8669f51f32289640ef0efd20673b59f769",
+   "stdout_chars": 500,
+   "summary": {
+    "ok": false,
+    "code": "E_VALIDATION",
+    "dispatch_state": "not_started"
+   }
+  },
+  {
+   "id": "E03",
+   "area": "errors",
+   "command": "pattern fields",
+   "argv": [
+    "kibana-cli",
+    "pattern",
+    "fields",
+    "--index",
+    "kibana-cli-live-run-no-such-*"
+   ],
+   "exit": 3,
+   "duration_ms": 108,
+   "expect": "a pattern with no index",
+   "envelope_valid": true,
+   "pass": true,
+   "problems": [],
+   "stdout_sha256": "0aa4a65cbf253a0b99fd1c7f3ac747bcb957515e972ec8d24747b7735571a802",
+   "stdout_chars": 423,
+   "summary": {
+    "ok": false,
+    "code": "E_NOT_FOUND",
+    "dispatch_state": "not_started"
+   }
+  }
+ ]
+}

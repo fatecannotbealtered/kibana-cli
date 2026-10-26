@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:reference-index:2.0",
+  "title": "reference-index",
+  "description": "The data of reference --index (CLI-031): one compact entry per command, or, when that would exceed 8000 characters, one entry per group (reference --index <group> then returns that group's commands). check-contract.py checks the size budget and unique paths.",
+  "type": "object",
+  "properties": {
+    "tool": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/tool_name"},
+    "version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/command"}
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/group"}
+    }
+  },
+  "required": ["tool", "version"],
+  "additionalProperties": false,
+  "if": {"required": ["groups"]},
+  "then": {"properties": {"commands": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}}},
+  "else": {"required": ["commands"]},
+  "$defs": {
+    "command": {
+      "description": "One command: exactly path, type, effects, dangerous, maturity, summary.",
+      "type": "object",
+      "properties": {
+        "path": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"},
+        "type": {"enum": ["read", "write"]},
+        "effects": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/effects"},
+        "dangerous": {"type": "boolean"},
+        "maturity": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/maturity"},
+        "summary": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+      },
+      "required": ["path", "type", "effects", "dangerous", "maturity", "summary"],
+      "additionalProperties": false,
+      "allOf": [
+        {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_type_rule"},
+        {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/dangerous_rule"}
+      ]
+    },
+    "group": {
+      "description": "One group: exactly path, summary, command_count.",
+      "type": "object",
+      "properties": {
+        "path": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"},
+        "summary": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "command_count": {"type": "integer", "minimum": 1}
+      },
+      "required": ["path", "summary", "command_count"],
+      "additionalProperties": false
+    }
+  }
+}

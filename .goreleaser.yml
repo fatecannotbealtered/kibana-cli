@@ -35,9 +35,11 @@ archives:
           - zip
     name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     wrap_in_directory: false
-    # Ship CLI binary only — skills install via npx.
+    # Every channel carries the Skills of its own version (REPO-043, SKL-009):
+    # the archive ships skills/ beside the binary, and the binary update path
+    # syncs the Skills from there.
     files:
-      - none*
+      - skills/**/*
 
 checksum:
   name_template: checksums.txt
@@ -56,3 +58,7 @@ signs:
 release:
   # Idempotent re-tagging: overwrite artifacts if the release already exists.
   replace_existing_artifacts: true
+  # A semver prerelease tag (v2.1.0-rc.1) is published as a GitHub prerelease, so
+  # it is never the latest release; `update` installs one only with
+  # --target-version (CLI-070).
+  prerelease: auto

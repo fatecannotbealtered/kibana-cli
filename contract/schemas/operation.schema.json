@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:operation:2.0",
+  "title": "operation",
+  "description": "One operation record as operation show returns it (CLI-058, CLI-060, CLI-061): every key of contract.json operation.record_keys, null where it does not apply, and items_omitted when a large batch lists only some of its items (operation.shortening). status is the effective status (planned past expires_at reads expired; dispatching past its lease reads unknown). A single record (op_) has a target and, once finished, a receipt; a batch record (opb_) has items instead (null only when the batch record cannot be read; an item whose own record cannot be read has a null target and status unknown). check-contract.py checks the status against the receipt, the ids against each other, the time order and the token lifetime.",
+  "type": "object",
+  "properties": {
+    "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/any_operation_id"},
+    "command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"},
+    "status": {"$ref": "#/$defs/status"},
+    "target": {
+      "if": {"type": "null"},
+      "else": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/target"}
+    },
+    "effects": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/write_effects"},
+    "scope_id": {"type": ["string", "null"], "minLength": 1},
+    "created_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp"},
+    "expires_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"},
+    "dispatched_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"},
+    "finished_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"},
+    "preview": {
+      "if": {"type": "null"},
+      "else": {"$ref": "urn:ai-native-cli-spec:preview:2.0"}
+    },
+    "receipt": {
+      "if": {"type": "null"},
+      "else": {"$ref": "urn:ai-native-cli-spec:receipt:2.0"}
+    },
+    "resolution": {
+      "if": {"type": "null"},
+      "else": {"$ref": "#/$defs/resolution"}
+    },
+    "batch_id": {
+      "if": {"type": "null"},
+      "else": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/batch_id"}
+    },
+    "items": {
+      "if": {"type": "null"},
+      "else": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/item"}}
+    },
+    "items_omitted": {
+      "description": "The number of batch items left out of items to keep the success budget (contract.json operation.shortening); operation list --batch pages through every item. Absent when every item is listed.",
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "operation_id", "command", "status", "target", "effects", "scope_id", "created_at", "expires_at",
+    "dispatched_at", "finished_at", "preview", "receipt", "resolution", "batch_id", "items"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "A batch record (opb_) lists its items and has no single target or receipt; a single record (op_) has no items.",
+      "if": {"required": ["operation_id"], "properties": {"operation_id": {"pattern": "^opb_"}}},
+      "then": {
+        "properties": {
+          "items": {"type": ["array", "null"]},
+          "target": {"type": "null"},
+          "receipt": {"type": "null"},
+          "batch_id": {"type": "null"}
+        }
+      },
+      "else": {
+        "properties": {
+          "items": {"type": "null"},
+          "items_omitted": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}
+        }
+      }
+    },
+    {
+      "description": "A batch record has null items only when the record itself could not be read (CLI-058): its outcome is unknown, or resolved once someone recorded it with operation resolve (CLI-061).",
+      "if": {
+        "required": ["operation_id", "items"],
+        "properties": {"operation_id": {"pattern": "^opb_"}, "items": {"type": "null"}}
+      },
+      "then": {"properties": {"status": {"enum": ["unknown", "resolved"]}}}
+    },
+    {
+      "description": "planned and expired were never dispatched.",
+      "if": {"required": ["status"], "properties": {"status": {"enum": ["planned", "expired"]}}},
+      "then": {
+        "properties": {
+          "dispatched_at": {"type": "null"},
+          "finished_at": {"type": "null"},
+          "receipt": {"type": "null"}
+        }
+      }
+    },
+    {
+      "description": "dispatching was sent and has not finished.",
+      "if": {"required": ["status"], "properties": {"status": {"const": "dispatching"}}},
+      "then": {
+        "properties": {
+          "dispatched_at": {"type": "string"},
+          "finished_at": {"type": "null"},
+          "receipt": {"type": "null"}
+        }
+      }
+    },
+    {
+      "description": "unknown was dispatched and has no resolution yet.",
+      "if": {"required": ["status"], "properties": {"status": {"const": "unknown"}}},
+      "then": {"properties": {"dispatched_at": {"type": "string"}}}
+    },
+    {
+      "description": "A finished operation was dispatched and has a finish time.",
+      "if": {"required": ["status"], "properties": {"status": {"enum": ["applied", "not_applied", "partial", "failed"]}}},
+      "then": {"properties": {"dispatched_at": {"type": "string"}, "finished_at": {"type": "string"}}}
+    },
+    {
+      "description": "A single applied or partial operation keeps the receipt its status was derived from.",
+      "if": {
+        "required": ["status", "operation_id"],
+        "properties": {"status": {"enum": ["applied", "partial"]}, "operation_id": {"pattern": "^op_"}}
+      },
+      "then": {"properties": {"receipt": {"type": "object"}}}
+    },
+    {
+      "description": "resolved needs its resolution (CLI-061), and only resolved has one.",
+      "if": {"required": ["status"], "properties": {"status": {"const": "resolved"}}},
+      "then": {"properties": {"dispatched_at": {"type": "string"}, "resolution": {"type": "object"}}},
+      "else": {"properties": {"resolution": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "status": {
+      "description": "Effective status (contract.json operation.status).",
+      "enum": ["planned", "expired", "dispatching", "unknown", "applied", "not_applied", "partial", "failed", "resolved"]
+    },
+    "resolution": {
+      "description": "How a person or agent resolved an unknown outcome with operation resolve (CLI-061).",
+      "type": "object",
+      "properties": {
+        "outcome": {"enum": ["applied", "not_applied", "partial"]},
+        "evidence": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "resolved_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp"}
+      },
+      "required": ["outcome", "evidence", "resolved_at"],
+      "additionalProperties": false
+    },
+    "item": {
+      "description": "One item of a batch record: its own op_ id, target (null when the item record cannot be read; its status is then unknown), effective status, and its receipt once it ran.",
+      "type": "object",
+      "properties": {
+        "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/operation_id"},
+        "target": {
+          "if": {"type": "null"},
+          "else": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/target"}
+        },
+        "status": {"$ref": "#/$defs/status"},
+        "receipt": {"$ref": "urn:ai-native-cli-spec:receipt:2.0"}
+      },
+      "required": ["operation_id", "target", "status"],
+      "additionalProperties": false,
+      "if": {"required": ["target"], "properties": {"target": {"type": "null"}}},
+      "then": {"properties": {"status": {"const": "unknown"}}}
+    }
+  }
+}

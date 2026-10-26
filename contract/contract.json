@@ -1,126 +1,1230 @@
 {
-  "$comment": "CANONICAL JSON CONTRACT — single source of truth for the AI-native CLI fleet. Maintained ONLY here (ai-native-cli-spec/template/common/contract/contract.json). Tools vendor a copy pinned to a spec tag (see .agent/SPEC_VERSION) and are CI-guarded against drift (scripts/check-spec.js) plus a runtime conformance test. Do NOT hand-edit the vendored copies in tool repos; edit here, bump the spec tag, and re-sync. See CLI-SPEC.md §3/§6/§11 for prose; this file is the machine-readable form.",
-  "contract_version": "1.0",
+  "$comment": "CANONICAL JSON CONTRACT for ai-native-cli-spec 2.0. Maintained ONLY in ai-native-cli-spec/template/common/contract/contract.json. The aicli libraries (template/go/aicli, template/python/aicli) embed generated constants from this file (scripts/gen-contract.js), and the JSON Schemas in contract/schemas encode the shapes. Tools vendor this file, the schemas and the library pinned to a spec tag (.agent/SPEC_VERSION); scripts/check-spec.js guards against drift. CLI-SPEC.md, SEC-SPEC.md and VERIFY-SPEC.md are the prose; rule IDs are cited per section.",
+  "contract_version": "2.0",
+  "spec_version": "2.0.1",
   "naming": {
-    "convention": "snake_case",
-    "note": "Every JSON key the fleet emits is snake_case. camelCase keys are a drift bug. IDs are strings; times are ISO 8601 UTC."
+    "rule": "CLI-007",
+    "keys": "snake_case",
+    "ids": "string",
+    "times": "ISO 8601 UTC with Z suffix",
+    "enums": "lowercase snake_case"
   },
   "envelope": {
-    "schema_version_value": "1.0",
-    "success_keys": ["ok", "schema_version", "data", "meta"],
-    "error_keys": ["ok", "schema_version", "error", "meta"],
-    "error_object_keys": ["code", "message", "details", "retryable"],
-    "meta_required_keys": ["duration_ms"],
-    "meta_optional_keys": ["notices"],
+    "rule": "CLI-002, CLI-004",
+    "schema_version_value": "2.0",
+    "success_keys": [
+      "ok",
+      "schema_version",
+      "data",
+      "meta"
+    ],
+    "error_keys": [
+      "ok",
+      "schema_version",
+      "error",
+      "meta"
+    ],
+    "error_object_keys": [
+      "code",
+      "message",
+      "retryable",
+      "details"
+    ],
+    "meta_required_keys": [
+      "duration_ms"
+    ],
+    "meta_optional_keys": [
+      "notices",
+      "untrusted"
+    ],
     "enforcement": "exact",
-    "note": "meta is always emitted (duration_ms:0 is valid). meta.notices is optional (omit when empty). No key beyond meta_required+meta_optional may appear in meta."
+    "json_layout": "compact by default; --pretty indents; --compact is an accepted no-op",
+    "untrusted_paths": {
+      "rule": "CLI-046",
+      "location": "meta.untrusted",
+      "syntax": "dot-separated keys from the envelope root; [] means every element of an array",
+      "examples": [
+        "data.items[].title",
+        "data.description",
+        "error.details.upstream_message"
+      ]
+    }
+  },
+  "formats": {
+    "rule": "CLI-005",
+    "values": [
+      "json",
+      "text",
+      "raw"
+    ],
+    "default": "json",
+    "unsupported": "E_USAGE with problem unsupported_format, emitted as JSON"
   },
   "error_codes": {
+    "rule": "CLI-010, CLI-018",
     "enforcement": "exact-for-core",
-    "note": "core is the frozen canonical mapping: name -> {exit, retryable}. A tool need NOT implement every core code, but EVERY error code it emits MUST be either (a) a core code with exactly this exit+retryable, or (b) a code declared in contract-ext.json. A tool must never use a core name with a different exit/retryable, and never invent an E_* outside core∪ext. This catches misnames (E_RATE_LIMIT vs E_RATE_LIMITED) and wrong mappings (E_CONFIG->1 instead of 4) while not forcing unused codes.",
     "core": {
-      "E_USAGE":                {"exit": 2,   "retryable": false},
-      "E_VALIDATION":           {"exit": 2,   "retryable": false},
-      "E_NOT_FOUND":            {"exit": 3,   "retryable": false},
-      "E_AUTH":                 {"exit": 4,   "retryable": false},
-      "E_FORBIDDEN":            {"exit": 4,   "retryable": false},
-      "E_CONFIG":               {"exit": 4,   "retryable": false},
-      "E_CONFIRMATION_REQUIRED":{"exit": 5,   "retryable": false},
-      "E_CONFLICT":             {"exit": 6,   "retryable": false},
-      "E_NETWORK":              {"exit": 7,   "retryable": true},
-      "E_RATE_LIMITED":         {"exit": 7,   "retryable": true},
-      "E_SERVER":               {"exit": 7,   "retryable": true},
-      "E_TIMEOUT":              {"exit": 8,   "retryable": true},
-      "E_INTEGRITY":            {"exit": 1,   "retryable": false},
-      "E_IO":                   {"exit": 1,   "retryable": false},
-      "E_INTERRUPTED":          {"exit": 130, "retryable": true},
-      "E_UNKNOWN":              {"exit": 1,   "retryable": false}
+      "E_USAGE": {
+        "exit": 2,
+        "retryable": false,
+        "meaning": "The command line is wrong: unknown command or flag, unexpected argument, missing or invalid parameter."
+      },
+      "E_VALIDATION": {
+        "exit": 2,
+        "retryable": false,
+        "meaning": "The request is well-formed but the upstream or the tool rejected its content."
+      },
+      "E_AMBIGUOUS": {
+        "exit": 2,
+        "retryable": false,
+        "meaning": "A name matched more than one resource; pick one of details.candidates."
+      },
+      "E_UNSUPPORTED": {
+        "exit": 2,
+        "retryable": false,
+        "meaning": "A valid request this build, upstream version or mode cannot carry out."
+      },
+      "E_NOT_FOUND": {
+        "exit": 3,
+        "retryable": false,
+        "meaning": "The resource does not exist or is not visible to this account."
+      },
+      "E_AUTH": {
+        "exit": 4,
+        "retryable": false,
+        "meaning": "Credentials are missing, invalid or expired."
+      },
+      "E_FORBIDDEN": {
+        "exit": 4,
+        "retryable": false,
+        "meaning": "Not allowed: no granted scope (details.scope) or the upstream refused the account (details.required)."
+      },
+      "E_CONFIG": {
+        "exit": 4,
+        "retryable": false,
+        "meaning": "Local configuration is missing or invalid."
+      },
+      "E_CONFIRMATION_REQUIRED": {
+        "exit": 5,
+        "retryable": false,
+        "meaning": "A write needs --dry-run then --confirm <token>, or --dangerous; nothing was changed."
+      },
+      "E_CONFLICT": {
+        "exit": 6,
+        "retryable": false,
+        "meaning": "A precondition failed (details.conflict): token mismatch, expired or used token, state drift, changed scope, unresolved operation."
+      },
+      "E_OUTCOME_UNKNOWN": {
+        "exit": 6,
+        "retryable": false,
+        "meaning": "The change may have been applied; look it up with details.lookup before doing anything else."
+      },
+      "E_NETWORK": {
+        "exit": 7,
+        "retryable": true,
+        "meaning": "The upstream could not be reached; nothing was sent."
+      },
+      "E_RATE_LIMITED": {
+        "exit": 7,
+        "retryable": true,
+        "meaning": "The upstream rate limit was hit; wait details.retry_after_ms."
+      },
+      "E_SERVER": {
+        "exit": 7,
+        "retryable": true,
+        "meaning": "The upstream failed while handling the request and nothing changed: a read, or a write the tool knows was not applied. Safe to retry; a write starts again from --dry-run."
+      },
+      "E_TIMEOUT": {
+        "exit": 8,
+        "retryable": true,
+        "meaning": "A read timed out."
+      },
+      "E_HUMAN_REQUIRED": {
+        "exit": 9,
+        "retryable": false,
+        "meaning": "A person must act first (details.action), then run details.resume."
+      },
+      "E_PARTIAL": {
+        "exit": 1,
+        "retryable": false,
+        "meaning": "Some of the change took effect; read the receipt or items; never resend the whole request."
+      },
+      "E_VERIFY_FAILED": {
+        "exit": 1,
+        "retryable": false,
+        "meaning": "The change was applied but the read-back disagrees with the request."
+      },
+      "E_VERIFY_INCOMPLETE": {
+        "exit": 1,
+        "retryable": false,
+        "meaning": "The change was applied but the required read-back could not be completed."
+      },
+      "E_INTEGRITY": {
+        "exit": 1,
+        "retryable": false,
+        "meaning": "A release signature or checksum failed; do not retry."
+      },
+      "E_IO": {
+        "exit": 1,
+        "retryable": false,
+        "meaning": "A local file or the tool's state store failed; nothing was sent."
+      },
+      "E_INTERRUPTED": {
+        "exit": 130,
+        "retryable": true,
+        "meaning": "Interrupted by a signal before anything lasting happened."
+      },
+      "E_UNKNOWN": {
+        "exit": 1,
+        "retryable": false,
+        "meaning": "An internal error; read message and details."
+      }
     },
+    "write_rules": [
+      "During the apply step of a write, a failure after the request may have reached the upstream is E_OUTCOME_UNKNOWN, never E_NETWORK, E_SERVER, E_TIMEOUT or E_INTERRUPTED (CLI-015).",
+      "E_SERVER, E_TIMEOUT and E_INTERRUPTED are retryable only because they are used for reads or for writes that provably changed nothing; a retried write always starts again from --dry-run because its token is consumed."
+    ],
     "http_status_map": {
-      "401": "E_AUTH", "403": "E_FORBIDDEN", "404": "E_NOT_FOUND", "408": "E_TIMEOUT",
-      "409": "E_CONFLICT", "429": "E_RATE_LIMITED", "5xx": "E_SERVER"
+      "rule": "CLI-016",
+      "400": "E_VALIDATION",
+      "401": "E_AUTH",
+      "403": "E_FORBIDDEN",
+      "404": "E_NOT_FOUND",
+      "408": "E_TIMEOUT",
+      "409": "E_CONFLICT (conflict: upstream_conflict)",
+      "412": "E_CONFLICT (conflict: upstream_conflict)",
+      "422": "E_VALIDATION",
+      "429": "E_RATE_LIMITED",
+      "5xx": "E_SERVER",
+      "connection_failure_before_send": "E_NETWORK"
     },
     "extension": {
       "file": "contract-ext.json",
       "rules": [
-        "An ext code name MUST be E_* and MUST NOT be a core code name.",
-        "An ext code MUST declare {exit, retryable}.",
-        "Exit code 9 is RESERVED for human-action-required codes (e.g. E_HUMAN_REQUIRED, E_2FA_REQUIRED); other reserved-meaning exits (0-8,130) must keep their core semantics.",
-        "An ext code's exit MUST be one of the documented exit codes (0,1,2,3,4,5,6,7,8,9,130)."
+        "An extension code name matches ^E_[A-Z0-9][A-Z0-9_]*$ and is not a core code name.",
+        "An extension code declares {exit, retryable, meaning}.",
+        "Its exit is one of the documented exit codes; exit 9 is only for human-action codes.",
+        "Its details follow the always-required details keys."
       ],
       "known_extensions": {
-        "E_HUMAN_REQUIRED": {"exit": 9, "retryable": false, "used_by": ["cnstock-cli"]},
-        "E_2FA_REQUIRED":   {"exit": 9, "retryable": false, "used_by": ["archery-cli"]}
+        "E_2FA_REQUIRED": {
+          "exit": 9,
+          "retryable": false,
+          "used_by": [
+            "archery-cli"
+          ]
+        }
       }
     }
   },
   "exit_codes": {
-    "enforcement": "exact",
-    "note": "Canonical exit-code meanings; the error_codes table is the binding source for code->exit.",
-    "table": {
-      "0": "success",
-      "1": "generic / integrity / io / unknown (non-retryable, read the envelope)",
-      "2": "usage / validation (fix args, do not retry)",
-      "3": "not found (do not retry)",
-      "4": "auth / forbidden / config (surface credentials/permission)",
-      "5": "confirmation required (run dry-run for a token)",
-      "6": "conflict / invalid token (re-read state, retry)",
-      "7": "retryable transient (network / rate-limit / server)",
-      "8": "timeout (back off, retry)",
-      "9": "human action required (optional; relay to user, run resume)",
-      "130": "interrupted by signal (retryable; nothing half-applied)"
+    "0": "success",
+    "1": "failure that needs reading: partial, verify, integrity, io, unknown",
+    "2": "usage, validation, ambiguous, unsupported (fix the request, do not retry)",
+    "3": "not found (do not retry)",
+    "4": "auth, forbidden, config (credentials, permission or scope)",
+    "5": "confirmation required (use the preview and token, or add --dangerous)",
+    "6": "conflict or outcome unknown (re-read state or look the operation up)",
+    "7": "retryable transient (network, rate limit, server)",
+    "8": "timeout (back off, retry)",
+    "9": "human action required",
+    "130": "interrupted by signal"
+  },
+  "error_details": {
+    "rule": "CLI-011, CLI-012, CLI-013, CLI-014, CLI-015",
+    "always_required": [
+      "dispatch_state",
+      "next_action"
+    ],
+    "dispatch_state": [
+      "not_started",
+      "dispatched",
+      "unknown"
+    ],
+    "by_code": {
+      "E_USAGE": {
+        "required": [
+          "problem"
+        ],
+        "optional": [
+          "parameter",
+          "expected",
+          "did_you_mean",
+          "usage",
+          "available"
+        ]
+      },
+      "E_VALIDATION": {
+        "required": [
+          "problem"
+        ],
+        "optional": [
+          "parameter",
+          "expected",
+          "did_you_mean",
+          "usage",
+          "upstream_message",
+          "http_status"
+        ]
+      },
+      "E_CONFIRMATION_REQUIRED": {
+        "required": [
+          "problem"
+        ],
+        "required_when_confirmation_required": [
+          "preview",
+          "confirm_token",
+          "expires_at",
+          "operation_id"
+        ]
+      },
+      "E_CONFLICT": {
+        "required": [
+          "conflict"
+        ],
+        "required_when_token_mismatch": [
+          "parameter"
+        ],
+        "required_when_unresolved_operation_or_lock_held": [
+          "active_operation"
+        ]
+      },
+      "E_FORBIDDEN": {
+        "optional": [
+          "scope",
+          "required",
+          "preview",
+          "upstream_message",
+          "http_status"
+        ],
+        "required_when_local_scope_refusal": [
+          "scope"
+        ]
+      },
+      "E_AMBIGUOUS": {
+        "required": [
+          "candidates"
+        ]
+      },
+      "E_OUTCOME_UNKNOWN": {
+        "required": [
+          "operation_id",
+          "lookup"
+        ]
+      },
+      "E_PARTIAL": {
+        "required_one_of": [
+          "receipt",
+          "items",
+          "binary_replaced"
+        ],
+        "optional": [
+          "summary",
+          "operation_id",
+          "stage",
+          "current_version",
+          "target_version",
+          "skill_sync_status",
+          "skill_sync_command"
+        ],
+        "note": "A partial self-update (binary replaced, Skill sync failed) is E_PARTIAL whose details are the update failure details (CLI-070, update.schema.json $defs/failure_details): the keys above plus status, previous_version, install_method, signature_status, update_available and command."
+      },
+      "E_VERIFY_FAILED": {
+        "required": [
+          "receipt"
+        ]
+      },
+      "E_VERIFY_INCOMPLETE": {
+        "required": [
+          "receipt"
+        ]
+      },
+      "E_HUMAN_REQUIRED": {
+        "required": [
+          "action",
+          "resume"
+        ]
+      },
+      "E_RATE_LIMITED": {
+        "optional": [
+          "retry_after_ms"
+        ]
+      }
+    },
+    "problem": [
+      "unknown_command",
+      "unknown_flag",
+      "unexpected_argument",
+      "missing_parameter",
+      "invalid_value",
+      "conflicting_flags",
+      "unsupported_format",
+      "input_too_large",
+      "confirmation_required",
+      "dangerous_flag_required"
+    ],
+    "conflict": [
+      "token_mismatch",
+      "token_expired",
+      "token_used",
+      "state_drift",
+      "scope_changed",
+      "unresolved_operation",
+      "lock_held",
+      "upstream_conflict",
+      "idempotency_mismatch",
+      "idempotency_resolved"
+    ],
+    "gate_conflict": [
+      "token_mismatch",
+      "token_expired",
+      "token_used",
+      "state_drift",
+      "scope_changed",
+      "unresolved_operation",
+      "lock_held",
+      "idempotency_resolved"
+    ],
+    "gate_conflict_meaning": "the conflicts the gate finds itself, before anything is sent: their errors are always dispatch_state not_started",
+    "human_action": [
+      "sign_in",
+      "approve",
+      "solve_challenge",
+      "scan_qr",
+      "install_component",
+      "other"
+    ],
+    "size_budget_chars": 2000,
+    "conflict_meaning": {
+      "token_mismatch": "the re-supplied request differs from the previewed one (details.parameter)",
+      "token_expired": "the token is older than its expiry",
+      "token_used": "the token's operation was already confirmed",
+      "state_drift": "the target changed since the dry run (base version differs)",
+      "scope_changed": "the scope file changed since the dry run",
+      "unresolved_operation": "an earlier operation on the same target has an unknown outcome (details.active_operation)",
+      "lock_held": "an operation on the same target is still running (details.active_operation when its owner is known)",
+      "upstream_conflict": "the upstream refused because of its current state (HTTP 409/412)",
+      "idempotency_mismatch": "the idempotency key was used before for a different request",
+      "idempotency_resolved": "the earlier request with this idempotency key was resolved by hand as applied or partial (details.operation_id); it is not sent again"
     }
   },
-  "self_description": {
-    "enforcement": "required-present",
-    "note": "These commands MUST expose at least the required keys (extras are allowed for tool-specific info, so unique features are not blocked). Key NAMES are canonical: a different name for the same concept (e.g. security_tier vs riskTier) is a drift bug.",
-    "reference": {
-      "required_top_keys": ["tool", "version", "risk_tier", "release_readiness", "commands", "schemas", "exit_codes", "error_codes"],
-      "risk_tier_key": "risk_tier",
-      "release_readiness_required_keys": ["level", "fcc_status"],
-      "command_schema": "each leaf command has output_schema (resolving to schemas catalog) and at least one example; schemas entries are {shape, fields, untrusted_fields}"
+  "control_flags": {
+    "rule": "CLI-021, CLI-054",
+    "global": {
+      "--format": "json|text|raw, default json",
+      "--json": "alias of --format json (compatibility)",
+      "--pretty": "indented JSON",
+      "--compact": "accepted no-op (compact is the default)",
+      "--fields": "select fields: a,b replaces the defaults; +a adds; all returns everything",
+      "--quiet": "suppress non-error stderr",
+      "--dry-run": "return the preview and a confirm token; change nothing",
+      "--confirm": "execute the previewed write with its token",
+      "--dangerous": "required in both steps for dangerous commands"
     },
-    "context": {
-      "required_top_keys": ["version", "credentials", "notices"],
-      "credentials_required_subkeys": ["configured"],
-      "note": "credentials.configured is a boolean. Expiring-credential tools may add valid/expires_at/refreshable (CLI-SPEC §16.1). 'notices' present only when the update cache has content (omit otherwise)."
+    "per_command_reserved": {
+      "--idempotency-key": "create-type writes (CLI-062)",
+      "--allow-downgrade": "update only (CLI-070)",
+      "--profile": "the account profile to use (CLI-101); a root flag aicli registers when the tool declares settings, bound into confirm tokens like any other flag"
     },
-    "doctor": {
-      "data_shape": "checks[]",
-      "check_item_required_keys": ["check", "status", "fix"],
-      "check_item_optional_keys": ["message", "details"],
-      "note": "Each check has check/status/fix (fix is null when status is pass). status in {pass, warn, fail}. doctor MUST include a check named 'release_readiness'."
+    "excluded_from_binding": [
+      "format",
+      "json",
+      "pretty",
+      "compact",
+      "fields",
+      "quiet",
+      "dry-run",
+      "confirm",
+      "dangerous",
+      "help"
+    ]
+  },
+  "effects": {
+    "rule": "CLI-025, SEC-001",
+    "values": {
+      "observe": "reads only",
+      "change": "modifies state on the upstream service",
+      "deliver": "content reaches people or systems outside the target (send, publish, notify, share)",
+      "configure": "changes permissions, settings, credentials, integrations or automation (upstream or the tool's own credentials and profiles)",
+      "artifact": "creates a new local file",
+      "persist": "overwrites an existing local file"
     },
-    "changelog": {
-      "required_data_keys": ["current_version", "entries"],
-      "optional_data_keys": ["since", "count"],
-      "entries_shape": "entries[].{version, date, changes{added,changed,fixed,deprecated,removed,security}}"
+    "write_if_any_of": [
+      "change",
+      "deliver",
+      "configure",
+      "artifact",
+      "persist"
+    ],
+    "dangerous_by_default": [
+      "deliver",
+      "configure"
+    ],
+    "minimum_risk_tier": {
+      "observe": "T0",
+      "change": "T1",
+      "artifact": "T1",
+      "persist": "T1",
+      "deliver": "T2",
+      "configure": "T2"
     },
-    "update": {
-      "command_field": "command",
-      "note": "The package-manager command an agent/user can run is field 'command' (NOT manager_command/recommended_command/commands). update result also carries status, current_version, target_version, update_available, install_method, signature_status, skill_sync_status; and on success previous_version + (binary path) signature_verified/checksum_verified. Successful installs report final state: current_version == target_version and update_available == false. Idempotent no-op is checked before any package-manager command. See CLI-SPEC §14.",
-      "required_keys_on_available": ["status", "current_version", "target_version", "update_available", "install_method", "command"]
+    "not_effects": "the tool's own operation journal, confirm key and notice cache"
+  },
+  "risk_tiers": {
+    "rule": "SEC-001",
+    "values": {
+      "T0": "observe only",
+      "T1": "changes upstream state or local files",
+      "T2": "delivers to others, changes configuration or credentials, or can cause irreversible or account-level damage"
+    }
+  },
+  "token": {
+    "rule": "CLI-055",
+    "format": "^ct2_[a-z2-7]{26}_[0-9a-f]{32}$",
+    "mac": "first 16 bytes of HMAC-SHA256(key, \"aicli-confirm/2\\u0000\" + canonical_claims), lowercase hex",
+    "key": "32 random bytes at <state_dir>/confirm.key; never an unkeyed fallback",
+    "max_ttl_seconds": 900,
+    "single_use_by": "operation_id",
+    "canonical_claims": "JSON object with sorted keys, no whitespace, UTF-8: {v, tool, tool_version, op, cmd, inv, inputs, account, host, target, scope, base, idem, exp}"
+  },
+  "operation_id": {
+    "rule": "CLI-058",
+    "format": "^op_[a-z2-7]{26}$",
+    "batch_format": "^opb_[a-z2-7]{26}$"
+  },
+  "preview": {
+    "rule": "CLI-051, CLI-052",
+    "location": "data.preview (dry-run) or error.details.preview (E_CONFIRMATION_REQUIRED, E_FORBIDDEN)",
+    "required_keys": [
+      "operation_id",
+      "command",
+      "action",
+      "effects",
+      "dangerous",
+      "inputs",
+      "can_apply",
+      "blocked_by"
+    ],
+    "single_target_keys": [
+      "target",
+      "changes"
+    ],
+    "batch_keys": [
+      "targets",
+      "total",
+      "items"
+    ],
+    "optional_keys": [
+      "base",
+      "destinations",
+      "outputs",
+      "omitted"
+    ],
+    "shortening": "total counts every target of a batch preview. When the whole preview would break its envelope's size budget (CLI-042), targets and items keep their first entries, in input order and one to one, and omitted is the number of targets left out (total = listed targets + omitted); inputs and the token still cover every target. omitted is absent from a full preview and from a single-target preview.",
+    "target_keys": [
+      "key",
+      "kind",
+      "label"
+    ],
+    "change_keys": {
+      "required": [
+        "field"
+      ],
+      "optional": [
+        "before",
+        "after",
+        "add",
+        "remove",
+        "note"
+      ]
+    },
+    "blocked_by_keys": [
+      "kind",
+      "message"
+    ],
+    "dry_run_data_keys": [
+      "preview",
+      "confirm_token",
+      "expires_at",
+      "operation_id"
+    ],
+    "no_token_when": "can_apply is false: confirm_token and expires_at are null"
+  },
+  "receipt": {
+    "rule": "CLI-059",
+    "location": "data.receipt (ok) or error.details.receipt (not ok)",
+    "required_keys": [
+      "operation_id",
+      "command",
+      "target",
+      "effects",
+      "outcome",
+      "observed",
+      "replayed"
+    ],
+    "optional_keys": [
+      "mismatched",
+      "failed_stage",
+      "notes"
+    ],
+    "outcome": {
+      "execution": [
+        "not_started",
+        "running",
+        "completed",
+        "failed",
+        "interrupted",
+        "unknown"
+      ],
+      "change": [
+        "not_applicable",
+        "not_applied",
+        "applied",
+        "partial",
+        "rolled_back",
+        "unknown"
+      ],
+      "delivery": [
+        "not_applicable",
+        "not_attempted",
+        "delivered",
+        "partial",
+        "rejected",
+        "unknown"
+      ],
+      "persistence": [
+        "not_applicable",
+        "unchanged",
+        "saved",
+        "partial",
+        "unknown"
+      ],
+      "verification": [
+        "not_applicable",
+        "not_run",
+        "passed",
+        "failed",
+        "incomplete"
+      ]
+    },
+    "failed_stage": [
+      "apply",
+      "deliver",
+      "persist",
+      "verify"
+    ],
+    "data_keys_on_success": [
+      "operation_id",
+      "receipt",
+      "result"
+    ]
+  },
+  "receipt_rules": {
+    "rule": "CLI-059",
+    "note": "Evaluate in order against the receipt; the first rule whose condition holds decides ok and the error code. Profile base: verification not_run with change applied is ok. The driver profile (tool-driver-cli-spec) adds a rule that makes it E_VERIFY_INCOMPLETE.",
+    "rules": [
+      {
+        "when": "any of execution, change, delivery, persistence is unknown, or execution is running",
+        "ok": false,
+        "code": "E_OUTCOME_UNKNOWN"
+      },
+      {
+        "when": "any of change, delivery, persistence is partial",
+        "ok": false,
+        "code": "E_PARTIAL"
+      },
+      {
+        "when": "execution is failed, interrupted or not_started and change is applied, delivery is delivered or persistence is saved",
+        "ok": false,
+        "code": "E_PARTIAL"
+      },
+      {
+        "when": "execution is failed, interrupted or not_started",
+        "ok": false,
+        "code": "the cause code from the apply step (default E_SERVER)"
+      },
+      {
+        "when": "change is rolled_back",
+        "ok": false,
+        "code": "the cause code that made the tool roll back (default E_VERIFY_FAILED)"
+      },
+      {
+        "when": "delivery is rejected",
+        "ok": false,
+        "code": "the cause code from the delivery step (default E_FORBIDDEN)"
+      },
+      {
+        "when": "verification is failed",
+        "ok": false,
+        "code": "E_VERIFY_FAILED"
+      },
+      {
+        "when": "verification is incomplete",
+        "ok": false,
+        "code": "E_VERIFY_INCOMPLETE"
+      },
+      {
+        "when": "otherwise",
+        "ok": true,
+        "code": null
+      }
+    ]
+  },
+  "batch": {
+    "rule": "CLI-063",
+    "result_keys": {
+      "required": [
+        "items",
+        "summary"
+      ],
+      "optional": [
+        "operation_id",
+        "omitted"
+      ]
+    },
+    "shortening": "summary counts every target. When the full item list would break the response's size budget (CLI-042), a batch result (data or error.details) first leaves out the receipts of items that succeeded (operation show has them), then their results, then lists fewer items: the items with ok false come first and are all kept before any item that succeeded is listed, and omitted is the number of items left out. operation show --id <batch id> lists every item, or, for a batch too large for one response, the items that need attention first, and operation list --batch <batch id> pages through all of them.",
+    "item_keys": {
+      "required": [
+        "target",
+        "operation_id",
+        "ok"
+      ],
+      "optional": [
+        "receipt",
+        "error",
+        "result"
+      ]
+    },
+    "item_error_keys": [
+      "code",
+      "retryable",
+      "message"
+    ],
+    "summary_keys": [
+      "total",
+      "succeeded",
+      "failed",
+      "unknown",
+      "skipped"
+    ],
+    "ok_rule": "ok is true only when every item succeeded; otherwise E_OUTCOME_UNKNOWN if any item is unknown, else E_PARTIAL if any item applied, else the first failed item's code",
+    "continue_on_error_default": {
+      "normal": true,
+      "dangerous": false
+    }
+  },
+  "operation": {
+    "rule": "CLI-058, CLI-060, CLI-061",
+    "record_keys": [
+      "operation_id",
+      "command",
+      "status",
+      "target",
+      "effects",
+      "scope_id",
+      "created_at",
+      "expires_at",
+      "dispatched_at",
+      "finished_at",
+      "preview",
+      "receipt",
+      "resolution",
+      "batch_id",
+      "items"
+    ],
+    "optional_keys": [
+      "items_omitted"
+    ],
+    "done_status": [
+      "applied",
+      "resolved"
+    ],
+    "shortening": "operation show keeps the success budget (CLI-042). For a batch record it first shortens the preview (preview.shortening); if the view is still too large, items lists the items that need attention first (status not in done_status), then the others, each group in input order, cut to fit, and items_omitted counts the items left out. items_omitted is absent from a single record and from a batch record that lists every item. operation list --batch <batch id> pages through every item of a batch in input order.",
+    "status": [
+      "planned",
+      "expired",
+      "dispatching",
+      "unknown",
+      "applied",
+      "not_applied",
+      "partial",
+      "failed",
+      "resolved"
+    ],
+    "unresolved_status": [
+      "dispatching",
+      "unknown"
+    ],
+    "resolution_outcomes": [
+      "applied",
+      "not_applied",
+      "partial"
+    ],
+    "resolution_keys": [
+      "outcome",
+      "evidence",
+      "resolved_at"
+    ],
+    "builtin_commands": [
+      "operation show",
+      "operation list",
+      "operation resolve"
+    ],
+    "retention_days": 30,
+    "max_records": 2000,
+    "default_lease_seconds": 120
+  },
+  "scope": {
+    "rule": "SEC-010, SEC-011, SEC-012",
+    "resolution_order": [
+      "<PREFIX>_SCOPE_FILE environment variable",
+      "<state_dir>/scope.json"
+    ],
+    "required_keys": [
+      "scope_id",
+      "tool",
+      "granted_by",
+      "granted_at",
+      "expires_at",
+      "effects",
+      "dangerous"
+    ],
+    "optional_keys": [
+      "targets",
+      "destinations",
+      "outputs",
+      "roots",
+      "limits",
+      "revoked",
+      "notes"
+    ],
+    "target_selector_keys": {
+      "required": [
+        "key"
+      ],
+      "optional": [
+        "match"
+      ]
+    },
+    "target_match": [
+      "subtree",
+      "exact"
+    ],
+    "subtree_boundaries": [
+      "/",
+      "!",
+      "#",
+      ":",
+      "@"
+    ],
+    "limits_keys": [
+      "max_operations"
+    ],
+    "parsing": "strict: duplicate keys and unknown keys are invalid",
+    "refusal_details_keys": {
+      "required": [
+        "status",
+        "path"
+      ],
+      "optional": [
+        "scope_id",
+        "missing",
+        "grant_example"
+      ]
+    },
+    "refusal_status": [
+      "missing",
+      "invalid",
+      "expired",
+      "revoked",
+      "insufficient",
+      "budget_spent"
+    ],
+    "destination_match": {
+      "url": "a granted destination containing :// matches the same scheme and host and a path at or below the granted path (strict URL containment)",
+      "other": "any other granted destination (email address, handle, channel id) matches exactly; it acts as a prefix only when it ends with '/', and then only at '/' boundaries; '@', ':', '#' and '!' are ordinary characters, never append points"
+    }
+  },
+  "state_store": {
+    "rule": "SEC-030",
+    "dir_resolution": [
+      "App.StateDir (tests)",
+      "<PREFIX>_STATE_DIR",
+      "~/.<tool>"
+    ],
+    "files": {
+      "confirm.key": "32 random bytes, 0600",
+      "operations/<id>.json": "operation record",
+      "operations/<id>.consumed": "single-use marker (exclusive create)",
+      "scope.json": "default scope file (human-written)",
+      "scope-usage.json": "operations dispatched per scope_id, for limits.max_operations; never pruned",
+      "settings.json": "settings and profiles (human-written, CLI-100)",
+      "locks/<hash>.lock": "per-target lock held from the confirm checks until the dispatching record is written",
+      "locks/scope-usage.lock": "lock around scope-usage.json",
+      "update-check.json": "update notice cache"
+    },
+    "protection": [
+      "posix-0700",
+      "windows-profile-acl",
+      "windows-explicit-acl",
+      "windows-unverified"
+    ],
+    "protection_meaning": {
+      "posix-0700": "POSIX: directory 0700 and files 0600 verified",
+      "windows-profile-acl": "Windows: state dir inside the user profile; protection comes from the profile's default ACL",
+      "windows-explicit-acl": "Windows: an explicit owner-only ACL was set and verified",
+      "windows-unverified": "Windows: state dir outside the user profile and no explicit ACL verified; doctor warns"
     }
   },
   "pagination": {
-    "enforcement": "required-present-when-listing",
-    "cursor_style": ["items", "count", "next_cursor", "has_more"],
-    "offset_style": ["items", "count", "offset", "next_offset", "has_more"],
-    "truncation_flag": "truncated",
-    "note": "List commands use one of the two styles. When a list is silently capped, surface truncated:true. IDs are strings; default sort declared in reference."
+    "rule": "CLI-041",
+    "required_keys": [
+      "items",
+      "count",
+      "has_more"
+    ],
+    "continuation_keys": [
+      "next_cursor",
+      "next_offset",
+      "continuation_reason"
+    ],
+    "optional_keys": [
+      "offset",
+      "truncated",
+      "truncated_reason",
+      "scope",
+      "sort",
+      "total"
+    ],
+    "note": "When has_more is true, exactly one of next_cursor, next_offset or continuation_reason is present. When truncated is true, truncated_reason is present. count is the items in this response; total, present when the upstream reports it, is the number of items the whole list has (everything scope covers), so a count question needs no paging (CLI-044)."
   },
-  "batch": {
-    "enforcement": "required-present-when-batching",
-    "item_required_keys": ["target", "ok"],
-    "item_error_key": "error",
-    "item_error_shape": ["code", "retryable"],
-    "summary_required_keys": ["total", "succeeded", "failed"],
-    "summary_optional_keys": ["skipped"],
-    "note": "Batch result aggregates items[].{target, ok, error{code,retryable}} + summary{total,succeeded,failed}. Top-level ok:true when the batch ran (per-item failures live in items[])."
+  "notices": {
+    "rule": "CLI-047, CLI-071",
+    "required_keys": [
+      "type",
+      "severity",
+      "message"
+    ],
+    "severity": [
+      "info",
+      "warning"
+    ],
+    "update_available_keys": [
+      "current_version",
+      "latest_version",
+      "command",
+      "checked_at"
+    ],
+    "known_types": {
+      "update_available": "a newer release is cached (CLI-071)",
+      "deprecated": "the command or a flag used is deprecated and names its replacement (CLI-081)",
+      "items_omitted": "operation show listed only some items of a large batch and names the paging command (CLI-061)",
+      "journal_write_failed": "the final operation record could not be written; the result is still returned (CLI-057)",
+      "result_unencodable": "the write was dispatched, but the tool's result could not be encoded, so data.result is empty; operation show has the receipt (CLI-057)"
+    }
   },
-  "untrusted": {
-    "key": "_untrusted",
-    "shape": "array of field names (or dotted paths) on the object that carry attacker-controllable external content",
-    "note": "Agents treat _untrusted-listed fields as data, never instructions (SEC-SPEC §2)."
+  "size_budgets": {
+    "rule": "CLI-031, CLI-032, CLI-042",
+    "default_success_chars": 8000,
+    "error_chars": 2000,
+    "reference_index_chars": 8000,
+    "reference_command_chars": 6000,
+    "exempt": [
+      "the full reference (CLI-033) and raw-format output"
+    ]
+  },
+  "maturity": {
+    "rule": "CLI-027, VER-005",
+    "values": [
+      "draft",
+      "experimental",
+      "verified",
+      "stable"
+    ]
+  },
+  "self_description": {
+    "rule": "CLI-031 to CLI-037",
+    "builtin_commands": [
+      "reference",
+      "context",
+      "doctor",
+      "changelog",
+      "operation show",
+      "operation list",
+      "operation resolve",
+      "update"
+    ],
+    "reference": {
+      "required_keys": [
+        "tool",
+        "version",
+        "spec_version",
+        "schema_version",
+        "risk_tier",
+        "global_flags",
+        "commands",
+        "schemas",
+        "error_codes",
+        "exit_codes"
+      ],
+      "command_required_keys": [
+        "path",
+        "aliases",
+        "summary",
+        "type",
+        "effects",
+        "dangerous",
+        "maturity",
+        "evidence",
+        "params",
+        "output",
+        "error_codes",
+        "examples"
+      ],
+      "param_keys": {
+        "required": [
+          "name",
+          "kind",
+          "type",
+          "required"
+        ],
+        "optional": [
+          "multiple",
+          "enum",
+          "default",
+          "unit",
+          "secret",
+          "file_input",
+          "description"
+        ]
+      },
+      "param_types": [
+        "string",
+        "path",
+        "integer",
+        "number",
+        "boolean",
+        "json",
+        "enum"
+      ],
+      "schema_entry_keys": [
+        "shape",
+        "fields",
+        "default_fields",
+        "untrusted_fields"
+      ],
+      "schema_shapes": [
+        "object",
+        "array",
+        "page"
+      ],
+      "index_command_keys": [
+        "path",
+        "type",
+        "effects",
+        "dangerous",
+        "maturity",
+        "summary"
+      ],
+      "index_group_keys": [
+        "path",
+        "summary",
+        "command_count"
+      ]
+    },
+    "context": {
+      "required_keys": [
+        "tool",
+        "version",
+        "spec_version",
+        "account",
+        "host",
+        "credentials",
+        "state",
+        "authorization"
+      ],
+      "credentials_keys": [
+        "configured",
+        "source"
+      ],
+      "state_keys": [
+        "dir",
+        "available",
+        "protection"
+      ],
+      "authorization_keys": [
+        "status",
+        "scope_id",
+        "path",
+        "effects",
+        "dangerous",
+        "expires_at"
+      ],
+      "authorization_status": [
+        "granted",
+        "missing",
+        "invalid",
+        "expired",
+        "revoked",
+        "budget_spent"
+      ],
+      "optional_keys": [
+        "profile"
+      ],
+      "profile_keys": [
+        "name",
+        "source",
+        "profiles",
+        "file"
+      ],
+      "profile_source": [
+        "flag",
+        "env",
+        "config",
+        "single",
+        "none"
+      ],
+      "setting_source": [
+        "flag",
+        "env",
+        "profile",
+        "default"
+      ]
+    },
+    "doctor": {
+      "data_keys": [
+        "checks"
+      ],
+      "check_keys": {
+        "required": [
+          "check",
+          "status",
+          "message",
+          "fix"
+        ]
+      },
+      "status": [
+        "pass",
+        "warn",
+        "fail"
+      ],
+      "required_checks": [
+        "credentials",
+        "connectivity",
+        "state_store",
+        "authorization",
+        "version"
+      ]
+    },
+    "changelog": {
+      "required_data_keys": [
+        "current_version",
+        "entries"
+      ],
+      "optional_data_keys": [
+        "since",
+        "count",
+        "truncated",
+        "truncated_reason",
+        "omitted"
+      ],
+      "entry_keys": [
+        "version",
+        "date",
+        "changes"
+      ],
+      "change_categories": [
+        "added",
+        "changed",
+        "fixed",
+        "deprecated",
+        "removed",
+        "security"
+      ]
+    },
+    "update": {
+      "rule": "CLI-070",
+      "required_keys": [
+        "status",
+        "current_version",
+        "target_version",
+        "update_available",
+        "install_method",
+        "signature_status",
+        "skill_sync_status"
+      ],
+      "optional_keys": [
+        "previous_version",
+        "command",
+        "binary_replaced",
+        "signature_verified",
+        "checksum_verified",
+        "skill_sync_command",
+        "stage"
+      ],
+      "status": [
+        "up_to_date",
+        "updated",
+        "available",
+        "partial"
+      ],
+      "signature_status": [
+        "verified",
+        "not_checked",
+        "unavailable"
+      ],
+      "skill_sync_status": [
+        "synced",
+        "not_needed",
+        "failed",
+        "skipped"
+      ],
+      "error_codes": [
+        "E_USAGE",
+        "E_UNSUPPORTED",
+        "E_CONFIG",
+        "E_NETWORK",
+        "E_RATE_LIMITED",
+        "E_TIMEOUT",
+        "E_INTEGRITY",
+        "E_IO",
+        "E_PARTIAL",
+        "E_INTERRUPTED"
+      ],
+      "stage_codes": {
+        "discover": "E_USAGE (a bad --target-version, or no such release), E_UNSUPPORTED (runs from source, a development build, or no release has a semver tag; other non-semver tags are skipped), E_CONFIG (an unusable <PREFIX>_CA_FILE), E_NETWORK, E_RATE_LIMITED, E_TIMEOUT",
+        "download": "E_UNSUPPORTED (no build for this platform, or an asset not served over https), E_IO (the running executable cannot be located), E_NETWORK (including a redirect to plain http), E_RATE_LIMITED, E_TIMEOUT",
+        "verify_signature": "E_INTEGRITY; E_NETWORK when the Sigstore trust root cannot be loaded",
+        "verify_checksum": "E_INTEGRITY",
+        "replace": "E_IO, E_CONFIG (package unknown or manager missing), E_UNSUPPORTED (the package manager cannot install the target, such as pip and a prerelease), E_INTEGRITY (an unsafe archive entry, or the new binary reports another version)",
+        "skill_sync": "E_PARTIAL",
+        "any stage before the swap": "E_INTERRUPTED"
+      },
+      "install_method": [
+        "binary",
+        "npm",
+        "pnpm",
+        "yarn",
+        "go",
+        "pip",
+        "brew"
+      ],
+      "failure_detail_keys": [
+        "stage",
+        "current_version",
+        "binary_replaced",
+        "skill_sync_status"
+      ],
+      "stages": [
+        "discover",
+        "download",
+        "verify_signature",
+        "verify_checksum",
+        "replace",
+        "skill_sync"
+      ],
+      "version_rule": "strict semver (https://semver.org) with optional leading v; anything else is E_USAGE invalid_value",
+      "downgrade_flag": "--allow-downgrade"
+    }
   }
 }

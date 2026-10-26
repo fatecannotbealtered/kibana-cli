@@ -3,318 +3,124 @@ package kibanaclient
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"testing"
-
-	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 )
 
-func aggTestServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(handler))
+func aggAnswer(buckets []map[string]any, other int) []byte {
+	b, _ := json.Marshal(map[string]any{
+		"took": 2, "hits": map[string]any{"total": map[string]any{"value": 12, "relation": "eq"}},
+		"_shards":      map[string]any{"total": 2, "successful": 2, "skipped": 0, "failed": 0},
+		"aggregations": map[string]any{"terms_agg": map[string]any{"sum_other_doc_count": other, "buckets": buckets}},
+	})
+	return b
 }
 
-func TestClient_Terms_success(t *testing.T) {
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"took": 2,
-				"hits": map[string]any{"total": 5},
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{
-						"buckets": []map[string]any{
-							{"key": "ERROR", "doc_count": 3},
-							{"key": 42, "doc_count": 1},
-							{"key": float64(3.5), "doc_count": 1},
-						},
-					},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
+func TestAggregateTerms(t *testing.T) {
+	var rc recorder
+	srv := rc.server(t, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		_, _ = w.Write(aggAnswer([]map[string]any{{"key": "ERROR", "doc_count": 3}, {"key": 42, "doc_count": 1}, {"key": true, "doc_count": 1}}, 7))
 	})
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	res, err := c.Terms(context.Background(), AggOptions{Index: "logs-*", TermsField: "level", BucketSize: 5})
+	res, err := testClient(srv.URL).Aggregate(context.Background(), AggOptions{Index: "logs-*", TermsField: "level", BucketSize: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Buckets) != 3 || res.Field != "level" || res.Total != 5 {
+	if res.AggType != AggTypeTerms || res.Field != "level" || res.Total != 12 || res.OtherDocs != 7 || len(res.Buckets) != 3 ||
+		res.Buckets[1].Key != "42" || res.Buckets[2].Key != "true" || res.Buckets[0].Metric != nil {
 		t.Fatalf("%+v", res)
 	}
-}
-
-func TestClient_Terms_keywordRetry(t *testing.T) {
-	var calls int
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
-			calls++
-			if calls == 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"took": 1,
-				"hits": map[string]any{"total": 0},
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{"buckets": []any{}},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	res, err := c.Terms(context.Background(), AggOptions{Index: "logs-*", TermsField: "level"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Field != "level (.keyword)" || calls != 2 {
-		t.Fatalf("field=%q calls=%d", res.Field, calls)
-	}
-}
-
-func TestClient_Terms_proxyError(t *testing.T) {
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		w.WriteHeader(http.StatusForbidden)
-	})
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	_, err := c.Terms(context.Background(), AggOptions{Index: "logs-*", TermsField: "level"})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestClient_termsOnce_defaults(t *testing.T) {
 	var body map[string]any
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
-			payload, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(payload, &body)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"took": 0,
-				"hits": map[string]any{"total": 0},
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{"buckets": []any{}},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	_, err := c.Terms(context.Background(), AggOptions{Index: "/logs-*/", BucketSize: 0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	aggs := body["aggs"].(map[string]any)["terms_agg"].(map[string]any)["terms"].(map[string]any)
-	if aggs["size"].(float64) != 10 {
-		t.Fatalf("bucket size: %v", aggs["size"])
+	_ = json.Unmarshal([]byte(rc.body[0]), &body)
+	terms := body["aggs"].(map[string]any)["terms_agg"].(map[string]any)["terms"].(map[string]any)
+	if terms["field"] != "level" || terms["size"] != float64(3) || body["size"] != float64(0) || body["track_total_hits"] != true {
+		t.Fatalf("body: %s", rc.body[0])
 	}
 }
 
-func TestBuildAggBody_matchesInitialRequest(t *testing.T) {
-	var bodies []map[string]any
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
-			var body map[string]any
-			payload, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(payload, &body)
-			bodies = append(bodies, body)
-			if len(bodies) == 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"hits": map[string]any{"total": 0},
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{"buckets": []any{}},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-	defer srv.Close()
-
-	opts := AggOptions{
-		Index:       "logs-*",
-		TermsField:  "service",
-		QueryClause: map[string]any{"term": map[string]any{"msg.keyword": "exact"}},
-		From:        "now-1h",
-		To:          "now",
-	}
-	want := BuildAggBody(opts)
-	if want["track_total_hits"] != true {
-		t.Fatalf("aggregation total must be exact: %#v", want)
-	}
-	wantJSON, _ := json.Marshal(want)
-	var normalizedWant map[string]any
-	_ = json.Unmarshal(wantJSON, &normalizedWant)
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, err := c.Aggregate(context.Background(), opts); err != nil {
-		t.Fatal(err)
-	}
-	if len(bodies) != 2 {
-		t.Fatalf("expected initial request plus .keyword retry, got %d", len(bodies))
-	}
-	if !reflect.DeepEqual(bodies[0], normalizedWant) {
-		t.Fatalf("initial request body differs from preview\ngot:  %#v\nwant: %#v", bodies[0], normalizedWant)
-	}
-	retryTerms := bodies[1]["aggs"].(map[string]any)["terms_agg"].(map[string]any)["terms"].(map[string]any)
-	if retryTerms["field"] != "service.keyword" {
-		t.Fatalf("retry field=%v", retryTerms["field"])
-	}
-}
-
-func TestClient_Aggregate_dateHistogramWithMetric(t *testing.T) {
-	var body map[string]any
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
-			payload, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(payload, &body)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"took": 4,
-				"hits": map[string]any{"total": 10},
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{
-						"buckets": []map[string]any{
-							{"key": 1000, "key_as_string": "2024-01-01T00:00:00.000Z", "doc_count": 6, "metric": map[string]any{"value": 12.5}},
-							{"key": 2000, "key_as_string": "2024-01-01T01:00:00.000Z", "doc_count": 4, "metric": map[string]any{"value": 3.0}},
-						},
-					},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	res, err := c.Aggregate(context.Background(), AggOptions{
-		Index: "logs-*", AggType: AggTypeDateHistogram, Interval: " 1h ",
-		Metric: "avg", MetricField: "took_ms",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.AggType != AggTypeDateHistogram || res.Metric != "avg" || len(res.Buckets) != 2 {
-		t.Fatalf("%+v", res)
-	}
-	if res.Buckets[0].Key != "2024-01-01T00:00:00.000Z" || res.Buckets[0].Metric == nil || *res.Buckets[0].Metric != 12.5 {
-		t.Fatalf("bucket0=%+v", res.Buckets[0])
-	}
-	// Request must carry a date_histogram with the interval and a metric sub-agg.
-	agg := body["aggs"].(map[string]any)["terms_agg"].(map[string]any)
-	dh, ok := agg["date_histogram"].(map[string]any)
-	if !ok || dh["fixed_interval"] != "1h" {
-		t.Fatalf("date_histogram body: %v", agg)
-	}
-	if _, ok := agg["aggs"].(map[string]any)["metric"]; !ok {
-		t.Fatalf("missing metric sub-agg: %v", agg)
-	}
-}
-
-func TestClient_Aggregate_termsWithMetricKeywordRetry(t *testing.T) {
-	var calls int
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
-			calls++
-			if calls == 1 {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"took": 1,
-				"hits": map[string]any{"total": 2},
-				"aggregations": map[string]any{
-					"terms_agg": map[string]any{
-						"buckets": []map[string]any{
-							{"key": "order-svc", "doc_count": 2, "metric": map[string]any{"value": 7.0}},
-						},
-					},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	res, err := c.Aggregate(context.Background(), AggOptions{
-		Index: "logs-*", AggType: AggTypeTerms, TermsField: "service",
-		Metric: "sum", MetricField: "took_ms",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Field != "service (.keyword)" || calls != 2 || res.Buckets[0].Metric == nil {
-		t.Fatalf("field=%q calls=%d buckets=%+v", res.Field, calls, res.Buckets)
-	}
-}
-
-func TestClient_Terms_keywordRetryFails(t *testing.T) {
-	srv := aggTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/console/proxy" {
+// TestAggregateRetriesTextFieldsOnKeyword: a text field Elasticsearch refuses to
+// aggregate is asked again as <field>.keyword; the first request is BuildAggBody's.
+func TestAggregateRetriesTextFieldsOnKeyword(t *testing.T) {
+	var rc recorder
+	srv := rc.server(t, func(w http.ResponseWriter, _ *http.Request, n int) {
+		if n == 1 {
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
+			_, _ = w.Write([]byte(`{"error":{"type":"illegal_argument_exception","reason":"Text fields are not optimised for operations that require per-document field data"},"status":400}`))
 			return
 		}
-		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(aggAnswer([]map[string]any{{"key": "order-svc", "doc_count": 2, "metric": map[string]any{"value": 7.0}}}, 0))
 	})
-	defer srv.Close()
+	opts := AggOptions{Index: "logs-*", TermsField: "service", Metric: "sum", MetricField: "took_ms",
+		QueryClause: map[string]any{"term": map[string]any{"msg.keyword": "exact"}}, From: "2026-10-23T04:00:00Z", To: "2026-10-23T05:00:00Z"}
+	res, err := testClient(srv.URL).Aggregate(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Field != "service.keyword" || len(rc.reqs) != 2 || res.Buckets[0].Metric == nil || *res.Buckets[0].Metric != 7 {
+		t.Fatalf("%+v (%d requests)", res, len(rc.reqs))
+	}
+	want, _ := json.Marshal(BuildAggBody(opts))
+	var a, b map[string]any
+	_ = json.Unmarshal(want, &a)
+	_ = json.Unmarshal([]byte(rc.body[0]), &b)
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("the first request is BuildAggBody's:\n%s\n%s", want, rc.body[0])
+	}
+	var retry map[string]any
+	_ = json.Unmarshal([]byte(rc.body[1]), &retry)
+	if f := retry["aggs"].(map[string]any)["terms_agg"].(map[string]any)["terms"].(map[string]any)["field"]; f != "service.keyword" {
+		t.Fatalf("retry field %v", f)
+	}
 
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	_, err := c.Terms(context.Background(), AggOptions{Index: "logs-*", TermsField: "level.keyword"})
-	if err == nil {
-		t.Fatal("expected error without retry")
+	// A .keyword field is not retried.
+	var rc2 recorder
+	srv2 := rc2.server(t, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"reason":"text fields aggregation"}}`))
+	})
+	if _, err := testClient(srv2.URL).Aggregate(context.Background(), AggOptions{Index: "x", TermsField: "level.keyword"}); err == nil || len(rc2.reqs) != 1 {
+		t.Fatalf("%v, %d requests", err, len(rc2.reqs))
+	}
+}
+
+func TestAggregateDateHistogramWithMetricAndBounds(t *testing.T) {
+	var rc recorder
+	srv := rc.server(t, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		_, _ = w.Write(aggAnswer([]map[string]any{
+			{"key": 1000, "key_as_string": "2026-10-23T04:00:00.000Z", "doc_count": 6, "metric": map[string]any{"value": 12.5}},
+			{"key": 2000, "key_as_string": "2026-10-23T05:00:00.000Z", "doc_count": 0, "metric": map[string]any{"value": nil}},
+		}, 0))
+	})
+	lo, hi := int64(1000), int64(2000)
+	res, err := testClient(srv.URL).Aggregate(context.Background(), AggOptions{Index: "logs-*", AggType: "date_histogram",
+		Interval: " 1h ", Metric: "AVG", MetricField: "took_ms", BoundsMin: &lo, BoundsMax: &hi})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AggType != AggTypeDateHistogram || res.Metric != "avg" || res.Field != "@timestamp" || len(res.Buckets) != 2 ||
+		res.Buckets[0].Key != "2026-10-23T04:00:00.000Z" || *res.Buckets[0].Metric != 12.5 || res.Buckets[1].Metric != nil {
+		t.Fatalf("%+v", res)
+	}
+	var body map[string]any
+	_ = json.Unmarshal([]byte(rc.body[0]), &body)
+	agg := body["aggs"].(map[string]any)["terms_agg"].(map[string]any)
+	dh := agg["date_histogram"].(map[string]any)
+	if dh["fixed_interval"] != "1h" || dh["extended_bounds"].(map[string]any)["min"] != float64(1000) {
+		t.Fatalf("date_histogram: %v", dh)
+	}
+	if _, ok := agg["aggs"].(map[string]any)["metric"].(map[string]any)["avg"]; !ok {
+		t.Fatalf("metric: %v", agg)
+	}
+}
+
+func TestAggregateResponseErrors(t *testing.T) {
+	if _, err := parseBucketAgg([]byte(`{"hits":{"total":1}}`), "f", ""); err == nil {
+		t.Fatal("no terms_agg")
+	}
+	if _, err := parseBucketAgg([]byte(`{`), "f", ""); err == nil {
+		t.Fatal("bad json")
+	}
+	if isTextFieldAggError(nil) || isTextFieldAggError(&APIError{StatusCode: 500, Message: "fielddata"}) {
+		t.Fatal("only a 400 about text fields")
 	}
 }

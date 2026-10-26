@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:reference:2.0",
+  "title": "reference",
+  "description": "The data of the full reference command (CLI-020, CLI-033): generated from the registry, for validators and generators; Skills never tell agents to load it. $defs/command, $defs/param, $defs/schema_entry and $defs/error_code_entry are shared with reference-command. check-contract.py checks the tree shape (CLI-021), built-ins, the core error table (CLI-010), the risk tier against the effects (SEC-001), schema names, declared error codes and examples (R02).",
+  "type": "object",
+  "properties": {
+    "tool": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/tool_name"},
+    "version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "spec_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/spec_version"},
+    "schema_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/schema_version"},
+    "risk_tier": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/risk_tier"},
+    "global_flags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/global_flag"}
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/command"}
+    },
+    "schemas": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"},
+      "additionalProperties": {"$ref": "#/$defs/schema_entry"}
+    },
+    "error_codes": {"$ref": "#/$defs/error_codes"},
+    "exit_codes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^(?:0|[1-9][0-9]{0,2})$"},
+      "additionalProperties": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    }
+  },
+  "required": ["tool", "version", "spec_version", "schema_version", "risk_tier", "global_flags", "commands", "schemas", "error_codes", "exit_codes"],
+  "additionalProperties": false,
+  "$defs": {
+    "command": {
+      "description": "One command of the registry (CLI-020, CLI-025 to CLI-027).",
+      "type": "object",
+      "properties": {
+        "path": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"},
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"}
+        },
+        "summary": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "type": {"enum": ["read", "write"]},
+        "effects": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/effects"},
+        "dangerous": {"type": "boolean"},
+        "maturity": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/maturity"},
+        "evidence": {
+          "description": "Evidence references <kind>:<path>[#<anchor>] (VER-005): kind simulated (tests against a fake upstream), live (a recorded run against the real upstream) or eval (an agent eval report); path relative to the repo root, or an https URL.",
+          "type": "array",
+          "items": {"type": "string", "pattern": "^(?:simulated|live|eval):\\S+$"}
+        },
+        "params": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/param"},
+          "contains": {"required": ["kind"], "properties": {"kind": {"const": "positional"}}},
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "output": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"},
+        "error_codes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/error_code"}
+        },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+        }
+      },
+      "required": ["path", "aliases", "summary", "type", "effects", "dangerous", "maturity", "evidence", "params", "output", "error_codes", "examples"],
+      "additionalProperties": false,
+      "allOf": [
+        {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_type_rule"},
+        {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/dangerous_rule"},
+        {
+          "description": "verified and stable need evidence (CLI-027, VER-005).",
+          "if": {"required": ["maturity"], "properties": {"maturity": {"enum": ["verified", "stable"]}}},
+          "then": {"properties": {"evidence": {"minItems": 1}}}
+        }
+      ]
+    },
+    "param_fields": {
+      "description": "The keys of a parameter entry (contract.json self_description.reference.param_keys).",
+      "type": "object",
+      "properties": {
+        "name": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/flag_name"},
+        "kind": {"enum": ["flag", "positional"]},
+        "type": {"enum": ["string", "path", "integer", "number", "boolean", "json", "enum"]},
+        "required": {"type": "boolean"},
+        "multiple": {"type": "boolean"},
+        "enum": {"type": "array", "minItems": 1, "uniqueItems": true},
+        "default": true,
+        "unit": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "secret": {"type": "boolean"},
+        "file_input": {"description": "true when the parameter names a file (or - for stdin) whose content is bound", "type": "boolean"},
+        "description": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+      },
+      "required": ["name", "kind", "type", "required"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "description": "A required parameter has no default (CLI-024).",
+          "if": {"required": ["required"], "properties": {"required": {"const": true}}},
+          "then": {"properties": {"default": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}}}
+        },
+        {
+          "description": "A secret is never echoed, so it has no default (CLI-024, SEC-021).",
+          "if": {"required": ["secret"], "properties": {"secret": {"const": true}}},
+          "then": {"properties": {"default": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}}}
+        },
+        {
+          "description": "type enum lists its values (other types may list allowed values too).",
+          "if": {"required": ["type"], "properties": {"type": {"const": "enum"}}},
+          "then": {"required": ["enum"]}
+        },
+        {
+          "description": "A file input is a path whose content is bound (CLI-048, CLI-054).",
+          "if": {"required": ["file_input"], "properties": {"file_input": {"const": true}}},
+          "then": {"properties": {"type": {"const": "path"}}}
+        }
+      ]
+    },
+    "param": {
+      "description": "A command parameter. No parameter shadows a global flag (CLI-021).",
+      "$ref": "#/$defs/param_fields",
+      "properties": {
+        "name": {"not": {"enum": ["format", "json", "pretty", "compact", "fields", "quiet", "dry-run", "confirm", "dangerous", "help"]}}
+      }
+    },
+    "global_flag": {
+      "description": "A global flag (contract.json control_flags.global).",
+      "$ref": "#/$defs/param_fields",
+      "properties": {"kind": {"const": "flag"}}
+    },
+    "schema_entry": {
+      "description": "An output schema of the catalog (CLI-020, CLI-040, CLI-046): its shape, all fields, the default fields of --fields, and the fields that carry external content. For a page the fields are those of one item.",
+      "type": "object",
+      "properties": {
+        "shape": {"enum": ["object", "array", "page"]},
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"}
+        },
+        "default_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"}
+        },
+        "untrusted_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/field_path"}
+        }
+      },
+      "required": ["shape", "fields", "default_fields", "untrusted_fields"],
+      "additionalProperties": false
+    },
+    "error_codes": {
+      "description": "The tool's error table: every core code with its contract exit and retryable, plus contract-ext.json codes (CLI-010, CLI-018).",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/error_code"},
+      "additionalProperties": {"$ref": "#/$defs/error_code_entry"}
+    },
+    "error_code_entry": {
+      "type": "object",
+      "properties": {
+        "exit": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/error_exit"},
+        "retryable": {"type": "boolean"},
+        "meaning": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+      },
+      "required": ["exit", "retryable"],
+      "additionalProperties": false
+    }
+  }
+}

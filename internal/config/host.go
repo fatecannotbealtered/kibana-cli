@@ -1,3 +1,7 @@
+// Package config holds the checks kibana-cli applies to its settings before any
+// request: the Kibana base URL and the index allowlist. Settings themselves are
+// read by aicli (App.Settings, CLI-100); nothing here reads a file or the
+// environment.
 package config
 
 import (
@@ -27,7 +31,7 @@ func ValidateKibanaHost(host string) error {
 		return errors.New("host must be Kibana base URL only (no path, e.g. https://kibana.example.com)")
 	}
 	if u.User != nil {
-		return errors.New("host must not embed credentials in URL; use auth login or KIBANA_CLI_USER/KIBANA_CLI_PASSWORD")
+		return errors.New("host must not embed credentials in the URL; use auth login or KIBANA_CLI_USER and KIBANA_CLI_PASSWORD")
 	}
 	if strings.HasPrefix(host, "http://") {
 		h := loopbackHost(host)
@@ -103,4 +107,27 @@ func lastColonSplit(authority string) (addr, port string, ok bool) {
 		}
 	}
 	return authority[:i], port, true
+}
+
+// loopbackHost returns the lower-case host name of an http:// URL, without user
+// info, port or path.
+func loopbackHost(raw string) string {
+	host := strings.TrimPrefix(raw, "http://")
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if at := strings.LastIndex(host, "@"); at >= 0 {
+		host = host[at+1:]
+	}
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.ToLower(host)
+}
+
+// NormalizeHost is the form kibana-cli keeps a host in: trimmed, without a trailing
+// slash. 1.x keyed its OS keyring entries by this form, so a 1.x password is found
+// again under the same host.
+func NormalizeHost(host string) string {
+	return strings.TrimRight(strings.TrimSpace(host), "/")
 }

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:context:2.0",
+  "title": "context",
+  "description": "The data of context (CLI-035), built from local reads only: who and where (redacted), whether credentials are configured and from where, the state store and its protection (SEC-030), and a summary of the scope in force (SEC-010). A tool may add its own snake_case keys (the ContextExtra hook); it never adds secrets.",
+  "type": "object",
+  "properties": {
+    "tool": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/tool_name"},
+    "version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "spec_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/spec_version"},
+    "account": {"type": ["string", "null"], "minLength": 1},
+    "host": {"type": ["string", "null"], "minLength": 1},
+    "credentials": {
+      "description": "configured and source (e.g. env, keyring, config, none). Validity and expiry may be added; credential values never are.",
+      "type": "object",
+      "properties": {
+        "configured": {"type": "boolean"},
+        "source": {"type": ["string", "null"], "minLength": 1}
+      },
+      "required": ["configured", "source"]
+    },
+    "state": {
+      "description": "The state store (SEC-030): its absolute directory, whether it is usable and how it is protected (contract.json state_store.protection): posix-0700, or on Windows windows-profile-acl (inside the user profile), windows-explicit-acl (an owner-only ACL set and verified) or windows-unverified (outside the profile with no verified ACL; doctor warns). dir and protection may be null only when the store is unavailable; reason may say why.",
+      "type": "object",
+      "properties": {
+        "dir": {"type": ["string", "null"], "minLength": 1},
+        "available": {"type": "boolean"},
+        "protection": {"enum": ["posix-0700", "windows-profile-acl", "windows-explicit-acl", "windows-unverified", null]},
+        "reason": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+      },
+      "required": ["dir", "available", "protection"],
+      "additionalProperties": false,
+      "if": {"required": ["available"], "properties": {"available": {"const": true}}},
+      "then": {"properties": {"dir": {"type": "string"}, "protection": {"type": "string"}}}
+    },
+    "authorization": {"$ref": "#/$defs/authorization"},
+    "profile": {"$ref": "#/$defs/profile"}
+  },
+  "required": ["tool", "version", "spec_version", "account", "host", "credentials", "state", "authorization"],
+  "$defs": {
+    "profile": {
+      "description": "The account profile in force (CLI-101), present when the tool declares settings: its name (null when none applies), where the choice came from, every profile the settings file defines, and the settings file read (null when it does not exist). An invalid settings file reports name null, source none and no profiles; context never fails on it.",
+      "type": "object",
+      "properties": {
+        "name": {"type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "source": {"enum": ["flag", "env", "config", "single", "none"]},
+        "profiles": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"}, "uniqueItems": true},
+        "file": {"type": ["string", "null"], "minLength": 1}
+      },
+      "required": ["name", "source", "profiles", "file"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "description": "A profile is named exactly when one was chosen.",
+          "if": {"required": ["source"], "properties": {"source": {"const": "none"}}},
+          "then": {"properties": {"name": {"type": "null"}}},
+          "else": {"properties": {"name": {"type": "string"}}}
+        }
+      ]
+    },
+    "authorization": {
+      "description": "The scope in force (SEC-010, SEC-011). status is granted, or the refusal status a write would get (missing, invalid, expired, revoked, budget_spent). path is the file that was (or would be) read; null only when no state directory can be resolved.",
+      "type": "object",
+      "properties": {
+        "status": {"enum": ["granted", "missing", "invalid", "expired", "revoked", "budget_spent"]},
+        "scope_id": {"type": ["string", "null"], "minLength": 1},
+        "path": {"type": ["string", "null"], "minLength": 1},
+        "effects": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/effect"}
+        },
+        "dangerous": {"type": "boolean"},
+        "expires_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"}
+      },
+      "required": ["status", "scope_id", "path", "effects", "dangerous", "expires_at"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "description": "A granted scope is named and grants at least one effect.",
+          "if": {"required": ["status"], "properties": {"status": {"const": "granted"}}},
+          "then": {"properties": {"scope_id": {"type": "string"}, "effects": {"minItems": 1}}}
+        },
+        {
+          "description": "Without a readable scope nothing is granted.",
+          "if": {"required": ["status"], "properties": {"status": {"enum": ["missing", "invalid"]}}},
+          "then": {"properties": {"scope_id": {"type": "null"}, "effects": {"maxItems": 0}, "dangerous": {"const": false}, "expires_at": {"type": "null"}}}
+        },
+        {
+          "description": "An expired, revoked or spent scope was read, so it is named, as in a refusal's details.scope.",
+          "if": {"required": ["status"], "properties": {"status": {"enum": ["expired", "revoked", "budget_spent"]}}},
+          "then": {"properties": {"scope_id": {"type": "string"}}}
+        }
+      ]
+    }
+  }
+}

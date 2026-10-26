@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:notice:2.0",
+  "title": "notice",
+  "description": "One entry of meta.notices (CLI-047, CLI-071). Every notice has type, severity and message. An update_available notice has exactly the keys of contract.json notices.update_available_keys besides those and is read from the local cache only; other types may add keys.",
+  "type": "object",
+  "properties": {
+    "type": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"},
+    "severity": {"enum": ["info", "warning"]},
+    "message": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+  },
+  "required": ["type", "severity", "message"],
+  "if": {
+    "required": ["type"],
+    "properties": {"type": {"const": "update_available"}}
+  },
+  "then": {
+    "properties": {
+      "type": true,
+      "severity": true,
+      "message": true,
+      "current_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+      "latest_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+      "command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+      "checked_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp"}
+    },
+    "required": ["current_version", "latest_version", "command", "checked_at"],
+    "additionalProperties": false
+  }
+}

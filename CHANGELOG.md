@@ -4,6 +4,118 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-26
+
+kibana-cli now follows ai-native-cli-spec 2.0. The first items below are why you
+want it on Kibana 8 and 9; the rest lists every change that can break a 1.x script
+or agent. Upgrade steps: [docs/UPGRADE-2.0.md](docs/UPGRADE-2.0.md).
+
+### Fixed
+
+- **Kibana 9: every search failed** with HTTP 400 `uri [/api/console/proxy] with
+  method [post] exists but is not available with the current configuration`:
+  Kibana 9 opens its internal APIs, the Console Proxy among them, only to requests
+  with `x-elastic-internal-origin`. Every request now sends it (Kibana 7 and 8
+  ignore it). If a reverse proxy strips it, the error is `E_UNSUPPORTED` saying so,
+  not "Console Proxy disabled".
+- **Kibana 8 and 9 hide their version from read-only accounts** (`GET /api/status`
+  returns only the overall level), so 1.x failed every command with `could not
+  detect Kibana version`. The version is now optional: the APIs are found by trying
+  the newest first, and `doctor` and `auth status` report the version and where it
+  came from (`kibana_version` setting, `/api/status`, Elasticsearch) or say it is
+  unknown.
+- **`Browser client is out of date` on an upgraded Kibana** (#16): 1.x sent the
+  `kbn-version` it had saved at login (7.10.1), which Kibana 9 refuses. No request
+  sends `kbn-version` now, and a stale `kibana_version` setting no longer breaks
+  anything.
+- **Kibana 9 answers Elasticsearch's errors with HTTP 200** through the Console
+  Proxy and keeps the real status in the body. The status is now read from the
+  body, so a missing index is `E_NOT_FOUND` again and `log aggregate --terms` on a
+  text field retries on `<field>.keyword` as it does on Kibana 7.
+- **Elasticsearch 9 data streams**: a hit from `logs-*-*` comes from a `.ds-...`
+  backing index. Its `ref` names that index, `log get` reads it back, and the
+  allowlist and the field map match it by its stream's name.
+- `--search-after` never worked on Elasticsearch 8+ (its `_id` sort needs fielddata
+  on `_id`): it is gone; page with `--offset`.
+- The index allowlist now checks every part of an index list, and `--dsl` searches.
+- `--trace-id` with trace mode `msg` looks in every message field, not only the
+  first (`message`), so it finds ids written into `msg` without a field map.
+- A default `log search` page stays within 8,000 characters: long messages end the
+  page early with `next_offset` and a `page_shortened` notice; `--limit` still gets
+  every hit asked for.
+- `log_level` is one of the usual level fields, for `--level`, `--terms level` and
+  `pattern infer`.
+
+### Changed
+
+- **Commands moved**: `search` → `log search` and `agg` → `log aggregate` (both
+  still work); `patterns` → `pattern` and `objects` → `object` (the old names still
+  work; `object get` takes `<type>/<id>`); `config show|init` → `field-map get|init`
+  (`config` still works); `patterns infer --write` → `field-map add-profile`, whose
+  exact line `pattern infer` returns as `next_command`; `context list` → `profile
+  list`.
+- **Contexts are profiles** in `~/.kibana-cli/settings.json` (`host`, `user`,
+  `default_index`, `field_map_file`, `kibana_version`, `allowed_index_prefixes`,
+  `timeout`; never a password), picked by `--profile` or `KIBANA_CLI_PROFILE`, else
+  `default_profile`. `context use|add|remove|current` are gone, and `context` is the
+  built-in that shows the active profile. The 1.x `config.json` is not read: per 1.x
+  context, run `kibana-cli auth login --profile <name> --host <host> --user <user>
+  --dangerous` (`--dry-run`, then `--confirm <token>`). A password 1.x saved in the
+  OS keyring for that host and user (`kibana-cli` / `<host>|basic|<user>`) is
+  reused.
+- **`--profile` of `search` and `agg` is now `--field-profile`**: `--profile` picks
+  the settings profile.
+- **Renamed flags**, still accepted with a `deprecated` notice: `--from` →
+  `--since`, `--to` → `--until` (both also take `15m`, `2h`, ISO times), `--size`
+  and `--buckets` → `--limit`, `objects list --search` → `--query`.
+- **Output**: one compact JSON envelope, `schema_version` `"2.0"`, snake_case keys,
+  `meta.untrusted` instead of `_untrusted`. A hit is `ref` (`<index>/<_id>`),
+  `timestamp`, `service`, `level`, `message`, `trace_id` (`--fields +span_id`,
+  `--fields all`); a document's source is a list of `{name, value}`; `--format raw`
+  on `log get` and `object get` returns Kibana's JSON. Lists carry `total`,
+  `has_more`, `next_offset` and `scope` (index, UTC range, filters); zero hits are
+  explained in `scope.zero_hits`.
+- **Limits**: `log search` returns 20 hits by default, 500 at most (1.x: 50 and
+  1,000); messages in lists are cut at 500 characters (`log get` has the whole
+  one). Requests time out after 30 s at most (1.x: 60 s); reads retry at most twice.
+- **Local writes need a scope** a person grants (`~/.kibana-cli/scope.json`):
+  `field-map init` (`artifact`), `field-map add-profile` (`artifact`, `persist`),
+  `auth login|logout` (`configure`, dangerous); then `--dry-run` and `--confirm
+  <token>`. Nothing is ever written to Kibana or Elasticsearch.
+- `--dry-run` on a read runs the read; `--explain` adds the Elasticsearch request
+  to `scope.request` instead of 1.x's DSL preview.
+- `update` is aicli's built-in (strict semver, Sigstore-verified binaries, the Skill
+  copied from the installed package).
+- `--service`, `--level`, `--trace-id` work without a field map (`service.name`,
+  `log.level`, `trace.id` and common variants). `--field-map-file` is only on the
+  `field-map` commands; elsewhere use `KIBANA_CLI_FIELD_MAP_FILE`.
+
+### Removed
+
+- `--insecure`, `KIBANA_CLI_INSECURE` (use `KIBANA_CLI_CA_FILE`), `--timeout` (use
+  `KIBANA_CLI_TIMEOUT`), `--context` and `KIBANA_CLI_CONTEXT` (use `--profile`).
+- `--force` (`field-map init` never overwrites), `patterns infer --write`, `context
+  add --use|--no-validate`, `--format text` tables, `KIBANA_CLI_USER_AGENT`,
+  `KIBANA_CLI_NO_UPDATE_CHECK` and `release_readiness`. `--json` and `--compact`
+  are still accepted.
+
+### Added
+
+- `log get`, `profile list`, `field-map add-profile`, `operation show|list|resolve`,
+  `--explain`, `--source-fields`, `pattern fields --query|--type|--aggregatable` and
+  the `lens` object type.
+- `KIBANA_CLI_PROFILE`, `_SETTINGS_FILE`, `_STATE_DIR`, `_SCOPE_FILE`, `_CA_FILE`,
+  `_DEBUG`, `_FIELD_MAP_FILE`; `doctor` checks `console_proxy` and `kibana_version`.
+
+### Security
+
+- Every Kibana request is a read; the Console Proxy carries only `_search`,
+  `_security/_authenticate` and Elasticsearch's `GET /`.
+- Writes pass aicli's gate: scope check, HMAC-bound single-use confirm tokens, an
+  operation record before anything is written.
+- The password comes from `KIBANA_CLI_PASSWORD` or the OS keyring only, is never
+  printed or recorded, and `settings.json` refuses one.
+
 ## [1.1.17] - 2026-08-26
 
 ### Security

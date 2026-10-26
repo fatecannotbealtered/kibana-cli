@@ -126,6 +126,37 @@ function packageLock(root) {
   };
 }
 
+// ---- SKILL.md ----
+// SKILL-SPEC 2.0 (SKL-001): the tool fields live in the Agent Skills `metadata`
+// map of the frontmatter, as double-quoted strings:
+//   metadata:
+//     version: "1.2.3"
+//     min_version: "1.2.3"
+// Both are read and rewritten only inside that block, so an example in the body
+// or another frontmatter key is never mistaken for them.
+
+// frontmatter returns the YAML between the opening and closing --- lines:
+// { start, body }, where start is the body's offset in the file.
+function frontmatter(text) {
+  const m = /^(\uFEFF?---\r?\n)([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  return m ? { start: m[1].length, body: m[2] } : null;
+}
+
+// metadataBlock returns the lines indented under the top-level `metadata:` key
+// of a frontmatter body: { start, text }, where start is relative to the body.
+function metadataBlock(body) {
+  const head = /^metadata:[ \t]*(?:#[^\r\n]*)?(?:\r?\n|$)/m.exec(body);
+  if (!head) return null;
+  const start = head.index + head[0].length;
+  const rest = body.slice(start);
+  // The block ends at the first line that is neither indented nor blank.
+  const end = /^(?![ \t]|\r?$)/m.exec(rest);
+  return { start, text: end ? rest.slice(0, end.index) : rest };
+}
+
+const META_VERSION = /^([ \t]+version:[ \t]*")([^"]+)(")/m;
+const META_MIN_VERSION = /^([ \t]+min_version:[ \t]*")([^"]+)(")/m;
+
 function skillMd(root) {
   const skillsDir = path.join(root, "skills");
   if (!fs.existsSync(skillsDir)) return [];
@@ -136,20 +167,30 @@ function skillMd(root) {
     descriptors.push({
       label: `skills/${name}/SKILL.md`,
       read() {
-        const text = readRaw(file);
-        const out = [];
-        const ver = text.match(/^version:\s*"([^"]+)"/m);
-        if (ver) out.push({ where: "version", value: ver[1] });
-        const min = text.match(/"min_version"\s*:\s*"([^"]+)"/);
-        if (min) out.push({ where: "min_version", value: min[1] });
-        return out;
+        // A Skill without either field reports null ("(missing)") rather than
+        // nothing, so a Skill added without them fails the check instead of
+        // passing it. So does a field sync-version cannot rewrite: one outside
+        // `metadata`, unquoted or single-quoted.
+        const fm = frontmatter(readRaw(file));
+        const meta = fm ? metadataBlock(fm.body) : null;
+        const block = meta ? meta.text : "";
+        const ver = META_VERSION.exec(block);
+        const min = META_MIN_VERSION.exec(block);
+        return [
+          { where: "metadata.version", value: ver ? ver[2] : null },
+          { where: "metadata.min_version", value: min ? min[2] : null },
+        ];
       },
       write(version) {
         const text = readRaw(file);
-        // Only the frontmatter `version:` line; tolerant of whitespace.
-        let next = text.replace(/^(version:\s*")[^"]+(")/m, `$1${version}$2`);
-        next = next.replace(/("min_version"\s*:\s*")[^"]+(")/, `$1${version}$2`);
-        return writeTextPreserving(file, text, next);
+        const fm = frontmatter(text);
+        const meta = fm ? metadataBlock(fm.body) : null;
+        if (!meta) return 0;
+        // Rewrites values in place; never adds a field it did not find.
+        const swap = (_, open, _old, close) => open + version + close;
+        const next = meta.text.replace(META_VERSION, swap).replace(META_MIN_VERSION, swap);
+        const at = fm.start + meta.start;
+        return writeTextPreserving(file, text, text.slice(0, at) + next + text.slice(at + meta.text.length));
       },
     });
   }
@@ -157,9 +198,12 @@ function skillMd(root) {
 }
 
 function pythonVersion(root) {
-  // Python single source is `<pkg>/__init__.py` __version__. setup.py reads it
-  // dynamically (see template setup.py), so it is NOT a separate hand-copied
-  // location and is not registered here.
+  // The Python version lives in `<pkg>/__init__.py` __version__ (REPO-031).
+  // pyproject.toml must read it dynamically (`dynamic = ["version"]` with
+  // `[tool.setuptools.dynamic] version = { attr = "<pkg>.__version__" }`) rather
+  // than repeat it: a static `[project] version` is not registered here, so
+  // check-version would not see it drift. Only top-level packages are scanned,
+  // so the vendored `<pkg>/_aicli/` is never touched.
   const skip = new Set(["node_modules", "tests", "test", "dist", "build", "scripts", ".git", ".github"]);
   for (const name of fs.readdirSync(root, { withFileTypes: true })) {
     if (!name.isDirectory() || skip.has(name.name)) continue;

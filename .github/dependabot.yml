@@ -11,12 +11,8 @@ updates:
     schedule:
       interval: weekly
 
+  # Go overlay: keep module dependencies current for Go CLI tools.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
-  #
-  # - package-ecosystem: pip
-  #   directory: /
-  #   schedule:
-  #     interval: weekly

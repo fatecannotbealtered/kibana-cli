@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:update:2.0",
+  "title": "update",
+  "description": "The data of a successful update call (CLI-070): up_to_date (idempotent no-op), updated, or available (update --check). Versions are strict semver. A partial update (binary replaced, Skill sync failed) is never ok: it is E_PARTIAL whose error.details follow $defs/failure_details, as do all other staged update failures. On the binary install path the signature is verified in process; package-manager paths report signature_status honestly.",
+  "type": "object",
+  "properties": {
+    "status": {
+      "$ref": "#/$defs/status",
+      "not": {"const": "partial"}
+    },
+    "current_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "target_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "update_available": {"type": "boolean"},
+    "install_method": {"$ref": "#/$defs/install_method"},
+    "signature_status": {"$ref": "#/$defs/signature_status"},
+    "skill_sync_status": {"$ref": "#/$defs/skill_sync_status"},
+    "previous_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "command": {"$ref": "#/$defs/command"},
+    "binary_replaced": {"type": "boolean"},
+    "signature_verified": {"type": "boolean"},
+    "checksum_verified": {"type": "boolean"},
+    "skill_sync_command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "stage": {"$ref": "#/$defs/stage"}
+  },
+  "required": ["status", "current_version", "target_version", "update_available", "install_method", "signature_status", "skill_sync_status"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "updated: the new version is installed, nothing is left to update, and the Skills are in step (synced or not_needed), or there was nothing to sync them from or to (skipped: no Skill installed, or an install method that ships no Skills).",
+      "if": {"required": ["status"], "properties": {"status": {"const": "updated"}}},
+      "then": {
+        "required": ["previous_version"],
+        "properties": {
+          "update_available": {"const": false},
+          "binary_replaced": {"const": true},
+          "skill_sync_status": {"enum": ["synced", "not_needed", "skipped"]}
+        }
+      }
+    },
+    {
+      "description": "up_to_date: an idempotent no-op that ran no package manager and replaced nothing.",
+      "if": {"required": ["status"], "properties": {"status": {"const": "up_to_date"}}},
+      "then": {"properties": {"update_available": {"const": false}, "binary_replaced": {"const": false}}}
+    },
+    {
+      "description": "available: update --check found a newer version and changed nothing.",
+      "if": {"required": ["status"], "properties": {"status": {"const": "available"}}},
+      "then": {"properties": {"update_available": {"const": true}, "binary_replaced": {"const": false}}}
+    },
+    {"$ref": "#/$defs/signature_rule"}
+  ],
+  "$defs": {
+    "status": {"enum": ["up_to_date", "updated", "available", "partial"]},
+    "signature_status": {"enum": ["verified", "not_checked", "unavailable"]},
+    "skill_sync_status": {"enum": ["synced", "not_needed", "failed", "skipped"]},
+    "stage": {"enum": ["discover", "download", "verify_signature", "verify_checksum", "replace", "skill_sync"]},
+    "install_method": {
+      "description": "binary (the tool replaces its own file) or the package manager that owns the install (the managers library helpers build argv for).",
+      "enum": ["binary", "npm", "pnpm", "yarn", "go", "pip", "brew"]
+    },
+    "command": {
+      "description": "The package-manager command that was run, as argv (no shell) or as display text.",
+      "anyOf": [
+        {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        {"type": "array", "minItems": 1, "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}}
+      ]
+    },
+    "signature_rule": {
+      "description": "signature_verified is true exactly when signature_status is verified; an update on the binary path is verified (SEC-050).",
+      "allOf": [
+        {
+          "if": {"required": ["signature_status"], "properties": {"signature_status": {"const": "verified"}}},
+          "then": {"properties": {"signature_verified": {"const": true}}},
+          "else": {"properties": {"signature_verified": {"const": false}}}
+        },
+        {
+          "if": {
+            "required": ["install_method", "status"],
+            "properties": {"install_method": {"const": "binary"}, "status": {"const": "updated"}}
+          },
+          "then": {"properties": {"signature_status": {"const": "verified"}, "checksum_verified": {"const": true}}}
+        }
+      ]
+    },
+    "failure_details": {
+      "description": "error.details of a staged update failure (CLI-070), besides dispatch_state and next_action: the stage that failed, the version actually running, whether the binary was replaced and the Skill sync state. Once the binary is replaced the agent gets skill_sync_command to finish.",
+      "type": "object",
+      "properties": {
+        "stage": {"$ref": "#/$defs/stage"},
+        "current_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+        "binary_replaced": {"type": "boolean"},
+        "skill_sync_status": {"$ref": "#/$defs/skill_sync_status"},
+        "target_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+        "previous_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+        "skill_sync_command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "status": {"const": "partial"},
+        "install_method": {"$ref": "#/$defs/install_method"},
+        "signature_status": {"$ref": "#/$defs/signature_status"},
+        "update_available": {"type": "boolean"},
+        "command": {"$ref": "#/$defs/command"}
+      },
+      "required": ["stage", "current_version", "binary_replaced", "skill_sync_status"],
+      "allOf": [
+        {
+          "description": "After the swap: the new binary runs, the Skills still need syncing.",
+          "if": {"required": ["binary_replaced"], "properties": {"binary_replaced": {"const": true}}},
+          "then": {
+            "required": ["target_version", "skill_sync_command"],
+            "properties": {
+              "stage": {"enum": ["replace", "skill_sync"]},
+              "skill_sync_status": {"enum": ["failed", "skipped"]},
+              "update_available": {"const": false}
+            }
+          },
+          "else": {
+            "properties": {
+              "stage": {"not": {"const": "skill_sync"}},
+              "status": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

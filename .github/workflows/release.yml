@@ -5,6 +5,17 @@ on:
     tags:
       - "v*"
 
+# SEC-050: every job gets read access only; the release job, which signs and
+# publishes, and the npm job, which publishes with provenance, ask for more.
+permissions:
+  contents: read
+
+# VER-008: the release path runs the same gates as the merge path (ci.yml) --
+# formatting, vet, lint, tests with the conformance suite, the dependency audits,
+# the version guard and the spec/library drift guard -- before anything is built
+# or signed. A release blocked by a fresh upstream advisory or a drifted vendored
+# library is the intended outcome, not a regression.
+
 jobs:
   ci:
     name: CI
@@ -28,26 +39,31 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # SEC-SPEC §5: the release path gates on the same dependency audit the
+      # SEC-050: the release path gates on the same dependency audit the
       # merge path does. Without this, a CVE published after the last green run
       # on main ships: this job re-runs formatting, vet and tests at tag time but
       # never asked whether the code it is about to sign has a known reachable
-      # vulnerability. A release blocked by a fresh upstream advisory is the
-      # intended outcome, not a regression.
+      # vulnerability.
       - name: Go vulnerability audit
         if: runner.os == 'Linux'
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-      # REPO-SPEC §5c: refuse to publish a binary whose vendored spec or
-      # generated contract module has drifted from the pinned tag.
+      - name: golangci-lint
+        if: runner.os == 'Linux'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      # Refuse to publish a binary whose vendored specs, contract or
+      # internal/aicli library have drifted from the pinned spec tag.
       - uses: actions/setup-node@v7
         if: runner.os == 'Linux'
         with:
           node-version: '20'
 
-      - name: Verify spec/contract sync
+      - name: Verify spec, contract and library sync
         if: runner.os == 'Linux'
         run: node scripts/check-spec.js
 
@@ -65,6 +81,7 @@ jobs:
             echo "No scripts/check-clean.sh; skipping project-specific clean check."
           fi
 
+      # Includes the aicli conformance suite (VER-001) and the coverage check (VER-003).
       - name: Test
         run: go test ./...
 
@@ -83,9 +100,44 @@ jobs:
           CGO_ENABLED: "1"
         run: go test -race ./...
 
+  # SEC-050: the npm wrapper ships too, so the release path runs the npm half
+  # of the audit and the version guard -- the same steps as ci.yml's npm-audit
+  # job -- before the release job signs anything. It is a separate job so
+  # node_modules never lands in the tree the ci job tests.
+  npm-audit:
+    name: npm audit and version sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install package metadata
+        run: npm install --ignore-scripts --omit=optional --no-audit --no-fund
+
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high --omit=optional
+
+      # Checked here, before signing, so a mismatched tag never produces a
+      # GitHub release that the npm publish step would then refuse.
+      - name: Verify tag and version sync
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version (${TAG_VERSION}) does not match package.json version (${PKG_VERSION})"
+            exit 1
+          fi
+          node scripts/check-version.js
+
   release:
     name: Release
-    needs: ci
+    needs: [ci, npm-audit]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -107,6 +159,8 @@ jobs:
           # Defensive fallback: if the slice is empty, ship the whole changelog.
           [ -s release-notes.md ] || cp CHANGELOG.md release-notes.md
 
+      # Sigstore keyless signing: .goreleaser.yml signs checksums.txt with
+      # `cosign sign-blob --new-bundle-format` using this job's OIDC identity.
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
@@ -154,9 +208,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p dist
+          mkdir -p dist verify
           gh release download "${GITHUB_REF_NAME}" --dir dist --pattern "*.tar.gz" --pattern "*.zip"
+          gh release download "${GITHUB_REF_NAME}" --dir verify --pattern "checksums.txt" --pattern "checksums.txt.sigstore.json"
           find dist -type f \( -name "*.tar.gz" -o -name "*.zip" \) -print
+
+      # SEC-050: the archives repackaged for npm are the ones this tag's release job
+      # signed: checksums.txt is verified against its Sigstore bundle, bound to the
+      # exact identity of this workflow at this tag, and every archive against
+      # checksums.txt, before anything is repackaged.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify the signed checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle verify/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            verify/checksums.txt
+          cd dist
+          for f in *.tar.gz *.zip; do
+            [ -e "$f" ] || continue
+            grep -q "  ${f}\$" ../verify/checksums.txt || { echo "::error::${f} is not listed in checksums.txt"; exit 1; }
+          done
+          sha256sum --check --ignore-missing ../verify/checksums.txt
 
       - name: Prepare npm platform packages
         run: node scripts/prepare-npm-platform-packages.js dist npm-platform
@@ -167,6 +245,10 @@ jobs:
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
           ROOT_PKG=$(node -p "require('./package.json').name")
+          # A prerelease (a semver tag with a "-" part) goes to the next dist-tag, so
+          # `npm install -g` never picks it up implicitly (CLI-070).
+          DIST_TAG=latest
+          case "$VERSION" in *-*) DIST_TAG=next ;; esac
 
           for dir in npm-platform/*; do
             [ -d "$dir" ] || continue
@@ -175,7 +257,7 @@ jobs:
               echo "npm package ${PKG}@${VERSION} already published; skipping"
               continue
             fi
-            npm publish "./$dir" --access public --provenance
+            npm publish "./$dir" --access public --provenance --tag "$DIST_TAG"
           done
 
           if npm view "${ROOT_PKG}@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
@@ -186,4 +268,4 @@ jobs:
           # source of truth): rewrite optionalDependencies to the published
           # version so an npm install never resolves a stale platform binary.
           node -e "const fs=require('fs'),p=require('./package.json');for(const k in (p.optionalDependencies||{}))p.optionalDependencies[k]=p.version;fs.writeFileSync('./package.json',JSON.stringify(p,null,2)+String.fromCharCode(10))"
-          npm publish --access public --provenance
+          npm publish --access public --provenance --tag "$DIST_TAG"
