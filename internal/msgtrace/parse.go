@@ -7,8 +7,9 @@ import "regexp"
 // structured traceId/spanId regardless of the logging framework. Every pattern is
 // anchored or bounded to keep matching linear — no catastrophic backtracking.
 var builtinPatterns = []*regexp.Regexp{
-	// Spring Cloud Sleuth / Micrometer MDC prefix: [traceId, spanId], 32-hex each.
-	regexp.MustCompile(`^\[([0-9a-fA-F]{32}),\s*([0-9a-fA-F]{32})\]`),
+	// Spring Cloud Sleuth / Micrometer MDC prefix: [traceId, spanId], each 16 or 32
+	// hex digits (Sleuth's spans and 64-bit traces have 16).
+	regexp.MustCompile(`^\[([0-9a-fA-F]{16}(?:[0-9a-fA-F]{16})?),\s*([0-9a-fA-F]{16}(?:[0-9a-fA-F]{16})?)\]`),
 	// key=value / key:value, e.g. traceId=abc123, trace_id: 4bf92f..., trace-id="...".
 	regexp.MustCompile(`(?i)\btrace[_-]?id["']?\s*[:=]\s*["']?([0-9a-fA-F][0-9a-fA-F-]{7,63})`),
 	// Bare 32-hex token anywhere (low-priority fallback for ad-hoc formats).

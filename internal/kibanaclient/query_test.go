@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildTraceQuery_msgMode(t *testing.T) {
-	q := buildTraceQuery("aabbccdd00112233445566778899aabb", nil, "msg", "msg")
+	q := buildTraceQuery("aabbccdd00112233445566778899aabb", nil, "msg", "msg", nil)
 	if q == nil {
 		t.Fatal("expected query")
 	}
@@ -19,8 +19,19 @@ func TestBuildTraceQuery_msgMode(t *testing.T) {
 	}
 }
 
+// TestBuildTraceQuery_msgModeEveryMessageField: without a field map the message
+// fields are message, msg and log.message, and an IoT index writes the trace id into
+// msg (live run on 9.5.2: looking only in message found nothing).
+func TestBuildTraceQuery_msgModeEveryMessageField(t *testing.T) {
+	q := buildTraceQuery("trace1000", nil, "msg", "message", []string{"message", "msg", "log.message"})
+	should, _ := q["bool"].(map[string]any)["should"].([]map[string]any)
+	if len(should) != 3 || should[1]["match_phrase"].(map[string]any)["msg"] != "trace1000" {
+		t.Fatalf("%#v", q)
+	}
+}
+
 func TestBuildTraceQuery_fieldMode(t *testing.T) {
-	q := buildTraceQuery("abc", []string{"traceId"}, "field", "msg")
+	q := buildTraceQuery("abc", []string{"traceId"}, "field", "msg", nil)
 	if q == nil {
 		t.Fatal("expected query")
 	}
@@ -46,7 +57,7 @@ func TestBuildQuery_msgOnlyUsesMessageField(t *testing.T) {
 }
 
 func TestBuildQuery_exportAndBranches(t *testing.T) {
-	if BuildQuery(SearchOptions{})["match_all"] == nil {
+	if buildQuery(SearchOptions{})["match_all"] == nil {
 		t.Fatal("match_all")
 	}
 	q := buildQuery(SearchOptions{
@@ -137,7 +148,7 @@ func TestBuildQuery_preciseMultiMessageField(t *testing.T) {
 
 // Trace field mode falls back to a free-text match across all fields (no silent zero).
 func TestBuildTraceQuery_fieldModeFreeTextFallback(t *testing.T) {
-	q := buildTraceQuery("abc123", []string{"traceId"}, "field", "msg")
+	q := buildTraceQuery("abc123", []string{"traceId"}, "field", "msg", nil)
 	should := q["bool"].(map[string]any)["should"].([]map[string]any)
 	if len(should) != 2 {
 		t.Fatalf("expected configured-field OR free-text fallback, got %#v", q)
@@ -145,10 +156,10 @@ func TestBuildTraceQuery_fieldModeFreeTextFallback(t *testing.T) {
 }
 
 func TestBuildTraceQuery_emptyAndNoFields(t *testing.T) {
-	if q := buildTraceQuery("", []string{"traceId"}, "field", "msg"); q != nil {
+	if q := buildTraceQuery("", []string{"traceId"}, "field", "msg", nil); q != nil {
 		t.Fatalf("empty trace should not build query: %#v", q)
 	}
-	q := buildTraceQuery("abc123", nil, "field", "msg")
+	q := buildTraceQuery("abc123", nil, "field", "msg", nil)
 	if _, ok := q["query_string"]; !ok {
 		t.Fatalf("expected free-text fallback when no trace fields, got %#v", q)
 	}

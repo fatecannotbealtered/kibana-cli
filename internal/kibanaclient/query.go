@@ -30,10 +30,6 @@ type SearchOptions struct {
 	MessageFields []string // all configured message fields (precise multi-field search)
 	// MsgOnly (precise) restricts --query to match_phrase across message fields only.
 	MsgOnly bool
-	// SearchAfter is the ES search_after cursor (sort values of the last seen hit).
-	// When set, it replaces offset-based paging: the query adds an _id tiebreaker
-	// sort and omits `from`. Mutually exclusive with Offset at the caller level.
-	SearchAfter []any
 }
 
 func buildQuery(opts SearchOptions) map[string]any {
@@ -47,6 +43,9 @@ func buildQuery(opts SearchOptions) map[string]any {
 		if opts.To != "" {
 			rangeQ["lte"] = opts.To
 		}
+		// The bounds are ISO 8601 times; format makes Elasticsearch read them so
+		// whatever date format the time field is mapped with, as Discover does.
+		rangeQ["format"] = "strict_date_optional_time"
 		filter = append(filter, map[string]any{
 			"range": map[string]any{opts.TimeField: rangeQ},
 		})
@@ -74,7 +73,7 @@ func buildQuery(opts SearchOptions) map[string]any {
 	if msgField == "" {
 		msgField = "msg"
 	}
-	if q := buildTraceQuery(opts.TraceID, opts.TraceFields, opts.TraceMode, msgField); q != nil {
+	if q := buildTraceQuery(opts.TraceID, opts.TraceFields, opts.TraceMode, msgField, opts.MessageFields); q != nil {
 		must = append(must, q)
 	}
 	if len(opts.QueryClause) > 0 {
@@ -99,11 +98,6 @@ func buildQuery(opts SearchOptions) map[string]any {
 	return map[string]any{"bool": boolQ}
 }
 
-// BuildQuery exports the Elasticsearch query body for dry-run previews.
-func BuildQuery(opts SearchOptions) map[string]any {
-	return buildQuery(opts)
-}
-
 func termFilterClauses(key, value string) []map[string]any {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -117,18 +111,18 @@ func termFilterClauses(key, value string) []map[string]any {
 }
 
 // buildTraceQuery matches trace ID per profile: field (ELK traceId) or msg (MDC prefix in message).
+// In msg mode the phrase is looked for in every message field, so an index whose message
+// field is msg finds it without a field map (1.x looked only in the first, message).
 // In field mode it also falls back to a free-text match of the id across all fields, so a
 // present-but-differently-named trace field never silently returns zero hits.
-func buildTraceQuery(traceID string, traceFields []string, traceMode, msgField string) map[string]any {
+func buildTraceQuery(traceID string, traceFields []string, traceMode, msgField string, msgFields []string) map[string]any {
 	traceID = strings.TrimSpace(traceID)
 	if traceID == "" {
 		return nil
 	}
 	switch fieldmap.NormalizeTraceMode(traceMode) {
 	case fieldmap.TraceModeMsg:
-		return map[string]any{
-			"match_phrase": map[string]any{msgField: traceID},
-		}
+		return buildMessagePhraseQuery(msgFields, msgField, traceID)
 	default:
 		fieldQ := fieldmap.BuildValueORQuery(traceFields, traceID)
 		free := freeTextQuery(traceID)

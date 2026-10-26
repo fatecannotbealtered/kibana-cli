@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:envelope:2.0",
+  "title": "envelope",
+  "description": "The one JSON document a command writes to stdout in json mode (CLI-001, CLI-002, CLI-004). ok selects the form: success has exactly ok, schema_version, data and meta; failure has exactly ok, schema_version, error and meta. data is the command's payload; the objects the contract reserves inside it are validated by key: an operation record (operation_id + status + created_at), dry-run data (preview or confirm_token), confirmed-write data (receipt), batch results (items + summary) and pages (items with count, has_more or a continuation key). $defs/stream_line is one NDJSON line of a declared streaming command (CLI-006).",
+  "type": "object",
+  "properties": {
+    "ok": {"type": "boolean"}
+  },
+  "required": ["ok"],
+  "allOf": [
+    {
+      "if": {"required": ["ok"], "properties": {"ok": {"const": true}}},
+      "then": {"$ref": "#/$defs/success"}
+    },
+    {
+      "if": {"required": ["ok"], "properties": {"ok": {"const": false}}},
+      "then": {"$ref": "#/$defs/failure"}
+    }
+  ],
+  "$defs": {
+    "success": {
+      "description": "Success: exactly ok, schema_version, data, meta (CLI-002).",
+      "type": "object",
+      "properties": {
+        "ok": {"const": true},
+        "schema_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/schema_version"},
+        "data": {"$ref": "#/$defs/data"},
+        "meta": {"$ref": "#/$defs/success_meta"}
+      },
+      "required": ["ok", "schema_version", "data", "meta"],
+      "additionalProperties": false
+    },
+    "failure": {
+      "description": "Failure: exactly ok, schema_version, error, meta (CLI-002, CLI-010).",
+      "type": "object",
+      "properties": {
+        "ok": {"const": false},
+        "schema_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/schema_version"},
+        "error": {"$ref": "urn:ai-native-cli-spec:error-details:2.0"},
+        "meta": {"$ref": "#/$defs/failure_meta"}
+      },
+      "required": ["ok", "schema_version", "error", "meta"],
+      "additionalProperties": false
+    },
+    "meta": {
+      "description": "duration_ms always; notices (typed, from the local cache) and untrusted (paths of external content, declared once per response) only when non-empty; nothing else (CLI-004, CLI-046, CLI-047).",
+      "type": "object",
+      "properties": {
+        "duration_ms": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/duration_ms"},
+        "notices": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "urn:ai-native-cli-spec:notice:2.0"}
+        },
+        "untrusted": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/untrusted_path"}
+        }
+      },
+      "required": ["duration_ms"],
+      "additionalProperties": false
+    },
+    "success_meta": {
+      "description": "On success, external content can only be under data.",
+      "$ref": "#/$defs/meta",
+      "properties": {
+        "untrusted": {"items": {"pattern": "^data(?:\\[|\\.|$)"}}
+      }
+    },
+    "failure_meta": {
+      "description": "On failure, external content can only be under error.details; message is always the tool's own sentence (CLI-017).",
+      "$ref": "#/$defs/meta",
+      "properties": {
+        "untrusted": {"items": {"pattern": "^error\\.details(?:\\.|$)"}}
+      }
+    },
+    "data": {
+      "description": "The payload. Reserved objects are recognised by their keys, in this order, and validated by their schemas; anything else is the tool's own data.",
+      "if": {"type": "object", "required": ["operation_id", "status", "created_at"]},
+      "then": {"$ref": "urn:ai-native-cli-spec:operation:2.0"},
+      "else": {
+        "if": {"type": "object", "anyOf": [{"required": ["confirm_token"]}, {"required": ["preview"]}]},
+        "then": {"$ref": "#/$defs/dry_run_data"},
+        "else": {
+          "if": {"type": "object", "required": ["receipt"]},
+          "then": {"$ref": "#/$defs/write_data"},
+          "else": {
+            "if": {"type": "object", "required": ["items", "summary"]},
+            "then": {"$ref": "urn:ai-native-cli-spec:batch:2.0"},
+            "else": {
+              "if": {
+                "type": "object",
+                "required": ["items"],
+                "anyOf": [
+                  {"required": ["count"]},
+                  {"required": ["has_more"]},
+                  {"required": ["next_cursor"]},
+                  {"required": ["next_offset"]},
+                  {"required": ["continuation_reason"]},
+                  {"required": ["truncated"]}
+                ]
+              },
+              "then": {"$ref": "urn:ai-native-cli-spec:page:2.0"}
+            }
+          }
+        }
+      }
+    },
+    "dry_run_data": {
+      "description": "A dry-run: exactly preview, confirm_token, expires_at and operation_id; token and expiry are null when the preview cannot be applied (CLI-051).",
+      "type": "object",
+      "properties": {
+        "preview": {"$ref": "urn:ai-native-cli-spec:preview:2.0"},
+        "confirm_token": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/confirm_token_or_null"},
+        "expires_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"},
+        "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/any_operation_id"}
+      },
+      "required": ["preview", "confirm_token", "expires_at", "operation_id"],
+      "additionalProperties": false,
+      "$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/token_issue_rule"
+    },
+    "write_data": {
+      "description": "A confirmed single write that is ok: operation_id, receipt and the command's result (CLI-059).",
+      "type": "object",
+      "properties": {
+        "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/operation_id"},
+        "receipt": {"$ref": "urn:ai-native-cli-spec:receipt:2.0"},
+        "result": true
+      },
+      "required": ["operation_id", "receipt"],
+      "additionalProperties": false
+    },
+    "stream_line": {
+      "description": "One NDJSON line of a declared streaming command (CLI-006): a full envelope plus type item or summary; the last line has type summary.",
+      "type": "object",
+      "properties": {
+        "ok": {"type": "boolean"},
+        "type": {"enum": ["item", "summary"]}
+      },
+      "required": ["ok", "type"],
+      "allOf": [
+        {
+          "if": {"required": ["ok"], "properties": {"ok": {"const": true}}},
+          "then": {
+            "properties": {
+              "ok": true,
+              "schema_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/schema_version"},
+              "type": true,
+              "data": {"$ref": "#/$defs/data"},
+              "meta": {"$ref": "#/$defs/success_meta"}
+            },
+            "required": ["schema_version", "data", "meta"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {"required": ["ok"], "properties": {"ok": {"const": false}}},
+          "then": {
+            "properties": {
+              "ok": true,
+              "schema_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/schema_version"},
+              "type": true,
+              "error": {"$ref": "urn:ai-native-cli-spec:error-details:2.0"},
+              "meta": {"$ref": "#/$defs/failure_meta"}
+            },
+            "required": ["schema_version", "error", "meta"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}

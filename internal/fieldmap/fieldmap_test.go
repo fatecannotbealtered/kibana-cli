@@ -137,8 +137,9 @@ func TestResolveSearchOptionsErrors(t *testing.T) {
 	if _, err := ResolveSearchOptions(&Map{}, "nope", "logs-*", "", ""); err == nil {
 		t.Fatal("unknown profile")
 	}
-	if _, err := ResolveSearchOptions(&Map{}, "", "logs-*", "nope", ""); err == nil {
-		t.Fatal("unknown service")
+	// A service the field map does not define is a value to match, not an error.
+	if r, err := ResolveSearchOptions(&Map{}, "", "logs-*", "nope", ""); err != nil || r.Index != "logs-*" {
+		t.Fatalf("undefined service: %v", err)
 	}
 }
 

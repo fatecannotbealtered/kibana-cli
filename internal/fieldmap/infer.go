@@ -12,7 +12,7 @@ import (
 // primary field.
 var (
 	dictService = []string{"log_app", "service_name", "service", "service.name", "app_name", "application", "kubernetes.labels.app"}
-	dictLevel   = []string{"level", "log.level", "severity"}
+	dictLevel   = []string{"level", "log.level", "severity", "log_level"}
 	dictMessage = []string{"message", "msg", "log.message"}
 	dictTrace   = []string{"traceId", "trace_id", "trace.id", "log_traceId"}
 )
@@ -21,11 +21,11 @@ var (
 // it matched, the detected trace mode, and human-facing confidence notes.
 type InferResult struct {
 	Index         string   `json:"index"`
-	ServiceFields []string `json:"serviceFields,omitempty"`
-	LevelFields   []string `json:"levelFields,omitempty"`
-	MessageFields []string `json:"messageFields,omitempty"`
-	TraceIDFields []string `json:"traceIdFields,omitempty"`
-	TraceMode     string   `json:"traceMode"`
+	ServiceFields []string `json:"service_fields,omitempty"`
+	LevelFields   []string `json:"level_fields,omitempty"`
+	MessageFields []string `json:"message_fields,omitempty"`
+	TraceIDFields []string `json:"trace_id_fields,omitempty"`
+	TraceMode     string   `json:"trace_mode"`
 	Notes         []string `json:"notes,omitempty"`
 }
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// AggOptions configures a terms aggregation on logs.
+// AggOptions configures one aggregation over log documents.
 type AggOptions struct {
 	Index         string
 	From          string
@@ -19,6 +19,10 @@ type AggOptions struct {
 	ServiceFields []string
 	LevelValue    string
 	LevelFields   []string
+	TraceID       string
+	TraceFields   []string
+	TraceMode     string
+	Fields        map[string]string
 	Query         string
 	// QueryClause is a precompiled Elasticsearch query and takes precedence over Query.
 	QueryClause   map[string]any
@@ -27,12 +31,15 @@ type AggOptions struct {
 	MessageFields []string
 	// AggType selects the bucketing: "terms" (default) or "date_histogram".
 	AggType string
-	// Interval is the calendar/fixed interval for date_histogram (e.g. 1h, 1d).
+	// Interval is the fixed interval of a date_histogram (30m, 1h, 1d).
 	Interval string
+	// BoundsMin and BoundsMax (epoch milliseconds) extend a date_histogram to the
+	// whole time range, so hours without documents show as 0.
+	BoundsMin, BoundsMax *int64
 	// Metric is an optional sub-aggregation per bucket: avg|sum|min|max|count.
-	// Empty means buckets carry only the doc_count.
+	// Empty or count means buckets carry only their document count.
 	Metric string
-	// MetricField is the numeric field the metric is computed over (not needed for count).
+	// MetricField is the numeric field the metric is computed over.
 	MetricField string
 }
 
@@ -42,117 +49,71 @@ const (
 	AggTypeDateHistogram = "date_histogram"
 )
 
-// Aggregate runs a terms or date_histogram aggregation, optionally with a metric
-// sub-aggregation per bucket. It is the general entry point; Terms remains for the
-// plain count-by-terms case and its .keyword retry.
+// Aggregate runs a terms or date_histogram aggregation, with an optional metric per
+// bucket. A terms aggregation on a text field that Elasticsearch refuses (400) is
+// asked again on <field>.keyword, a second read.
 func (c *Client) Aggregate(ctx context.Context, opts AggOptions) (*AggResult, error) {
 	opts = normalizeAggOptions(opts)
-	switch normalizeAggType(opts.AggType) {
-	case AggTypeDateHistogram:
-		r, err := c.dateHistogram(ctx, opts)
+	if opts.AggType == AggTypeDateHistogram {
+		r, err := c.aggOnce(ctx, opts, opts.TimeField)
 		if err == nil {
 			r.AggType = AggTypeDateHistogram
 		}
 		return r, err
-	default:
-		// terms: reuse Terms for the text-field .keyword retry, then layer metrics.
-		var (
-			r   *AggResult
-			err error
-		)
-		if !hasMetric(opts.Metric) {
-			r, err = c.Terms(ctx, opts)
-		} else {
-			r, err = c.termsWithMetric(ctx, opts)
-		}
-		if err == nil {
-			r.AggType = AggTypeTerms
-		}
-		return r, err
 	}
-}
-
-func (c *Client) dateHistogram(ctx context.Context, opts AggOptions) (*AggResult, error) {
-	body := BuildAggBody(opts)
-	data, err := c.proxyAgg(ctx, opts.Index, body)
-	if err != nil {
-		return nil, err
-	}
-	return parseBucketAgg(data, opts.TimeField, opts.Metric)
-}
-
-func (c *Client) termsWithMetric(ctx context.Context, opts AggOptions) (*AggResult, error) {
 	field := strings.TrimSpace(opts.TermsField)
-	result, err := c.termsMetricOnce(ctx, opts, field)
-	if err == nil {
-		return result, nil
-	}
+	r, err := c.aggOnce(ctx, opts, field)
 	var apiErr *APIError
-	if field != "" && !strings.HasSuffix(field, ".keyword") && errors.As(err, &apiErr) && isTextFieldAggError(apiErr) {
-		if r2, err2 := c.termsMetricOnce(ctx, opts, field+".keyword"); err2 == nil {
-			r2.Field = field + " (.keyword)"
-			return r2, nil
+	if err != nil && field != "" && !strings.HasSuffix(field, ".keyword") && errors.As(err, &apiErr) && isTextFieldAggError(apiErr) {
+		opts.TermsField = field + ".keyword"
+		if r2, err2 := c.aggOnce(ctx, opts, opts.TermsField); err2 == nil {
+			r, err = r2, nil
 		}
 	}
-	return nil, err
+	if err == nil {
+		r.AggType = AggTypeTerms
+	}
+	return r, err
 }
 
-func (c *Client) termsMetricOnce(ctx context.Context, opts AggOptions, field string) (*AggResult, error) {
-	opts.AggType = AggTypeTerms
-	opts.TermsField = field
-	body := BuildAggBody(opts)
-	data, err := c.proxyAgg(ctx, opts.Index, body)
+func (c *Client) aggOnce(ctx context.Context, opts AggOptions, field string) (*AggResult, error) {
+	data, err := c.Proxy(ctx, http.MethodPost, searchTarget(opts.Index), BuildAggBody(opts))
 	if err != nil {
 		return nil, err
 	}
 	return parseBucketAgg(data, field, opts.Metric)
 }
 
-// BuildAggBody returns the first Elasticsearch _search request body used by
-// Aggregate. A text-field .keyword retry is a later request and is not included.
+// BuildAggBody returns the _search body Aggregate sends first (the .keyword retry is
+// a second request).
 func BuildAggBody(opts AggOptions) map[string]any {
 	opts = normalizeAggOptions(opts)
 	var agg map[string]any
-	if normalizeAggType(opts.AggType) == AggTypeDateHistogram {
-		agg = map[string]any{
-			"date_histogram": map[string]any{
-				"field":          opts.TimeField,
-				"fixed_interval": opts.Interval,
-				"min_doc_count":  0,
-				"format":         "strict_date_optional_time",
-			},
+	if opts.AggType == AggTypeDateHistogram {
+		dh := map[string]any{
+			"field":          opts.TimeField,
+			"fixed_interval": opts.Interval,
+			"min_doc_count":  0,
+			"format":         "strict_date_optional_time",
 		}
+		if opts.BoundsMin != nil && opts.BoundsMax != nil {
+			dh["extended_bounds"] = map[string]any{"min": *opts.BoundsMin, "max": *opts.BoundsMax}
+		}
+		agg = map[string]any{"date_histogram": dh}
 	} else {
-		agg = map[string]any{
-			"terms": map[string]any{
-				"field": strings.TrimSpace(opts.TermsField),
-				"size":  opts.BucketSize,
-			},
-		}
+		agg = map[string]any{"terms": map[string]any{"field": strings.TrimSpace(opts.TermsField), "size": opts.BucketSize}}
 	}
 	if metric := metricSubAgg(opts); metric != nil {
 		agg["aggs"] = map[string]any{"metric": metric}
 	}
-
-	searchOpts := SearchOptions{
-		Index:         opts.Index,
-		From:          opts.From,
-		To:            opts.To,
-		TimeField:     opts.TimeField,
-		Query:         opts.Query,
-		QueryClause:   opts.QueryClause,
-		MsgOnly:       opts.MsgOnly,
-		MessageField:  opts.MessageField,
-		MessageFields: opts.MessageFields,
-		ServiceValue:  opts.ServiceValue,
-		ServiceFields: opts.ServiceFields,
-		LevelValue:    opts.LevelValue,
-		LevelFields:   opts.LevelFields,
-	}
+	q := SearchOptions{Index: opts.Index, From: opts.From, To: opts.To, TimeField: opts.TimeField, Query: opts.Query,
+		QueryClause: opts.QueryClause, MsgOnly: opts.MsgOnly, MessageField: opts.MessageField, MessageFields: opts.MessageFields,
+		ServiceValue: opts.ServiceValue, ServiceFields: opts.ServiceFields, LevelValue: opts.LevelValue, LevelFields: opts.LevelFields,
+		TraceID: opts.TraceID, TraceFields: opts.TraceFields, TraceMode: opts.TraceMode, Fields: opts.Fields}
 	return map[string]any{
 		"size":             0,
 		"track_total_hits": true,
-		"query":            buildQuery(searchOpts),
+		"query":            buildQuery(q),
 		"aggs":             map[string]any{"terms_agg": agg},
 	}
 }
@@ -168,30 +129,21 @@ func normalizeAggOptions(opts AggOptions) AggOptions {
 	if opts.Interval == "" {
 		opts.Interval = "1h"
 	}
+	if strings.ToLower(strings.TrimSpace(opts.AggType)) == AggTypeDateHistogram {
+		opts.AggType = AggTypeDateHistogram
+	} else {
+		opts.AggType = AggTypeTerms
+	}
 	return opts
 }
 
-func (c *Client) proxyAgg(ctx context.Context, index string, body map[string]any) ([]byte, error) {
-	path := strings.Trim(strings.TrimPrefix(index, "/"), "/") + "/_search"
-	return c.Proxy(ctx, http.MethodPost, path, body)
-}
-
-// metricSubAgg builds the ES metric sub-aggregation, or nil for count/none.
+// metricSubAgg builds the metric sub-aggregation, or nil for count and none.
 func metricSubAgg(opts AggOptions) map[string]any {
 	m := normalizeMetric(opts.Metric)
-	if m == "" || m == "count" {
+	if !hasMetric(m) {
 		return nil
 	}
 	return map[string]any{m: map[string]any{"field": strings.TrimSpace(opts.MetricField)}}
-}
-
-func normalizeAggType(t string) string {
-	switch strings.ToLower(strings.TrimSpace(t)) {
-	case AggTypeDateHistogram, "date-histogram", "histogram":
-		return AggTypeDateHistogram
-	default:
-		return AggTypeTerms
-	}
 }
 
 func normalizeMetric(m string) string {
@@ -203,35 +155,8 @@ func hasMetric(m string) bool {
 	return v != "" && v != "count"
 }
 
-// Terms runs a terms aggregation (retries with .keyword on text-field errors).
-func (c *Client) Terms(ctx context.Context, opts AggOptions) (*AggResult, error) {
-	opts = normalizeAggOptions(opts)
-	field := strings.TrimSpace(opts.TermsField)
-	result, err := c.termsOnce(ctx, opts, field)
-	if err == nil {
-		return result, nil
-	}
-	var apiErr *APIError
-	if field != "" && !strings.HasSuffix(field, ".keyword") && errors.As(err, &apiErr) && isTextFieldAggError(apiErr) {
-		if r2, err2 := c.termsOnce(ctx, opts, field+".keyword"); err2 == nil {
-			r2.Field = field + " (.keyword)"
-			return r2, nil
-		}
-	}
-	return nil, err
-}
-
-func (c *Client) termsOnce(ctx context.Context, opts AggOptions, field string) (*AggResult, error) {
-	opts.AggType = AggTypeTerms
-	opts.TermsField = field
-	body := BuildAggBody(opts)
-	data, err := c.proxyAgg(ctx, opts.Index, body)
-	if err != nil {
-		return nil, err
-	}
-	return parseTermsAgg(data, field)
-}
-
+// isTextFieldAggError recognises Elasticsearch's refusal to aggregate a text field
+// (fielddata disabled).
 func isTextFieldAggError(e *APIError) bool {
 	if e == nil || e.StatusCode != 400 {
 		return false

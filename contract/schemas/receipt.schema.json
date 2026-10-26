@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:receipt:2.0",
+  "title": "receipt",
+  "description": "What a confirmed write did, per outcome dimension (CLI-059): data.receipt when ok, error.details.receipt when not. observed is the read-back of the fields the write meant to change. A dimension that does not apply to the declared effects is not_applicable. ok and the error code are derived from the receipt by contract.json receipt_rules; check-contract.py applies that table to envelopes.",
+  "type": "object",
+  "properties": {
+    "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/operation_id"},
+    "command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"},
+    "target": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/target"},
+    "effects": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/write_effects"},
+    "outcome": {"$ref": "#/$defs/outcome"},
+    "observed": {"type": "object"},
+    "mismatched": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    },
+    "failed_stage": {"$ref": "#/$defs/failed_stage"},
+    "replayed": {"type": "boolean"},
+    "notes": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+  },
+  "required": ["operation_id", "command", "target", "effects", "outcome", "observed", "replayed"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "A failed or interrupted execution names the stage that failed.",
+      "if": {"$ref": "#/$defs/when_execution_failed"},
+      "then": {"required": ["failed_stage"]}
+    },
+    {
+      "description": "A completed execution can only name verify as its failed stage.",
+      "if": {"required": ["outcome"], "properties": {"outcome": {"required": ["execution"], "properties": {"execution": {"const": "completed"}}}}},
+      "then": {"properties": {"failed_stage": {"const": "verify"}}}
+    },
+    {
+      "description": "failed_stage verify means the read-back failed or was incomplete.",
+      "if": {"required": ["failed_stage"], "properties": {"failed_stage": {"const": "verify"}}},
+      "then": {"properties": {"outcome": {"properties": {"verification": {"enum": ["failed", "incomplete"]}}}}}
+    },
+    {
+      "description": "failed_stage deliver needs the deliver effect.",
+      "if": {"required": ["failed_stage"], "properties": {"failed_stage": {"const": "deliver"}}},
+      "then": {"properties": {"effects": {"contains": {"const": "deliver"}}}}
+    },
+    {
+      "description": "failed_stage persist needs a local-file effect.",
+      "if": {"required": ["failed_stage"], "properties": {"failed_stage": {"const": "persist"}}},
+      "then": {"properties": {"effects": {"contains": {"enum": ["artifact", "persist"]}}}}
+    },
+    {
+      "description": "delivery is not_applicable exactly when deliver is not a declared effect.",
+      "if": {"required": ["effects"], "properties": {"effects": {"type": "array", "contains": {"const": "deliver"}}}},
+      "then": {"properties": {"outcome": {"properties": {"delivery": {"not": {"const": "not_applicable"}}}}}},
+      "else": {"properties": {"outcome": {"properties": {"delivery": {"const": "not_applicable"}}}}}
+    },
+    {
+      "description": "persistence is not_applicable exactly when neither artifact nor persist is a declared effect.",
+      "if": {"required": ["effects"], "properties": {"effects": {"type": "array", "contains": {"enum": ["artifact", "persist"]}}}},
+      "then": {"properties": {"outcome": {"properties": {"persistence": {"not": {"const": "not_applicable"}}}}}},
+      "else": {"properties": {"outcome": {"properties": {"persistence": {"const": "not_applicable"}}}}}
+    },
+    {
+      "description": "change is not_applicable exactly when neither change nor configure is a declared effect.",
+      "if": {"required": ["effects"], "properties": {"effects": {"type": "array", "contains": {"enum": ["change", "configure"]}}}},
+      "then": {"properties": {"outcome": {"properties": {"change": {"not": {"const": "not_applicable"}}}}}},
+      "else": {"properties": {"outcome": {"properties": {"change": {"const": "not_applicable"}}}}}
+    },
+    {
+      "description": "A failed read-back names the fields that disagree.",
+      "if": {"$ref": "#/$defs/when_verification_failed"},
+      "then": {"required": ["mismatched"], "properties": {"mismatched": {"minItems": 1}}}
+    },
+    {
+      "description": "A passed read-back has no mismatched fields.",
+      "if": {"required": ["outcome"], "properties": {"outcome": {"required": ["verification"], "properties": {"verification": {"const": "passed"}}}}},
+      "then": {"properties": {"mismatched": {"maxItems": 0}}}
+    },
+    {
+      "description": "A read-back that passed or failed reports what it observed.",
+      "if": {"required": ["outcome"], "properties": {"outcome": {"required": ["verification"], "properties": {"verification": {"enum": ["passed", "failed"]}}}}},
+      "then": {"properties": {"observed": {"minProperties": 1}}}
+    }
+  ],
+  "$defs": {
+    "outcome": {
+      "description": "The outcome dimensions of contract.json receipt.outcome.",
+      "type": "object",
+      "properties": {
+        "execution": {"enum": ["not_started", "running", "completed", "failed", "interrupted", "unknown"]},
+        "change": {"enum": ["not_applicable", "not_applied", "applied", "partial", "rolled_back", "unknown"]},
+        "delivery": {"enum": ["not_applicable", "not_attempted", "delivered", "partial", "rejected", "unknown"]},
+        "persistence": {"enum": ["not_applicable", "unchanged", "saved", "partial", "unknown"]},
+        "verification": {"enum": ["not_applicable", "not_run", "passed", "failed", "incomplete"]}
+      },
+      "required": ["execution", "change", "delivery", "persistence", "verification"],
+      "additionalProperties": false
+    },
+    "failed_stage": {"enum": ["apply", "deliver", "persist", "verify"]},
+    "when_execution_failed": {
+      "required": ["outcome"],
+      "properties": {"outcome": {"required": ["execution"], "properties": {"execution": {"enum": ["failed", "interrupted"]}}}}
+    },
+    "when_verification_failed": {
+      "required": ["outcome"],
+      "properties": {"outcome": {"required": ["verification"], "properties": {"verification": {"const": "failed"}}}}
+    }
+  }
+}

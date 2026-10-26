@@ -3,149 +3,90 @@ package kibanaclient
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"testing"
-
-	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 )
 
-func TestClient_SearchRaw_passthrough(t *testing.T) {
-	var path string
-	var body map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		path = r.URL.Query().Get("path")
-		payload, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(payload, &body)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"took": 7,
-			"hits": map[string]any{
-				"total": map[string]any{"value": 1, "relation": "eq"},
-				"hits": []map[string]any{
-					{"_index": "logs-2024", "_id": "1", "_source": map[string]any{"msg": "x"}, "sort": []any{123, "1"}},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
+const emptyHits = `{"took":1,"hits":{"total":{"value":0,"relation":"eq"},"hits":[]}}`
 
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	res, err := c.SearchRaw(context.Background(), "logs-*", map[string]any{
-		"query": map[string]any{"match_all": map[string]any{}},
-		"size":  5,
+// TestSearchSendsBuildSearchBody: the body Search sends is BuildSearchBody's (the
+// dry-run-free preview a command shows), newest first, exact totals, ISO bounds.
+func TestSearchSendsBuildSearchBody(t *testing.T) {
+	var rc recorder
+	srv := rc.server(t, func(w http.ResponseWriter, _ *http.Request, _ int) { _, _ = w.Write([]byte(emptyHits)) })
+	opts := SearchOptions{Index: "logs-*", QueryClause: map[string]any{"term": map[string]any{"msg.keyword": "exact"}},
+		From: "2026-10-23T04:45:00Z", To: "2026-10-23T05:00:00Z", SortDesc: true, Size: 5, Offset: 10}
+	if _, err := testClient(srv.URL).Search(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(BuildSearchBody(opts))
+	var a, b map[string]any
+	_ = json.Unmarshal(want, &a)
+	_ = json.Unmarshal([]byte(rc.body[0]), &b)
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("got  %s\nwant %s", rc.body[0], want)
+	}
+	if b["from"] != float64(10) || b["size"] != float64(5) || b["track_total_hits"] != true {
+		t.Fatalf("page: %s", rc.body[0])
+	}
+	sort := b["sort"].([]any)[0].(map[string]any)["@timestamp"].(map[string]any)
+	if sort["order"] != "desc" || sort["unmapped_type"] != "boolean" {
+		t.Fatalf("sort: %v", sort)
+	}
+	rng := b["query"].(map[string]any)["bool"].(map[string]any)["filter"].([]any)[0].(map[string]any)["range"].(map[string]any)["@timestamp"].(map[string]any)
+	if rng["gte"] != "2026-10-23T04:45:00Z" || rng["format"] != "strict_date_optional_time" {
+		t.Fatalf("range: %v", rng)
+	}
+}
+
+func TestSearchRawAndCount(t *testing.T) {
+	var rc recorder
+	srv := rc.server(t, func(w http.ResponseWriter, _ *http.Request, _ int) {
+		_, _ = w.Write([]byte(`{"took":7,"hits":{"total":{"value":3,"relation":"eq"},"hits":[{"_index":"logs-2026","_id":"1","_source":{"msg":"x"}}]}}`))
 	})
-	if err != nil {
-		t.Fatal(err)
+	c := testClient(srv.URL)
+	res, err := c.SearchRaw(context.Background(), "logs-*", map[string]any{"query": map[string]any{"match_all": map[string]any{}}, "size": 5})
+	if err != nil || res.Total != 3 || len(res.Hits) != 1 || res.TookMs != 7 {
+		t.Fatalf("%+v %v", res, err)
 	}
-	if res.Total != 1 || len(res.Hits) != 1 || res.TookMs != 7 {
-		t.Fatalf("%+v", res)
+	if p := rc.reqs[0].URL.Query().Get("path"); p != "logs-*/_search" {
+		t.Fatalf("path %q", p)
 	}
-	if path != "logs-*/_search" {
-		t.Fatalf("path=%q", path)
+	if _, err := c.SearchRaw(context.Background(), "", map[string]any{}); err != nil || rc.reqs[1].URL.Query().Get("path") != "*/_search" {
+		t.Fatalf("default index: %v %s", err, rc.reqs[1].URL)
 	}
-	if len(res.LastSort) != 2 {
-		t.Fatalf("expected sort cursor: %+v", res.LastSort)
+	n, err := c.Count(context.Background(), SearchOptions{Index: "logs-*"})
+	if err != nil || n != 3 {
+		t.Fatal(n, err)
 	}
-}
-
-func TestClient_SearchRaw_defaultIndex(t *testing.T) {
-	var path string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		path = r.URL.Query().Get("path")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"took": 1,
-			"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}},
-		})
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, err := c.SearchRaw(context.Background(), "", map[string]any{"query": map[string]any{}}); err != nil {
-		t.Fatal(err)
-	}
-	if path != "*/_search" {
-		t.Fatalf("path=%q", path)
-	}
-}
-
-func TestClient_Search_searchAfterCursor(t *testing.T) {
 	var body map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		payload, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(payload, &body)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"took": 1,
-			"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}},
-		})
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	_, err := c.Search(context.Background(), SearchOptions{
-		Index: "logs-*", Size: 10, SortDesc: true, TimeField: "@timestamp",
-		Offset: 99, SearchAfter: []any{123, "1"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// search_after present, from omitted, and an _id tiebreaker appended to sort.
-	if _, hasFrom := body["from"]; hasFrom {
-		t.Fatalf("from must be omitted with cursor: %v", body)
-	}
-	if _, ok := body["search_after"]; !ok {
-		t.Fatalf("missing search_after: %v", body)
-	}
-	sort, _ := body["sort"].([]any)
-	if len(sort) != 2 {
-		t.Fatalf("expected 2 sort keys (time + _id): %v", sort)
+	_ = json.Unmarshal([]byte(rc.body[2]), &body)
+	if body["size"] != float64(0) {
+		t.Fatalf("count body: %s", rc.body[2])
 	}
 }
 
-func TestBuildSearchBody_matchesRequest(t *testing.T) {
-	var got map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
+func TestGetDoc(t *testing.T) {
+	var rc recorder
+	srv := rc.server(t, func(w http.ResponseWriter, _ *http.Request, n int) {
+		if n == 1 {
+			_, _ = w.Write([]byte(`{"hits":{"total":1,"hits":[{"_index":"logs-1","_id":"a/b","_source":{"msg":"x"}}]}}`))
 			return
 		}
-		payload, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(payload, &got)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}},
-		})
-	}))
-	defer srv.Close()
-
-	opts := SearchOptions{
-		Index:       "logs-*",
-		QueryClause: map[string]any{"term": map[string]any{"msg.keyword": "exact"}},
-		From:        "now-1h",
-		To:          "now",
-		SortDesc:    true,
+		_, _ = w.Write([]byte(emptyHits))
+	})
+	c := testClient(srv.URL)
+	hit, err := c.GetDoc(context.Background(), "logs-1", "a/b")
+	if err != nil || hit == nil || hit.ID != "a/b" || hit.Source["msg"] != "x" {
+		t.Fatalf("%+v %v", hit, err)
 	}
-	want := BuildSearchBody(opts)
-	wantJSON, _ := json.Marshal(want)
-	var normalizedWant map[string]any
-	_ = json.Unmarshal(wantJSON, &normalizedWant)
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, err := c.Search(context.Background(), opts); err != nil {
-		t.Fatal(err)
+	var body map[string]any
+	_ = json.Unmarshal([]byte(rc.body[0]), &body)
+	if ids := body["query"].(map[string]any)["ids"].(map[string]any)["values"].([]any); ids[0] != "a/b" {
+		t.Fatalf("ids query: %s", rc.body[0])
 	}
-	if !reflect.DeepEqual(got, normalizedWant) {
-		t.Fatalf("request body differs from preview\ngot:  %#v\nwant: %#v", got, normalizedWant)
+	if hit, err := c.GetDoc(context.Background(), "logs-1", "zz"); hit != nil || err != nil {
+		t.Fatalf("missing doc: %+v %v", hit, err)
 	}
 }

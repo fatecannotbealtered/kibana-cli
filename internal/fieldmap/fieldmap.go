@@ -4,24 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/fatecannotbealtered/kibana-cli/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 // FileName is the local field mapping config file.
 const FileName = "field-map.yaml"
 
-// Map is ~/.kibana-cli/field-map.yaml — maps logical names to heterogeneous log index fields.
+// Map is a field-map file (default ~/.kibana-cli/field-map.yaml): it maps logical
+// names (service, level, message, trace id) to the field names each index uses.
 type Map struct {
-	Version    int                `yaml:"version" json:"version"`
-	Defaults   Defaults           `yaml:"defaults" json:"defaults"`
-	IndexRules []IndexRule        `yaml:"index_rules" json:"indexRules"`
-	Profiles   map[string]Profile `yaml:"profiles" json:"profiles"`
-	Services   map[string]Service `yaml:"services" json:"services"`
+	Version    int                `yaml:"version,omitempty" json:"version,omitempty"`
+	Defaults   Defaults           `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	IndexRules []IndexRule        `yaml:"index_rules,omitempty" json:"index_rules,omitempty"`
+	Profiles   map[string]Profile `yaml:"profiles,omitempty" json:"profiles,omitempty"`
+	Services   map[string]Service `yaml:"services,omitempty" json:"services,omitempty"`
 }
 
 // Trace lookup modes (per index / profile).
@@ -32,48 +29,37 @@ const (
 
 // Defaults applies when a profile omits a field list.
 type Defaults struct {
-	Index           string   `yaml:"index" json:"index"`
-	TimeField       string   `yaml:"time_field" json:"timeField"`
-	ServiceFields   []string `yaml:"service_fields" json:"serviceFields"`
-	LevelFields     []string `yaml:"level_fields" json:"levelFields"`
-	MessageFields   []string `yaml:"message_fields" json:"messageFields"`
-	TraceIDFields   []string `yaml:"trace_id_fields" json:"traceIdFields"`
-	TraceMode       string   `yaml:"trace_mode" json:"traceMode"`
-	TraceMsgRegexes []string `yaml:"trace_msg_patterns" json:"traceMsgPatterns,omitempty"`
+	Index           string   `yaml:"index,omitempty" json:"index,omitempty"`
+	TimeField       string   `yaml:"time_field,omitempty" json:"time_field,omitempty"`
+	ServiceFields   []string `yaml:"service_fields,omitempty" json:"service_fields,omitempty"`
+	LevelFields     []string `yaml:"level_fields,omitempty" json:"level_fields,omitempty"`
+	MessageFields   []string `yaml:"message_fields,omitempty" json:"message_fields,omitempty"`
+	TraceIDFields   []string `yaml:"trace_id_fields,omitempty" json:"trace_id_fields,omitempty"`
+	TraceMode       string   `yaml:"trace_mode,omitempty" json:"trace_mode,omitempty"`
+	TraceMsgRegexes []string `yaml:"trace_msg_patterns,omitempty" json:"trace_msg_patterns,omitempty"`
 }
 
 // Profile describes one index pattern and its field names.
 type Profile struct {
-	Index           string   `yaml:"index" json:"index,omitempty"`
-	IndexPatterns   []string `yaml:"index_patterns" json:"indexPatterns,omitempty"`
-	TimeField       string   `yaml:"time_field" json:"timeField,omitempty"`
-	ServiceFields   []string `yaml:"service_fields" json:"serviceFields,omitempty"`
-	LevelFields     []string `yaml:"level_fields" json:"levelFields,omitempty"`
-	MessageFields   []string `yaml:"message_fields" json:"messageFields,omitempty"`
-	TraceIDFields   []string `yaml:"trace_id_fields" json:"traceIdFields,omitempty"`
-	TraceMode       string   `yaml:"trace_mode" json:"traceMode,omitempty"`
-	TraceMsgRegexes []string `yaml:"trace_msg_patterns" json:"traceMsgPatterns,omitempty"`
+	Index           string   `yaml:"index,omitempty" json:"index,omitempty"`
+	IndexPatterns   []string `yaml:"index_patterns,omitempty" json:"index_patterns,omitempty"`
+	TimeField       string   `yaml:"time_field,omitempty" json:"time_field,omitempty"`
+	ServiceFields   []string `yaml:"service_fields,omitempty" json:"service_fields,omitempty"`
+	LevelFields     []string `yaml:"level_fields,omitempty" json:"level_fields,omitempty"`
+	MessageFields   []string `yaml:"message_fields,omitempty" json:"message_fields,omitempty"`
+	TraceIDFields   []string `yaml:"trace_id_fields,omitempty" json:"trace_id_fields,omitempty"`
+	TraceMode       string   `yaml:"trace_mode,omitempty" json:"trace_mode,omitempty"`
+	TraceMsgRegexes []string `yaml:"trace_msg_patterns,omitempty" json:"trace_msg_patterns,omitempty"`
 }
 
 // Service maps a logical service name to optional profile scope and extra match fields.
 type Service struct {
-	Profiles    []string `yaml:"profiles" json:"profiles,omitempty"`
-	MatchFields []string `yaml:"match_fields" json:"matchFields,omitempty"`
-	Index       string   `yaml:"index" json:"index,omitempty"`
+	Profiles    []string `yaml:"profiles,omitempty" json:"profiles,omitempty"`
+	MatchFields []string `yaml:"match_fields,omitempty" json:"match_fields,omitempty"`
+	Index       string   `yaml:"index,omitempty" json:"index,omitempty"`
 }
 
-// FilePath returns ~/.kibana-cli/field-map.yaml
-func FilePath() string {
-	return filepath.Join(config.Dir(), FileName)
-}
-
-// Load reads the global field-map.yaml; missing file returns nil map without error.
-func Load() (*Map, error) {
-	return LoadFile(FilePath())
-}
-
-// LoadFile reads a field-map from an explicit path (per-context override);
-// a missing file returns nil map without error.
+// LoadFile reads a field-map file; a missing file is a nil map and no error.
 func LoadFile(path string) (*Map, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -82,14 +68,31 @@ func LoadFile(path string) (*Map, error) {
 		}
 		return nil, fmt.Errorf("reading field map: %w", err)
 	}
-	var m Map
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parsing field map: %w", err)
+	return Parse(data)
+}
+
+// ErrNoIndex is a search with no index from its flags, its field-map profile or
+// the field-map's defaults.index.
+var ErrNoIndex = errors.New("no index: give --index, --data-view or --field-profile, or set defaults.index in the field-map")
+
+// UnknownNameError is a profile or service the field-map does not define. Known
+// lists the names it does define, sorted.
+type UnknownNameError struct {
+	Kind, Name string
+	Known      []string
+}
+
+func (e *UnknownNameError) Error() string {
+	return fmt.Sprintf("the field-map has no %s named %q", e.Kind, e.Name)
+}
+
+func sortedNames[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
 	}
-	if m.Version == 0 {
-		m.Version = 1
-	}
-	return &m, nil
+	sort.Strings(out)
+	return out
 }
 
 // ResolvedSearch bundles index, time field, and field name lists for a query.
@@ -125,16 +128,14 @@ func ResolveSearchOptions(m *Map, profileName, indexFlag, serviceName, level str
 	if profileName != "" {
 		p, ok := m.Profiles[profileName]
 		if !ok {
-			return r, fmt.Errorf("unknown profile %q (check field-map.yaml)", profileName)
+			return r, &UnknownNameError{Kind: "profile", Name: profileName, Known: sortedNames(m.Profiles)}
 		}
 		applyProfile(&r, profileName, p, indexFlag)
 	}
 
-	if serviceName != "" {
-		svc, ok := m.Services[serviceName]
-		if !ok {
-			return r, fmt.Errorf("unknown service %q (add it to field-map.yaml services)", serviceName)
-		}
+	// A service the field map does not define is still a value to match across the
+	// service fields; a defined one may narrow the fields, the index or the profile.
+	if svc, ok := m.Services[serviceName]; serviceName != "" && ok {
 		if svc.Index != "" && indexFlag == "" && profileName == "" {
 			r.Index = svc.Index
 		}
@@ -161,7 +162,7 @@ func ResolveSearchOptions(m *Map, profileName, indexFlag, serviceName, level str
 		}
 	}
 	if r.Index == "" {
-		return r, errors.New("index is required: use --index, --profile, or set defaults.index in field-map.yaml")
+		return r, ErrNoIndex
 	}
 	_ = level
 	return r, nil
@@ -169,8 +170,13 @@ func ResolveSearchOptions(m *Map, profileName, indexFlag, serviceName, level str
 
 func applyProfile(r *ResolvedSearch, name string, p Profile, indexFlag string) {
 	r.Profile = name
-	if indexFlag == "" && p.Index != "" {
+	switch {
+	case indexFlag != "":
+	case p.Index != "":
 		r.Index = p.Index
+	case len(p.IndexPatterns) > 0:
+		// A profile named by --field-profile searches its own index patterns.
+		r.Index = strings.Join(uniqueStrings(p.IndexPatterns), ",")
 	}
 	if p.TimeField != "" {
 		r.TimeField = p.TimeField
@@ -305,7 +311,7 @@ func uniqueStrings(in []string) []string {
 	return out
 }
 
-// ExampleYAML is the template written by `kibana-cli config init`.
+// ExampleYAML is the template written by `kibana-cli field-map init`.
 const ExampleYAML = `# kibana-cli field map — logical names vs heterogeneous log index fields.
 # Copy to: ~/.kibana-cli/field-map.yaml
 version: 1

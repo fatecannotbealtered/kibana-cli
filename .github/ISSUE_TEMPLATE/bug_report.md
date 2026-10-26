@@ -27,6 +27,7 @@ What actually happened. Include the full error output if applicable.
 ## Environment
 
 - **kibana-cli version**: (run `kibana-cli --version`)
+- **Kibana version**: (`kibana_version` in `kibana-cli auth status`, or ask your Kibana admin when it says unknown)
 - **OS**: (e.g., Windows 11, macOS 15, Ubuntu 24.04)
 - **Install method**: (e.g., npm, prebuilt binary, built from source)
 

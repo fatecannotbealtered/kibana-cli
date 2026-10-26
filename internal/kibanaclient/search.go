@@ -6,80 +6,66 @@ import (
 	"strings"
 )
 
-// BuildSearchBody returns the final Elasticsearch _search request body used by
-// Search, including defaults and pagination state.
+// BuildSearchBody returns the Elasticsearch _search body Search sends: the query, the
+// page (size and from), exact totals, and newest first on the time field. The sort
+// carries unmapped_type, as Kibana's Discover does, so an index of the pattern that
+// lacks the time field does not fail its shards.
 func BuildSearchBody(opts SearchOptions) map[string]any {
 	if opts.TimeField == "" {
 		opts.TimeField = "@timestamp"
 	}
 	if opts.Size <= 0 {
-		opts.Size = 50
+		opts.Size = 20
 	}
 	body := map[string]any{
 		"query":            buildQuery(opts),
 		"size":             opts.Size,
 		"track_total_hits": true,
 	}
-	usingCursor := len(opts.SearchAfter) > 0
-	// search_after is offset-free: `from` is forbidden alongside it, so only
-	// honor Offset in the classic paging path.
-	if opts.Offset > 0 && !usingCursor {
+	if opts.Offset > 0 {
 		body["from"] = opts.Offset
 	}
-	// search_after needs a deterministic total order, so append an _id tiebreaker
-	// to the descending time sort whenever a cursor is in play.
-	if opts.SortDesc || usingCursor {
-		sort := []any{map[string]any{opts.TimeField: map[string]string{"order": "desc"}}}
-		if usingCursor {
-			sort = append(sort, map[string]any{"_id": map[string]string{"order": "desc"}})
-		}
-		body["sort"] = sort
-	}
-	if usingCursor {
-		body["search_after"] = opts.SearchAfter
+	if opts.SortDesc {
+		body["sort"] = []any{map[string]any{opts.TimeField: map[string]any{"order": "desc", "unmapped_type": "boolean"}}}
 	}
 	return body
 }
 
-// Search runs a log search via Console Proxy.
-func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
-	body := BuildSearchBody(opts)
-	path := strings.Trim(strings.TrimPrefix(opts.Index, "/"), "/") + "/_search"
-	data, err := c.Proxy(ctx, http.MethodPost, path, body)
-	if err != nil {
-		return nil, err
-	}
-	return parseSearchResponse(data)
-}
-
-// SearchRaw sends a caller-supplied Elasticsearch query DSL body directly to
-// _search through the Console Proxy, bypassing the flag-based query builder. The
-// body must already be a valid _search request object; callers validate the JSON.
-func (c *Client) SearchRaw(ctx context.Context, index string, body map[string]any) (*SearchResult, error) {
-	target := strings.Trim(strings.TrimPrefix(index, "/"), "/")
+// searchTarget is the Elasticsearch path of a search on index.
+func searchTarget(index string) string {
+	target := strings.Trim(strings.TrimPrefix(strings.TrimSpace(index), "/"), "/")
 	if target == "" {
 		target = "*"
 	}
-	path := target + "/_search"
-	data, err := c.Proxy(ctx, http.MethodPost, path, body)
+	return target + "/_search"
+}
+
+// Search runs a log search through the Console Proxy.
+func (c *Client) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
+	data, err := c.Proxy(ctx, http.MethodPost, searchTarget(opts.Index), BuildSearchBody(opts))
 	if err != nil {
 		return nil, err
 	}
 	return parseSearchResponse(data)
 }
 
-// Count returns only the total hit count (size:0) for the given options — used for zero-result probes.
+// SearchRaw sends a caller-supplied _search body unchanged. It is still a search:
+// the path is <index>/_search, which proxyAllowed enforces.
+func (c *Client) SearchRaw(ctx context.Context, index string, body map[string]any) (*SearchResult, error) {
+	data, err := c.Proxy(ctx, http.MethodPost, searchTarget(index), body)
+	if err != nil {
+		return nil, err
+	}
+	return parseSearchResponse(data)
+}
+
+// Count returns the exact number of documents opts matches (size 0).
 func (c *Client) Count(ctx context.Context, opts SearchOptions) (int64, error) {
 	if opts.TimeField == "" {
 		opts.TimeField = "@timestamp"
 	}
-	body := map[string]any{
-		"query":            buildQuery(opts),
-		"size":             0,
-		"track_total_hits": true,
-	}
-	path := strings.Trim(strings.TrimPrefix(opts.Index, "/"), "/") + "/_search"
-	data, err := c.Proxy(ctx, http.MethodPost, path, body)
+	body := map[string]any{"query": buildQuery(opts), "size": 0, "track_total_hits": true}
+	data, err := c.Proxy(ctx, http.MethodPost, searchTarget(opts.Index), body)
 	if err != nil {
 		return 0, err
 	}
@@ -88,4 +74,24 @@ func (c *Client) Count(ctx context.Context, opts SearchOptions) (int64, error) {
 		return 0, err
 	}
 	return r.Total, nil
+}
+
+// GetDoc reads one document by index and _id, with an ids query through _search (the
+// Console Proxy path stays a search). It returns nil when no document matches.
+func (c *Client) GetDoc(ctx context.Context, index, id string) (*SearchHit, error) {
+	body := map[string]any{"query": map[string]any{"ids": map[string]any{"values": []string{id}}}, "size": 2}
+	data, err := c.Proxy(ctx, http.MethodPost, searchTarget(index), body)
+	if err != nil {
+		return nil, err
+	}
+	r, err := parseSearchResponse(data)
+	if err != nil {
+		return nil, err
+	}
+	for i := range r.Hits {
+		if r.Hits[i].ID == id {
+			return &r.Hits[i], nil
+		}
+	}
+	return nil, nil
 }

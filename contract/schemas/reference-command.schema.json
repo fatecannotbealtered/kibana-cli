@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:reference-command:2.0",
+  "title": "reference-command",
+  "description": "The data of reference --command <path> (CLI-032): one command's full entry, the schemas entry its output names, and the error-table entries of the codes it lists, within 6000 characters. check-contract.py checks that schemas holds exactly the output schema, that error_codes holds exactly the listed codes with their core values, and the size budget.",
+  "type": "object",
+  "properties": {
+    "tool": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/tool_name"},
+    "version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "command": {"$ref": "urn:ai-native-cli-spec:reference:2.0#/$defs/command"},
+    "schemas": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "propertyNames": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"},
+      "additionalProperties": {"$ref": "urn:ai-native-cli-spec:reference:2.0#/$defs/schema_entry"}
+    },
+    "error_codes": {"$ref": "urn:ai-native-cli-spec:reference:2.0#/$defs/error_codes"}
+  },
+  "required": ["tool", "version", "command", "schemas", "error_codes"],
+  "additionalProperties": false
+}

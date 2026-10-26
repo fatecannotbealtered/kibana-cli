@@ -2,387 +2,142 @@ package kibanaclient
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/fatecannotbealtered/kibana-cli/internal/config"
 )
 
-func TestListIndexPatterns(t *testing.T) {
-	page := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-		case "/api/saved_objects/_find":
-			page++
-			if page == 1 {
-				objs := make([]map[string]any, 100)
-				for i := range objs {
-					objs[i] = map[string]any{
-						"id":         "id",
-						"attributes": map[string]string{"title": "logs-*"},
-					}
-				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"saved_objects": objs})
+const routeMissingBody = `{"statusCode":404,"error":"Not Found","message":"Not Found"}`
+
+// kibanaAPIs answers the Kibana APIs of a 7.x (legacy) or 9.x Kibana: each has only
+// its own routes, so the client must pick or fall back.
+func kibanaAPIs(t *testing.T, rc *recorder, major int) string {
+	return rc.server(t, func(w http.ResponseWriter, r *http.Request, _ int) {
+		legacy := major < 8
+		switch p := r.URL.Path; {
+		case p == "/api/status":
+			v := "7.10.2"
+			if !legacy {
+				v = "9.5.2"
+			}
+			_, _ = w.Write([]byte(`{"version":{"number":"` + v + `"}}`))
+		case p == "/api/data_views" && !legacy:
+			_, _ = w.Write([]byte(`{"data_view":[{"id":"dv1","title":"logs-*","name":"Logs"}]}`))
+		case p == "/api/data_views/data_view/dv1" && !legacy:
+			_, _ = w.Write([]byte(`{"data_view":{"id":"dv1","title":"logs-*","name":"Logs","timeFieldName":"event.time","fields":{}}}`))
+		case strings.HasPrefix(p, "/api/data_views/data_view/") && !legacy:
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"statusCode":404,"error":"Not Found","message":"Saved object [index-pattern/nope] not found"}`))
+		case p == "/api/saved_objects/_find" && legacy:
+			if r.URL.Query().Get("type") == "index-pattern" {
+				_, _ = w.Write([]byte(`{"total":1,"saved_objects":[{"id":"dv1","attributes":{"title":"logs-*","timeFieldName":"@timestamp"}}]}`))
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"saved_objects": []map[string]any{
-					{"id": "b", "attributes": map[string]string{"title": "app-*"}},
-				},
-			})
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	list, err := c.ListIndexPatterns(context.Background())
-	if err != nil || len(list) != 101 {
-		t.Fatalf("err=%v len=%d", err, len(list))
-	}
-}
-
-func TestListIndexPatterns_emptyAndErrors(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/saved_objects/_find" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"saved_objects": []any{}})
-			return
-		}
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	list, err := c.ListIndexPatterns(context.Background())
-	if err != nil || len(list) != 0 {
-		t.Fatalf("empty: err=%v len=%d", err, len(list))
-	}
-
-	c2 := NewClient(&config.Config{Host: srv.URL + "/bad", Username: "u", Password: "p"})
-	c2.baseURL = srv.URL
-	c2.httpClient = &http.Client{
-		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.Path == "/api/saved_objects/_find" {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       errReadCloser{err: errors.New("read fail")},
-					Header:     make(http.Header),
-				}, nil
+			_, _ = w.Write([]byte(`{"total":7,"saved_objects":[{"id":"d1","type":"dashboard","updated_at":"2026-10-01T00:00:00.000Z","attributes":{"title":"Errors","description":"p99"},"references":[{"type":"visualization","id":"v1","name":"panel_0"}]}]}`))
+		case p == "/api/saved_objects/index-pattern/dv1" && legacy:
+			_, _ = w.Write([]byte(`{"id":"dv1","attributes":{"title":"logs-*","timeFieldName":"@timestamp"}}`))
+		case p == "/api/saved_objects/dashboard/d1":
+			_, _ = w.Write([]byte(`{"id":"d1","type":"dashboard","attributes":{"title":"Errors","panelsJSON":"[]"},"references":[]}`))
+		case p == "/api/index_patterns/_fields_for_wildcard" && legacy:
+			_, _ = w.Write([]byte(`{"fields":[{"name":"msg","type":"string","searchable":true,"aggregatable":false},{"name":"@timestamp","type":"date","searchable":true,"aggregatable":true}]}`))
+		case p == "/internal/data_views/_fields_for_wildcard" && !legacy:
+			if r.Header.Get("Elastic-Api-Version") != "1" {
+				w.WriteHeader(400)
+				_, _ = w.Write([]byte(`{"statusCode":400,"error":"Bad Request","message":"Please specify a version via elastic-api-version header. Available versions: 1"}`))
+				return
 			}
-			return http.DefaultTransport.RoundTrip(req)
-		}),
-	}
-	_, err = c2.ListIndexPatterns(context.Background())
-	if err == nil {
-		t.Fatal("read error")
-	}
-}
-
-func TestFindSavedObjects(t *testing.T) {
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-		case "/api/saved_objects/_find":
-			gotQuery = r.URL.RawQuery
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"total": 2,
-				"saved_objects": []map[string]any{
-					{"id": "a", "type": "dashboard", "updated_at": "t1", "attributes": map[string]any{"title": "Latency", "description": "p99"}},
-					{"id": "b", "type": "dashboard", "attributes": map[string]any{"title": "Errors"}},
-				},
-			})
+			_, _ = w.Write([]byte(`{"fields":[{"name":"level","type":"string","esTypes":["keyword"],"searchable":true,"aggregatable":true}]}`))
 		default:
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(routeMissingBody))
 		}
-	}))
-	defer srv.Close()
+	}).URL
+}
 
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	objs, total, err := c.FindSavedObjects(context.Background(), FindSavedObjectsOptions{
-		Type: "dashboard", Search: "lat", PerPage: 50,
-	})
-	if err != nil || total != 2 || len(objs) != 2 {
-		t.Fatalf("err=%v total=%d objs=%d", err, total, len(objs))
-	}
-	if objs[0].Title != "Latency" || objs[0].Description != "p99" || objs[0].Type != "dashboard" {
-		t.Fatalf("obj0=%+v", objs[0])
-	}
-	if !strings.Contains(gotQuery, "type=dashboard") || !strings.Contains(gotQuery, "search=lat") {
-		t.Fatalf("query=%q", gotQuery)
+func TestDataViewsOnKibana7And9(t *testing.T) {
+	for _, major := range []int{7, 9} {
+		var rc recorder
+		c := testClient(kibanaAPIs(t, &rc, major))
+		views, err := c.ListDataViews(context.Background())
+		if err != nil || len(views) != 1 || views[0].ID != "dv1" || views[0].Title != "logs-*" {
+			t.Fatalf("Kibana %d: %+v %v", major, views, err)
+		}
+		v, err := c.ResolveDataView(context.Background(), "dv1")
+		if err != nil || v.Title != "logs-*" || v.TimeFieldName == "" {
+			t.Fatalf("Kibana %d resolve: %+v %v", major, v, err)
+		}
+		fields, err := c.ListFields(context.Background(), "logs-*")
+		if err != nil || len(fields) == 0 {
+			t.Fatalf("Kibana %d fields: %+v %v", major, fields, err)
+		}
+		if major == 7 && fields[0].Name != "@timestamp" {
+			t.Fatalf("fields are sorted: %+v", fields)
+		}
 	}
 }
 
-func TestFindSavedObjects_apiError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, _, err := c.FindSavedObjects(context.Background(), FindSavedObjectsOptions{Type: "search"}); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestGetSavedObject(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/saved_objects/dashboard/abc" {
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id": "abc", "type": "dashboard", "updated_at": "t1",
-				"attributes": map[string]any{"title": "Latency", "description": "p99"},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	obj, full, err := c.GetSavedObject(context.Background(), "dashboard", "abc")
-	if err != nil {
+// TestKnownVersionPicksTheRouteFirst: once the version is known, the client asks
+// the route of that version first, without a 404 round trip.
+func TestKnownVersionPicksTheRouteFirst(t *testing.T) {
+	var rc recorder
+	url := kibanaAPIs(t, &rc, 9)
+	c := New(Config{Host: url, KibanaVersion: "9.5.2"})
+	if _, err := c.ListFields(context.Background(), "logs-*"); err != nil {
 		t.Fatal(err)
 	}
-	if obj.ID != "abc" || obj.Title != "Latency" || obj.Description != "p99" {
-		t.Fatalf("obj=%+v", obj)
+	if _, err := c.ResolveDataView(context.Background(), "dv1"); err != nil {
+		t.Fatal(err)
 	}
-	if full["id"] != "abc" {
-		t.Fatalf("full=%v", full)
+	if len(rc.reqs) != 2 || rc.reqs[0].URL.Path != "/internal/data_views/_fields_for_wildcard" {
+		t.Fatalf("requests: %d %s", len(rc.reqs), rc.reqs[0].URL.Path)
 	}
-}
-
-func TestGetSavedObject_notFound(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, _, err := c.GetSavedObject(context.Background(), "dashboard", "missing"); err == nil {
-		t.Fatal("expected error")
+	var rc7 recorder
+	c7 := New(Config{Host: kibanaAPIs(t, &rc7, 7), KibanaVersion: "7.10.2"})
+	if _, err := c7.ListDataViews(context.Background()); err != nil || len(rc7.reqs) != 1 || rc7.reqs[0].URL.Path != "/api/saved_objects/_find" {
+		t.Fatalf("7.x list: %v %d", err, len(rc7.reqs))
 	}
 }
 
-func TestResolveIndexPattern(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/status":
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-		case "/api/saved_objects/index-pattern/abc":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id": "abc",
-				"attributes": map[string]string{
-					"title":         "logs-*",
-					"timeFieldName": "event.created",
-				},
-			})
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	view, err := c.ResolveDataView(context.Background(), "abc")
-	if err != nil || view.ID != "abc" || view.Title != "logs-*" || view.TimeFieldName != "event.created" {
-		t.Fatalf("view=%+v err=%v", view, err)
-	}
-	title, err := c.ResolveDataViewTitle(context.Background(), "abc")
-	if err != nil || title != "logs-*" {
-		t.Fatalf("compat title=%q err=%v", title, err)
-	}
-	title, err = c.ResolveIndexPattern(context.Background(), "abc")
-	if err != nil || title != "logs-*" {
-		t.Fatalf("title=%q err=%v", title, err)
+func TestUnknownDataView(t *testing.T) {
+	var rc recorder
+	c := testClient(kibanaAPIs(t, &rc, 9))
+	if _, err := c.ResolveDataView(context.Background(), "nope"); !errors.Is(err, ErrNoDataView) {
+		t.Fatalf("%v", err)
 	}
 }
 
-func TestListIndexPatterns_ensureVersionAndDoErrors(t *testing.T) {
-	c := NewClient(&config.Config{Host: "http://127.0.0.1:1", Username: "u", Password: "p"})
-	if _, err := c.ListIndexPatterns(context.Background()); err == nil {
-		t.Fatal("ensure version")
+func TestSavedObjects(t *testing.T) {
+	var rc recorder
+	c := testClient(kibanaAPIs(t, &rc, 7))
+	objs, total, err := c.FindSavedObjects(context.Background(), FindSavedObjectsOptions{Type: "dashboard", Search: "err", Page: 2, PerPage: 5})
+	if err != nil || total != 7 || len(objs) != 1 || objs[0].Title != "Errors" || objs[0].Description != "p99" || objs[0].References[0].ID != "v1" {
+		t.Fatalf("%+v %d %v", objs, total, err)
 	}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		if r.URL.Path == "/api/saved_objects/_find" {
-			objs := make([]map[string]any, 100)
-			for i := range objs {
-				objs[i] = map[string]any{"id": "a", "attributes": map[string]string{"title": "t"}}
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"saved_objects": objs})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-
-	c2 := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	c2.httpClient = &http.Client{
-		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.Path == "/api/saved_objects/_find" && req.URL.Query().Get("page") == "2" {
-				return nil, errors.New("page 2 fail")
-			}
-			return http.DefaultTransport.RoundTrip(req)
-		}),
+	q := rc.reqs[0].URL.Query()
+	if q.Get("search") != "err" || q.Get("search_fields") != "title" || q.Get("page") != "2" || q.Get("per_page") != "5" {
+		t.Fatalf("query: %s", rc.reqs[0].URL.RawQuery)
 	}
-	if _, err := c2.ListIndexPatterns(context.Background()); err == nil {
-		t.Fatal("do error on page 2")
+	o, err := c.GetSavedObject(context.Background(), "dashboard", "d1")
+	if err != nil || o.Title != "Errors" || !strings.Contains(string(o.Attributes), "panelsJSON") {
+		t.Fatalf("%+v %v", o, err)
+	}
+	if _, err := c.GetSavedObject(context.Background(), "dashboard", "missing"); err == nil {
+		t.Fatal("missing object")
 	}
 }
 
-func TestListIndexPatterns_apiAndUnmarshalErrors(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
+func TestParseFieldsForWildcard(t *testing.T) {
+	list, err := parseFieldsForWildcard([]byte(`{"fields":{"b":{"type":"string"},"a":{"name":"a","type":"date"}}}`))
+	if err != nil || len(list) != 2 || list[0].Name != "a" || list[1].Name != "b" {
+		t.Fatalf("%+v %v", list, err)
+	}
+	if list, err := parseFieldsForWildcard([]byte(`{"fields":null}`)); err != nil || list == nil || len(list) != 0 {
+		t.Fatalf("null: %+v %v", list, err)
+	}
+	for _, bad := range []string{`{`, `{"fields":7}`} {
+		if _, err := parseFieldsForWildcard([]byte(bad)); err == nil {
+			t.Errorf("%s should fail", bad)
 		}
-		if r.URL.Path == "/api/saved_objects/_find" {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, err := c.ListIndexPatterns(context.Background()); err == nil {
-		t.Fatal("403")
-	}
-
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		_, _ = w.Write([]byte(`not-json`))
-	}))
-	defer srv2.Close()
-	c2 := NewClient(&config.Config{Host: srv2.URL, Username: "u", Password: "p"})
-	if _, err := c2.ListIndexPatterns(context.Background()); err == nil {
-		t.Fatal("unmarshal")
-	}
-}
-
-func TestListIndexPatterns_invalidBaseURL(t *testing.T) {
-	c := NewClient(&config.Config{Host: "http://example", Username: "u", Password: "p", KibanaVersion: "8.0.0"})
-	c.baseURL = "http://\n"
-	if _, err := c.ListIndexPatterns(context.Background()); err == nil {
-		t.Fatal("invalid URL")
-	}
-}
-
-func TestResolveIndexPattern_invalidBaseURL(t *testing.T) {
-	c := NewClient(&config.Config{Host: "http://example", Username: "u", Password: "p", KibanaVersion: "8.0.0"})
-	c.baseURL = "http://\n"
-	if _, err := c.ResolveIndexPattern(context.Background(), "id"); err == nil {
-		t.Fatal("invalid URL")
-	}
-}
-
-func TestResolveIndexPattern_doError(t *testing.T) {
-	c := NewClient(&config.Config{Host: "http://example", Username: "u", Password: "p", KibanaVersion: "8.0.0"})
-	c.httpClient = &http.Client{
-		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
-			return nil, errors.New("network")
-		}),
-	}
-	if _, err := c.ResolveIndexPattern(context.Background(), "id"); err == nil {
-		t.Fatal("do error")
-	}
-}
-
-func TestResolveIndexPattern_ensureVersionError(t *testing.T) {
-	c := NewClient(&config.Config{Host: "http://127.0.0.1:1", Username: "u", Password: "p"})
-	if _, err := c.ResolveIndexPattern(context.Background(), "id"); err == nil {
-		t.Fatal("ensure version")
-	}
-}
-
-func TestResolveIndexPattern_errors(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	if _, err := c.ResolveIndexPattern(context.Background(), "missing"); err == nil {
-		t.Fatal("404")
-	}
-
-	c2 := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	c2.httpClient = &http.Client{
-		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if strings.Contains(req.URL.Path, "index-pattern") {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       errReadCloser{err: errors.New("read fail")},
-					Header:     make(http.Header),
-				}, nil
-			}
-			return http.DefaultTransport.RoundTrip(req)
-		}),
-	}
-	if _, err := c2.ResolveIndexPattern(context.Background(), "x"); err == nil {
-		t.Fatal("read error")
-	}
-
-	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		_, _ = w.Write([]byte(`{`))
-	}))
-	defer srv3.Close()
-	c3 := NewClient(&config.Config{Host: srv3.URL, Username: "u", Password: "p"})
-	if _, err := c3.ResolveIndexPattern(context.Background(), "x"); err == nil {
-		t.Fatal("unmarshal")
-	}
-}
-
-func TestResolveIndexPattern_noTitle(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/status" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"version": map[string]string{"number": "8.0.0"}})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"attributes": map[string]string{}})
-	}))
-	defer srv.Close()
-
-	c := NewClient(&config.Config{Host: srv.URL, Username: "u", Password: "p"})
-	_, err := c.ResolveIndexPattern(context.Background(), "x")
-	if err == nil {
-		t.Fatal("expected error")
 	}
 }

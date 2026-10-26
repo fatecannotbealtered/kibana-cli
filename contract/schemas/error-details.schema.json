@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:error-details:2.0",
+  "title": "error-details",
+  "description": "The error object of a failure envelope: exactly code, message, retryable and details (CLI-010). A core code carries its contract retryable value. details always has dispatch_state and next_action (CLI-011) and then what contract.json error_details.by_code requires for the code (CLI-012 to CLI-015, CLI-059, CLI-063, CLI-065, CLI-070). dispatched is for a write whose request reached the upstream, so such an error carries what happened to it; a read is not_started. Known detail keys are typed wherever they appear; tools may add other snake_case keys. The size budget (2000 characters for the whole envelope, CLI-042) is checked by check-contract.py.",
+  "type": "object",
+  "properties": {
+    "code": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/error_code"},
+    "message": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "retryable": {"type": "boolean"},
+    "details": {"$ref": "#/$defs/details"}
+  },
+  "required": ["code", "message", "retryable", "details"],
+  "additionalProperties": false,
+  "allOf": [
+    {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/core_retryable_rule"},
+    {
+      "description": "dispatched means a write's request reached the upstream (CLI-011), so the error carries what happened to it: the receipt of a single write, the items of a batch, or the staged details of an update. A read is not_started, even when the upstream answered. The codes listed here have their own rule (E_OUTCOME_UNKNOWN, E_PARTIAL, E_VERIFY_FAILED, E_VERIFY_INCOMPLETE) or are never dispatched (E_USAGE, E_CONFIRMATION_REQUIRED, E_NETWORK).",
+      "if": {
+        "required": ["code", "details"],
+        "properties": {
+          "code": {
+            "not": {"enum": ["E_OUTCOME_UNKNOWN", "E_PARTIAL", "E_VERIFY_FAILED", "E_VERIFY_INCOMPLETE", "E_USAGE", "E_CONFIRMATION_REQUIRED", "E_NETWORK"]}
+          },
+          "details": {"required": ["dispatch_state"], "properties": {"dispatch_state": {"const": "dispatched"}}}
+        }
+      },
+      "then": {
+        "properties": {
+          "details": {"anyOf": [{"required": ["receipt"]}, {"required": ["items"]}, {"required": ["stage", "binary_replaced"]}]}
+        }
+      }
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_USAGE"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_USAGE"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_VALIDATION"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_VALIDATION"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_CONFIRMATION_REQUIRED"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_CONFIRMATION_REQUIRED"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_CONFLICT"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_CONFLICT"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_FORBIDDEN"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_FORBIDDEN"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_AMBIGUOUS"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_AMBIGUOUS"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_OUTCOME_UNKNOWN"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_OUTCOME_UNKNOWN"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_PARTIAL"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_PARTIAL"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_VERIFY_FAILED"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_VERIFY_FAILED"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_VERIFY_INCOMPLETE"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_VERIFY_INCOMPLETE"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_HUMAN_REQUIRED"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_HUMAN_REQUIRED"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_RATE_LIMITED"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_RATE_LIMITED"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_NETWORK"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_NETWORK"}}}
+    },
+    {
+      "if": {"required": ["code"], "properties": {"code": {"const": "E_INTEGRITY"}}},
+      "then": {"properties": {"details": {"$ref": "#/$defs/E_INTEGRITY"}}}
+    }
+  ],
+  "$defs": {
+    "details": {
+      "description": "Every error's details (CLI-011). Known keys are typed; items needs summary, and omitted needs items (a batch list shortened to fit the error budget, CLI-063); staged update failures (stage + binary_replaced) follow update failure_details.",
+      "type": "object",
+      "properties": {
+        "dispatch_state": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/dispatch_state"},
+        "next_action": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "problem": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/problem"},
+        "parameter": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "expected": true,
+        "did_you_mean": {"type": "array", "minItems": 1, "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}},
+        "usage": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "available": {"type": "array", "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}},
+        "upstream_message": {"type": "string"},
+        "http_status": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/http_status"},
+        "conflict": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/conflict"},
+        "active_operation": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/any_operation_id"},
+        "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/any_operation_id"},
+        "lookup": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "candidates": {
+          "type": "array",
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/candidate"}
+        },
+        "scope": {"$ref": "urn:ai-native-cli-spec:scope:2.0#/$defs/refusal"},
+        "required": {
+          "description": "What the upstream requires that the account lacks, e.g. a role name (CLI-014).",
+          "type": ["string", "object"]
+        },
+        "preview": {"$ref": "urn:ai-native-cli-spec:preview:2.0"},
+        "confirm_token": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/confirm_token_or_null"},
+        "expires_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"},
+        "receipt": {"$ref": "urn:ai-native-cli-spec:receipt:2.0"},
+        "items": {"type": "array", "minItems": 1, "items": {"$ref": "urn:ai-native-cli-spec:batch:2.0#/$defs/item"}},
+        "summary": {"$ref": "urn:ai-native-cli-spec:batch:2.0#/$defs/summary"},
+        "omitted": {"$ref": "urn:ai-native-cli-spec:batch:2.0#/$defs/omitted"},
+        "action": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/human_action"},
+        "resume": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "retry_after_ms": {"type": "integer", "minimum": 0},
+        "stage": {"$ref": "urn:ai-native-cli-spec:update:2.0#/$defs/stage"},
+        "binary_replaced": {"type": "boolean"},
+        "current_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+        "target_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+        "skill_sync_status": {"$ref": "urn:ai-native-cli-spec:update:2.0#/$defs/skill_sync_status"},
+        "skill_sync_command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+      },
+      "required": ["dispatch_state", "next_action"],
+      "dependentRequired": {"items": ["summary"], "omitted": ["items"]},
+      "if": {"required": ["stage", "binary_replaced"]},
+      "then": {"$ref": "urn:ai-native-cli-spec:update:2.0#/$defs/failure_details"}
+    },
+    "E_USAGE": {
+      "description": "The command line is wrong; nothing was sent. unknown_flag and missing_parameter name the parameter (CLI-012); invalid_value names it when one input is at fault.",
+      "required": ["problem"],
+      "properties": {
+        "dispatch_state": {"const": "not_started"},
+        "problem": {
+          "not": {"enum": ["confirmation_required", "dangerous_flag_required"]}
+        }
+      },
+      "if": {
+        "required": ["problem"],
+        "properties": {
+          "problem": {"enum": ["unknown_flag", "missing_parameter"]}
+        }
+      },
+      "then": {"required": ["parameter"]}
+    },
+    "E_VALIDATION": {
+      "description": "The content was rejected by the tool or the upstream (CLI-012, CLI-016).",
+      "required": ["problem"],
+      "properties": {
+        "problem": {
+          "not": {"enum": ["confirmation_required", "dangerous_flag_required"]}
+        }
+      }
+    },
+    "E_CONFIRMATION_REQUIRED": {
+      "description": "Nothing was changed. A missing --dry-run/--confirm carries the same preview, token, expiry and operation id as a dry-run (CLI-052); a missing --dangerous names the flag (CLI-056).",
+      "required": ["problem"],
+      "properties": {
+        "dispatch_state": {"const": "not_started"},
+        "problem": {"enum": ["confirmation_required", "dangerous_flag_required"]}
+      },
+      "if": {"required": ["problem"], "properties": {"problem": {"const": "confirmation_required"}}},
+      "then": {
+        "required": ["preview", "confirm_token", "expires_at", "operation_id"],
+        "$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/token_issue_rule"
+      }
+    },
+    "E_CONFLICT": {
+      "description": "A precondition failed (CLI-013): token_mismatch names the first differing parameter; unresolved_operation names the active operation, and lock_held does when the lock's owner is known. The gate's own conflicts are found before anything is sent; upstream_conflict is the upstream's 409 or 412 (CLI-016): not_started on a read, dispatched on a write, with its receipt.",
+      "required": ["conflict"],
+      "allOf": [
+        {
+          "if": {"required": ["conflict"], "properties": {"conflict": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/gate_conflict"}}},
+          "then": {"properties": {"dispatch_state": {"const": "not_started"}}}
+        },
+        {
+          "if": {"required": ["conflict"], "properties": {"conflict": {"const": "token_mismatch"}}},
+          "then": {"required": ["parameter"]}
+        },
+        {
+          "if": {
+            "required": ["conflict"],
+            "properties": {"conflict": {"const": "unresolved_operation"}}
+          },
+          "then": {"required": ["active_operation"]}
+        }
+      ]
+    },
+    "E_FORBIDDEN": {
+      "description": "A local scope refusal carries details.scope (CLI-014, SEC-010): it is not_started and has no upstream status. An upstream 403 carries http_status and may name details.required: not_started on a read, dispatched on a write (with its receipt). A tool that refuses before sending because it knows the account lacks a role names details.required.",
+      "if": {
+        "required": ["dispatch_state"],
+        "properties": {"dispatch_state": {"const": "not_started"}},
+        "not": {"anyOf": [{"required": ["http_status"]}, {"required": ["required"]}]}
+      },
+      "then": {"required": ["scope"]}
+    },
+    "E_AMBIGUOUS": {
+      "description": "A name matched several resources; candidates lists at least two refs (CLI-048).",
+      "required": ["candidates"],
+      "properties": {"candidates": {"minItems": 2}}
+    },
+    "E_OUTCOME_UNKNOWN": {
+      "description": "The request may have reached the upstream; operation_id and lookup say how to find out (CLI-015).",
+      "required": ["operation_id", "lookup"],
+      "properties": {"dispatch_state": {"enum": ["dispatched", "unknown"]}}
+    },
+    "E_PARTIAL": {
+      "description": "Some of the change took effect: a single write carries its receipt, a batch its items and summary, an update its failure details with the binary replaced (CLI-059, CLI-063, CLI-070).",
+      "properties": {"dispatch_state": {"const": "dispatched"}},
+      "anyOf": [{"required": ["receipt"]}, {"required": ["items"]}, {"required": ["stage", "binary_replaced"]}],
+      "if": {"required": ["stage", "binary_replaced"]},
+      "then": {"properties": {"binary_replaced": {"const": true}}}
+    },
+    "E_VERIFY_FAILED": {
+      "description": "The change was applied but the read-back disagrees (CLI-059).",
+      "required": ["receipt"],
+      "properties": {"dispatch_state": {"const": "dispatched"}}
+    },
+    "E_VERIFY_INCOMPLETE": {
+      "description": "The change was applied but the required read-back could not be completed (CLI-059).",
+      "required": ["receipt"],
+      "properties": {"dispatch_state": {"const": "dispatched"}}
+    },
+    "E_HUMAN_REQUIRED": {
+      "description": "A person must act (action), then the agent runs resume (CLI-065).",
+      "required": ["action", "resume"]
+    },
+    "E_RATE_LIMITED": {
+      "description": "retry_after_ms when the upstream says how long to wait (CLI-016).",
+      "properties": {"retry_after_ms": {"type": "integer", "minimum": 0}}
+    },
+    "E_NETWORK": {
+      "description": "The upstream could not be reached, so nothing was sent; after a possible send the code is E_OUTCOME_UNKNOWN (CLI-015, CLI-016).",
+      "properties": {"dispatch_state": {"const": "not_started"}}
+    },
+    "E_INTEGRITY": {
+      "description": "A release signature or checksum failed, the release archive held an unsafe entry, or the new binary reported another version: the staged update failure details with the old binary still in place (CLI-070).",
+      "required": ["stage", "current_version", "binary_replaced", "skill_sync_status"],
+      "properties": {"stage": {"enum": ["verify_signature", "verify_checksum", "replace"]}, "binary_replaced": {"const": false}}
+    }
+  }
+}

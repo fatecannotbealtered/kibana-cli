@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:preview:2.0",
+  "title": "preview",
+  "description": "What a write will do, as data.preview of a dry-run or error.details.preview of a refusal (CLI-051, CLI-052, CLI-063). A single-target preview has target and changes under an op_ id; a batch preview has targets, total and one item per target under an opb_ batch id, each item with the op_ id it will run under. total counts every target. When the whole preview would break its envelope's size budget (CLI-042), targets and items keep their first entries, in input order and one to one, and omitted says how many targets were left out (total = listed targets + omitted); inputs and the token still cover every target. inputs echoes the bound inputs: secrets as \"***\", file inputs as {sha256, bytes}. A preview that cannot be applied says why in blocked_by.",
+  "type": "object",
+  "properties": {
+    "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/any_operation_id"},
+    "command": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/command_path"},
+    "action": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "target": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/target"},
+    "changes": {
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/change"}
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/target"}
+    },
+    "total": {"type": "integer", "minimum": 1},
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/item"}
+    },
+    "omitted": {"$ref": "urn:ai-native-cli-spec:batch:2.0#/$defs/omitted"},
+    "effects": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/write_effects"},
+    "dangerous": {"type": "boolean"},
+    "inputs": {"$ref": "#/$defs/inputs"},
+    "base": {"$ref": "#/$defs/base"},
+    "destinations": {
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    },
+    "outputs": {
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    },
+    "can_apply": {"type": "boolean"},
+    "blocked_by": {
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/block"}
+    }
+  },
+  "required": ["operation_id", "command", "action", "effects", "dangerous", "inputs", "can_apply", "blocked_by"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "Batch or single form (CLI-063).",
+      "if": {"required": ["items"]},
+      "then": {
+        "required": ["targets", "total", "items"],
+        "properties": {
+          "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/batch_id"},
+          "target": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"},
+          "changes": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}
+        }
+      },
+      "else": {
+        "required": ["target", "changes"],
+        "properties": {
+          "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/operation_id"},
+          "targets": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"},
+          "total": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"},
+          "omitted": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}
+        }
+      }
+    },
+    {"$ref": "#/$defs/can_apply_rule"},
+    {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/dangerous_rule"},
+    {
+      "description": "A deliver preview names its destinations, so the scope check (SEC-012) and the reader see where content goes.",
+      "if": {"required": ["effects"], "properties": {"effects": {"type": "array", "contains": {"const": "deliver"}}}},
+      "then": {"required": ["destinations"], "properties": {"destinations": {"minItems": 1}}}
+    },
+    {
+      "description": "An artifact or persist preview names the local paths it writes (SEC-012).",
+      "if": {"required": ["effects"], "properties": {"effects": {"type": "array", "contains": {"enum": ["artifact", "persist"]}}}},
+      "then": {"required": ["outputs"], "properties": {"outputs": {"minItems": 1}}}
+    }
+  ],
+  "$defs": {
+    "item": {
+      "description": "One target of a batch preview, in input order, with the op_ id it will run under.",
+      "type": "object",
+      "properties": {
+        "target": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/target"},
+        "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/operation_id"},
+        "changes": {
+          "type": "array",
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/change"}
+        },
+        "can_apply": {"type": "boolean"},
+        "blocked_by": {
+          "type": "array",
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/block"}
+        }
+      },
+      "required": ["target", "operation_id", "changes", "can_apply", "blocked_by"],
+      "additionalProperties": false,
+      "$ref": "#/$defs/can_apply_rule"
+    },
+    "can_apply_rule": {
+      "description": "can_apply false needs at least one blocked_by entry; can_apply true has none (CLI-051).",
+      "if": {"required": ["can_apply"], "properties": {"can_apply": {"const": false}}},
+      "then": {"required": ["blocked_by"], "properties": {"blocked_by": {"minItems": 1}}},
+      "else": {"properties": {"blocked_by": {"maxItems": 0}}}
+    },
+    "inputs": {
+      "description": "The bound inputs by snake_case parameter name (CLI-054). A secret value is \"***\"; a file or stdin input is {sha256, bytes}.",
+      "type": "object",
+      "additionalProperties": {
+        "if": {"type": "object", "required": ["sha256"]},
+        "then": {"$ref": "#/$defs/file_input"}
+      }
+    },
+    "file_input": {
+      "description": "A file or stdin input, bound by the digest of its content.",
+      "type": "object",
+      "properties": {
+        "sha256": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/sha256_hex"},
+        "bytes": {"type": "integer", "minimum": 0}
+      },
+      "required": ["sha256", "bytes"],
+      "additionalProperties": false
+    },
+    "base": {
+      "description": "The target's base version read by the preview and re-read at confirm (CLI-057), and where it came from.",
+      "type": "object",
+      "properties": {
+        "version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "source": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/name"}
+      },
+      "required": ["version", "source"],
+      "additionalProperties": false
+    }
+  }
+}

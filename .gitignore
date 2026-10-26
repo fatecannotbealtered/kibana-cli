@@ -30,6 +30,9 @@ coverage.out
 # goreleaser
 .goreleaser-dist/
 
+# Python bytecode (scripts/live-run.py)
+__pycache__/
+
 # Derived release artifact — must not be committed
 release-notes.md
 
@@ -50,7 +53,7 @@ ccov
 si
 $prof
 
-# Local test artifacts (may contain machine paths / usernames)
-docs/evidence/
+# Local test artifacts (may contain machine paths / usernames).
+# docs/evidence/ is committed: scripts/live-run.py redacts hosts, users and run paths.
 docs/TEST_REPORT.md
 docs/TEST_REPORT.html

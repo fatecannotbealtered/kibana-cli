@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:changelog:2.0",
+  "title": "changelog",
+  "description": "The data of changelog [--since <version>] (CLI-037), parsed from the embedded CHANGELOG.md (Keep a Changelog). check-contract.py checks that entries are newest first, not newer than current_version, strictly newer than since, and that count equals the number of entries.",
+  "type": "object",
+  "properties": {
+    "current_version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "since": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+    "count": {"type": "integer", "minimum": 0},
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "truncated": {"description": "Without --since, only the newest entries that fit the success budget (CLI-042) are listed.", "const": true},
+    "truncated_reason": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "omitted": {"description": "How many older entries were left out.", "type": "integer", "minimum": 1}
+  },
+  "required": ["current_version", "entries"],
+  "dependentRequired": {"truncated": ["truncated_reason", "omitted"], "truncated_reason": ["truncated"], "omitted": ["truncated"]},
+  "additionalProperties": false,
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "properties": {
+        "version": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/semver"},
+        "date": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$"
+        },
+        "changes": {"$ref": "#/$defs/changes"}
+      },
+      "required": ["version", "date", "changes"],
+      "additionalProperties": false
+    },
+    "changes": {
+      "description": "Keep a Changelog categories; absent categories have no entries.",
+      "type": "object",
+      "properties": {
+        "added": {"$ref": "#/$defs/lines"},
+        "changed": {"$ref": "#/$defs/lines"},
+        "fixed": {"$ref": "#/$defs/lines"},
+        "deprecated": {"$ref": "#/$defs/lines"},
+        "removed": {"$ref": "#/$defs/lines"},
+        "security": {"$ref": "#/$defs/lines"}
+      },
+      "additionalProperties": false
+    },
+    "lines": {
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    }
+  }
+}

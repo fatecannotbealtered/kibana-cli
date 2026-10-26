@@ -6,25 +6,30 @@ import (
 	"strconv"
 )
 
-// SearchHit is one log document.
+// SearchHit is one document of a search.
 type SearchHit struct {
-	Index     string         `json:"index"`
-	ID        string         `json:"id"`
-	Timestamp string         `json:"@timestamp,omitempty"`
-	Source    map[string]any `json:"source"`
-	// Sort holds the ES sort values of this hit, used to build a search_after cursor.
-	Sort []any `json:"-"`
+	Index     string
+	ID        string
+	Timestamp string // the source's @timestamp, when it has one as a string
+	Source    map[string]any
 }
 
-// SearchResult is the CLI search envelope.
+// Shards is a search's shard summary. Failed or TimedOut mean the hits and the
+// total may be incomplete.
+type Shards struct {
+	Total, Successful, Skipped, Failed int
+	// FailureReasons are the distinct reasons of the failed shards (external text).
+	FailureReasons []string
+}
+
+// SearchResult is one page of a search.
 type SearchResult struct {
-	TookMs        int         `json:"tookMs"`
-	Total         int64       `json:"total"`
-	TotalRelation string      `json:"totalRelation,omitempty"`
-	Hits          []SearchHit `json:"hits"`
-	// LastSort is the sort values of the final hit on this page; it becomes the
-	// next_search_after cursor for stable, offset-free pagination.
-	LastSort []any `json:"-"`
+	TookMs        int
+	Total         int64
+	TotalRelation string // eq, or gte when Total is a lower bound
+	Hits          []SearchHit
+	Shards        Shards
+	TimedOut      bool
 }
 
 type hitsTotal struct {
@@ -32,6 +37,7 @@ type hitsTotal struct {
 	Relation string
 }
 
+// parseHitsTotal reads hits.total, a number (6.x) or {value, relation} (7.x+).
 func parseHitsTotal(raw json.RawMessage) hitsTotal {
 	if len(raw) == 0 {
 		return hitsTotal{}
@@ -45,113 +51,112 @@ func parseHitsTotal(raw json.RawMessage) hitsTotal {
 		Relation string `json:"relation"`
 	}
 	if json.Unmarshal(raw, &obj) == nil {
+		if obj.Relation == "" {
+			obj.Relation = "eq"
+		}
 		return hitsTotal{Value: obj.Value, Relation: obj.Relation}
 	}
 	return hitsTotal{}
 }
 
-func parseTotalHits(raw json.RawMessage) int64 {
-	return parseHitsTotal(raw).Value
+type shardsJSON struct {
+	Total      int `json:"total"`
+	Successful int `json:"successful"`
+	Skipped    int `json:"skipped"`
+	Failed     int `json:"failed"`
+	Failures   []struct {
+		Reason struct {
+			Type   string `json:"type"`
+			Reason string `json:"reason"`
+		} `json:"reason"`
+	} `json:"failures"`
+}
+
+func (s shardsJSON) shards() Shards {
+	out := Shards{Total: s.Total, Successful: s.Successful, Skipped: s.Skipped, Failed: s.Failed}
+	seen := map[string]bool{}
+	for _, f := range s.Failures {
+		r := f.Reason.Reason
+		if r == "" {
+			r = f.Reason.Type
+		}
+		if r != "" && !seen[r] && len(out.FailureReasons) < 3 {
+			seen[r] = true
+			out.FailureReasons = append(out.FailureReasons, r)
+		}
+	}
+	return out
 }
 
 func parseSearchResponse(data []byte) (*SearchResult, error) {
 	var raw struct {
-		Took int `json:"took"`
-		Hits struct {
+		Took     int        `json:"took"`
+		TimedOut bool       `json:"timed_out"`
+		Shards   shardsJSON `json:"_shards"`
+		Hits     struct {
 			Total json.RawMessage `json:"total"`
 			Hits  []struct {
 				Index  string         `json:"_index"`
 				ID     string         `json:"_id"`
 				Source map[string]any `json:"_source"`
-				Sort   []any          `json:"sort"`
 			} `json:"hits"`
 		} `json:"hits"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing the search response: %w", err)
 	}
 	total := parseHitsTotal(raw.Hits.Total)
-	out := &SearchResult{TookMs: raw.Took, Total: total.Value, TotalRelation: total.Relation}
+	out := &SearchResult{TookMs: raw.Took, Total: total.Value, TotalRelation: total.Relation,
+		Shards: raw.Shards.shards(), TimedOut: raw.TimedOut, Hits: []SearchHit{}}
 	for _, h := range raw.Hits.Hits {
-		hit := SearchHit{Index: h.Index, ID: h.ID, Source: h.Source, Sort: h.Sort}
-		if ts, ok := h.Source["@timestamp"].(string); ok {
+		hit := SearchHit{Index: h.Index, ID: h.ID, Source: h.Source}
+		if hit.Source == nil {
+			hit.Source = map[string]any{}
+		}
+		if ts, ok := hit.Source["@timestamp"].(string); ok {
 			hit.Timestamp = ts
 		}
 		out.Hits = append(out.Hits, hit)
-	}
-	if n := len(out.Hits); n > 0 {
-		out.LastSort = out.Hits[n-1].Sort
 	}
 	return out, nil
 }
 
 // AggBucket is one aggregation bucket. Metric is set only when a metric
-// sub-aggregation was requested (avg|sum|min|max); HasMetric distinguishes a
-// real zero from "no metric".
+// sub-aggregation was requested (avg|sum|min|max) and Elasticsearch gave a value.
 type AggBucket struct {
-	Key       string   `json:"key"`
-	Count     int64    `json:"count"`
-	Metric    *float64 `json:"metric,omitempty"`
-	HasMetric bool     `json:"-"`
+	Key    string
+	Count  int64
+	Metric *float64
 }
 
-// AggResult is the CLI aggregation envelope.
+// AggResult is one aggregation.
 type AggResult struct {
-	TookMs  int         `json:"tookMs"`
-	Field   string      `json:"field"`
-	Total   int64       `json:"total"`
-	Buckets []AggBucket `json:"buckets"`
-	// AggType and Metric echo what was run, for the response envelope.
-	AggType string `json:"aggType,omitempty"`
-	Metric  string `json:"metric,omitempty"`
+	TookMs int
+	Field  string // the field the buckets are of (with .keyword after the retry)
+	Total  int64  // documents the query matched
+	// TotalRelation is eq, or gte when Total is a lower bound.
+	TotalRelation string
+	Buckets       []AggBucket
+	// OtherDocs is sum_other_doc_count of a terms aggregation: documents in buckets
+	// beyond the requested size. More than 0 means more distinct values exist.
+	OtherDocs int64
+	AggType   string
+	Metric    string
+	Shards    Shards
+	TimedOut  bool
 }
 
-func parseTermsAgg(data []byte, field string) (*AggResult, error) {
-	var raw struct {
-		Took         int `json:"took"`
-		Aggregations struct {
-			TermsAgg struct {
-				Buckets []struct {
-					Key      any   `json:"key"`
-					DocCount int64 `json:"doc_count"`
-				} `json:"buckets"`
-			} `json:"terms_agg"`
-		} `json:"aggregations"`
-		Hits struct {
-			Total json.RawMessage `json:"total"`
-		} `json:"hits"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
-	}
-	var keyCheck struct {
-		Aggregations struct {
-			TermsAgg json.RawMessage `json:"terms_agg"`
-		} `json:"aggregations"`
-	}
-	if json.Unmarshal(data, &keyCheck) != nil || len(keyCheck.Aggregations.TermsAgg) == 0 {
-		return nil, fmt.Errorf("missing terms_agg in search response")
-	}
-	out := &AggResult{
-		TookMs: raw.Took,
-		Field:  field,
-		Total:  parseTotalHits(raw.Hits.Total),
-	}
-	for _, b := range raw.Aggregations.TermsAgg.Buckets {
-		out.Buckets = append(out.Buckets, AggBucket{Key: fmtKey(b.Key), Count: b.DocCount})
-	}
-	return out, nil
-}
-
-// parseBucketAgg parses a terms or date_histogram response that may carry a
-// "metric" sub-aggregation per bucket. For date_histogram it prefers
-// key_as_string (the formatted timestamp) over the raw epoch key.
+// parseBucketAgg parses a terms or date_histogram response, with an optional
+// "metric" sub-aggregation per bucket. date_histogram keys are key_as_string.
 func parseBucketAgg(data []byte, field, metric string) (*AggResult, error) {
 	var raw struct {
-		Took         int `json:"took"`
+		Took         int        `json:"took"`
+		TimedOut     bool       `json:"timed_out"`
+		Shards       shardsJSON `json:"_shards"`
 		Aggregations struct {
-			TermsAgg struct {
-				Buckets []struct {
+			TermsAgg *struct {
+				SumOtherDocCount int64 `json:"sum_other_doc_count"`
+				Buckets          []struct {
 					Key         any    `json:"key"`
 					KeyAsString string `json:"key_as_string"`
 					DocCount    int64  `json:"doc_count"`
@@ -166,31 +171,23 @@ func parseBucketAgg(data []byte, field, metric string) (*AggResult, error) {
 		} `json:"hits"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing the aggregation response: %w", err)
 	}
-	var keyCheck struct {
-		Aggregations struct {
-			TermsAgg json.RawMessage `json:"terms_agg"`
-		} `json:"aggregations"`
+	if raw.Aggregations.TermsAgg == nil {
+		return nil, fmt.Errorf("the aggregation response has no terms_agg")
 	}
-	if json.Unmarshal(data, &keyCheck) != nil || len(keyCheck.Aggregations.TermsAgg) == 0 {
-		return nil, fmt.Errorf("missing terms_agg in search response")
-	}
+	total := parseHitsTotal(raw.Hits.Total)
 	wantMetric := normalizeMetric(metric)
-	out := &AggResult{
-		TookMs: raw.Took,
-		Field:  field,
-		Total:  parseTotalHits(raw.Hits.Total),
-		Metric: wantMetric,
-	}
+	out := &AggResult{TookMs: raw.Took, Field: field, Total: total.Value, TotalRelation: total.Relation, Metric: wantMetric,
+		OtherDocs: raw.Aggregations.TermsAgg.SumOtherDocCount, Shards: raw.Shards.shards(), TimedOut: raw.TimedOut,
+		Buckets: []AggBucket{}}
 	for _, b := range raw.Aggregations.TermsAgg.Buckets {
 		key := b.KeyAsString
 		if key == "" {
 			key = fmtKey(b.Key)
 		}
 		bucket := AggBucket{Key: key, Count: b.DocCount}
-		if wantMetric != "" && wantMetric != "count" && b.Metric != nil {
-			bucket.HasMetric = true
+		if hasMetric(wantMetric) && b.Metric != nil {
 			bucket.Metric = b.Metric.Value
 		}
 		out.Buckets = append(out.Buckets, bucket)
@@ -204,10 +201,10 @@ func fmtKey(k any) string {
 		return v
 	case float64:
 		return strconv.FormatFloat(v, 'f', -1, 64)
-	case int:
-		return strconv.Itoa(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
+	case bool:
+		return strconv.FormatBool(v)
+	case nil:
+		return ""
 	default:
 		b, _ := json.Marshal(k)
 		return string(b)

@@ -27,10 +27,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # SEC-SPEC §5 requires an audit per shipped ecosystem, fail-closed. This is
-      # the Go half; the `npm audit` job below is the wrapper half. govulncheck
-      # also covers the Go standard library, so a toolchain CVE turns CI red --
-      # fix it by moving the `go` directive in go.mod, which setup-go reads above.
+      # SEC-050 requires an audit per shipped ecosystem, fail-closed. This is
+      # the Go half (it covers the vendored internal/aicli too); the `npm audit`
+      # job below is the wrapper half. govulncheck also covers the Go standard
+      # library, so a toolchain CVE turns CI red -- fix it by moving the `go`
+      # directive in go.mod, which setup-go reads above.
       - name: Go vulnerability audit
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -51,8 +52,8 @@ jobs:
           fi
 
       - name: golangci-lint
-        # Action v8 pairs with golangci-lint v2 (the .golangci.yml `version: "2"`
-        # config format); action v6 only drives v1 binaries.
+        # Action v8+ pairs with golangci-lint v2 (the .golangci.yml `version: "2"`
+        # config format). The vendored internal/aicli is excluded there.
         uses: golangci/golangci-lint-action@v9
         with:
           # 'latest' tracks the newest v2 linter release; pin to a specific
@@ -73,6 +74,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # go test ./... includes the aicli conformance suite (VER-001: the write
+      # gate for every write command, the contract on real output, reference
+      # budgets) and the registry coverage check (VER-003). Every OS runs it:
+      # the gate's state store behaves differently on Windows.
       - name: Run tests with coverage
         # bash on all platforms: pwsh splits the unquoted -coverprofile=coverage.out
         # at the dot, passing a stray ".out" package arg to go test
@@ -102,7 +107,7 @@ jobs:
           path: coverage.out
 
   npm-audit:
-    name: npm audit
+    name: npm audit, version and spec sync
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -111,15 +116,6 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-
-      # gen-contract.js shells out to gofmt, and check-spec.js re-runs it to
-      # byte-compare against the committed module. Without Go in this job the
-      # generator fails closed rather than emitting unformatted output, so the
-      # codegen verifier is given the codegen's own toolchain. Do not rely on
-      # the runner image happening to preinstall Go.
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
 
       - name: Install package metadata
         run: npm install --ignore-scripts --omit=optional --no-audit --no-fund
@@ -131,10 +127,70 @@ jobs:
       - name: Verify version sync
         run: node scripts/check-version.js
 
-      # Fail-closed: the vendored .agent specs + contract.json must match the
-      # pinned ai-native-cli-spec tag, and contract_gen must match contract.json.
-      - name: Verify spec/contract sync
+      # Fail-closed (REPO-SPEC, SEC-050): internal/aicli must match its
+      # MANIFEST.json (offline, strict), and every vendored spec file, schema and
+      # library file must match the spec tag in .agent/SPEC_VERSION (remote; a
+      # failed download degrades to a warning). Node only: there is no codegen.
+      - name: Verify spec, contract and library sync
         run: node scripts/check-spec.js
+
+  # REPO-041 / CLI-090 (SHOULD): the npm launcher may add at most 100 ms per
+  # call. This builds the binary into a local platform package, then compares
+  # the median of 11 runs of `--version` through scripts/run.js with the binary
+  # run directly (the npm .cmd shim on Windows adds a little more). Informational:
+  # a miss does not block the merge; it means the README's Agent Install must put
+  # the native binary on PATH for agents.
+  launcher-budget:
+    name: Launcher budget (${{ matrix.os }})
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Measure launcher overhead
+        shell: bash
+        run: |
+          set -euo pipefail
+          plat=$(node -p "process.platform + '-' + process.arch")
+          pkg=$(node -p "require('./package.json').name")
+          name=$(node -p "Object.keys(require('./package.json').bin)[0]")
+          ext=""; [ "$RUNNER_OS" = "Windows" ] && ext=".exe"
+          dir="node_modules/$pkg-$plat"
+          mkdir -p "$dir/bin"
+          go build -o "$dir/bin/$name$ext" ./cmd/kibana-cli
+          printf '{"name": "%s-%s", "version": "0.0.0"}\n' "$pkg" "$plat" > "$dir/package.json"
+          node -e '
+            const { spawnSync } = require("child_process");
+            const median = (cmd, args) => {
+              const t = [];
+              for (let i = 0; i < 11; i++) {
+                const s = process.hrtime.bigint();
+                spawnSync(cmd, args, { stdio: "ignore" });
+                t.push(Number(process.hrtime.bigint() - s) / 1e6);
+              }
+              return t.sort((a, b) => a - b)[5];
+            };
+            const direct = median(process.argv[1], ["--version"]);
+            const launched = median(process.execPath, ["scripts/run.js", "--version"]);
+            const extra = Math.round(launched - direct);
+            console.log(`binary ${direct.toFixed(0)} ms, through the launcher ${launched.toFixed(0)} ms: +${extra} ms`);
+            if (extra > 100) {
+              console.log(`::warning::the npm launcher adds ${extra} ms (budget 100 ms); document the native binary path for agents (REPO-041)`);
+              process.exit(1);
+            }
+          ' "$dir/bin/$name$ext"
 
   build:
     name: Build
@@ -160,3 +216,4 @@ jobs:
           [ "$RUNNER_OS" = "Windows" ] && BIN=kibana-cli.exe
           go build -o "$BIN" ./cmd/kibana-cli
           "./$BIN" --help
+          "./$BIN" reference --index > /dev/null

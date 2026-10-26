@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:batch:2.0",
+  "title": "batch",
+  "description": "The result of a confirmed batch write (CLI-063): one item per target in input order, de-duplicated, each under its own op_ id, plus the summary. It is data when every item succeeded, and error.details (items + summary) when any item failed, was unknown or was skipped. An item with ok false carries error (failed or unknown) or, if it was never attempted, neither error nor an attempted receipt (skipped); a succeeded item may be compact ({target, operation_id, ok} and its result, without the receipt that operation show returns). summary always counts every target. When the full list would break the response's size budget (CLI-042), items lists fewer entries: the items with ok false come first and are all kept before any item that succeeded is listed, and omitted says how many were left out. check-contract.py checks the summary against the item tally (equal, or at least the tally when omitted is present), the failures-first rule and that the envelope's ok and code follow contract.json batch.ok_rule.",
+  "type": "object",
+  "properties": {
+    "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/batch_id"},
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/item"}
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "omitted": {"$ref": "#/$defs/omitted"}
+  },
+  "required": ["items", "summary"],
+  "additionalProperties": false,
+  "$defs": {
+    "item": {
+      "description": "One target's result, in input order. target is the target key (the input identifier, as in the preview's targets); receipt says what happened to it (a skipped item's receipt has execution not_started); result is the per-item data.",
+      "type": "object",
+      "properties": {
+        "target": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "operation_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/operation_id"},
+        "ok": {"type": "boolean"},
+        "receipt": {"$ref": "urn:ai-native-cli-spec:receipt:2.0"},
+        "error": {"$ref": "#/$defs/item_error"},
+        "result": true
+      },
+      "required": ["target", "operation_id", "ok"],
+      "additionalProperties": false,
+      "if": {"required": ["ok"], "properties": {"ok": {"const": true}}},
+      "then": {"properties": {"error": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}}}
+    },
+    "item_error": {
+      "description": "A per-item error: code and retryable from the core table, and a short message.",
+      "type": "object",
+      "properties": {
+        "code": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/error_code"},
+        "retryable": {"type": "boolean"},
+        "message": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+      },
+      "required": ["code", "retryable", "message"],
+      "additionalProperties": false,
+      "$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/core_retryable_rule"
+    },
+    "summary": {
+      "description": "Counts over every target, listed or not: total = succeeded + failed + unknown + skipped.",
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer", "minimum": 1},
+        "succeeded": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "unknown": {"type": "integer", "minimum": 0},
+        "skipped": {"type": "integer", "minimum": 0}
+      },
+      "required": ["total", "succeeded", "failed", "unknown", "skipped"],
+      "additionalProperties": false
+    },
+    "omitted": {
+      "description": "How many entries a list left out to fit the size budget (CLI-042, CLI-063); present only when it is at least 1. operation list --batch <batch id> lists every item.",
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

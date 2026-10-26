@@ -6,6 +6,12 @@ linters:
     - gocritic
     - misspell
   exclusions:
+    # internal/aicli is the vendored ai-native-cli-spec library. It is linted and
+    # tested in the spec repository, guarded by scripts/check-spec.js, and never
+    # edited here, so a finding in it could not be fixed in this repository.
+    # go vet and govulncheck still cover it.
+    paths:
+      - internal/aicli
     rules:
       - path: '(.+)_test\.go'
         linters:

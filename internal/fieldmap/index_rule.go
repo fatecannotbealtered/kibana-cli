@@ -2,14 +2,14 @@ package fieldmap
 
 // IndexRule applies field/trace settings when --index matches a glob (first match wins).
 type IndexRule struct {
-	Match           string   `yaml:"match" json:"match"`
-	TimeField       string   `yaml:"time_field" json:"timeField,omitempty"`
-	ServiceFields   []string `yaml:"service_fields" json:"serviceFields,omitempty"`
-	LevelFields     []string `yaml:"level_fields" json:"levelFields,omitempty"`
-	MessageFields   []string `yaml:"message_fields" json:"messageFields,omitempty"`
-	TraceIDFields   []string `yaml:"trace_id_fields" json:"traceIdFields,omitempty"`
-	TraceMode       string   `yaml:"trace_mode" json:"traceMode,omitempty"`
-	TraceMsgRegexes []string `yaml:"trace_msg_patterns" json:"traceMsgPatterns,omitempty"`
+	Match           string   `yaml:"match,omitempty" json:"match,omitempty"`
+	TimeField       string   `yaml:"time_field,omitempty" json:"time_field,omitempty"`
+	ServiceFields   []string `yaml:"service_fields,omitempty" json:"service_fields,omitempty"`
+	LevelFields     []string `yaml:"level_fields,omitempty" json:"level_fields,omitempty"`
+	MessageFields   []string `yaml:"message_fields,omitempty" json:"message_fields,omitempty"`
+	TraceIDFields   []string `yaml:"trace_id_fields,omitempty" json:"trace_id_fields,omitempty"`
+	TraceMode       string   `yaml:"trace_mode,omitempty" json:"trace_mode,omitempty"`
+	TraceMsgRegexes []string `yaml:"trace_msg_patterns,omitempty" json:"trace_msg_patterns,omitempty"`
 }
 
 // MatchIndexRule returns the first index_rules entry that matches index.

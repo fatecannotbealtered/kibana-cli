@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:scope:2.0",
+  "title": "scope",
+  "description": "A scope file (SEC-010, SEC-011, SEC-012): written by a person, read by the CLI, never created or edited by it. Strict JSON: unknown keys are invalid here, duplicate keys are rejected by the parser (check-contract.py parses strictly). targets absent means any target of this tool; a selector matches its key exactly or, by default, as a subtree on the boundaries / ! # : @. $defs/refusal is error.details.scope of an E_FORBIDDEN refusal (CLI-014).",
+  "type": "object",
+  "properties": {
+    "scope_id": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "tool": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/tool_name"},
+    "granted_by": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "granted_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp"},
+    "expires_at": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/timestamp_or_null"},
+    "effects": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/effects"},
+    "dangerous": {"type": "boolean"},
+    "targets": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/selector"}
+    },
+    "destinations": {
+      "description": "Where deliver may send content (contract.json scope.destination_match). A destination containing :// matches the same scheme and host and a path at or below the granted path; any other destination (email address, handle, channel id) matches exactly, and as a prefix only when it ends with /, at / boundaries; @ : # ! are ordinary characters here.",
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    },
+    "outputs": {
+      "description": "Absolute directories where new local files may be created (artifact).",
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    },
+    "roots": {
+      "description": "Absolute directories whose existing files may be overwritten (persist).",
+      "type": "array",
+      "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+    },
+    "limits": {"$ref": "#/$defs/limits"},
+    "revoked": {"type": "boolean"},
+    "notes": {"type": "string"}
+  },
+  "required": ["scope_id", "tool", "granted_by", "granted_at", "expires_at", "effects", "dangerous"],
+  "additionalProperties": false,
+  "$defs": {
+    "selector": {
+      "description": "A target selector: subtree (default) or exact match on the target key.",
+      "type": "object",
+      "properties": {
+        "key": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "match": {"enum": ["subtree", "exact"]}
+      },
+      "required": ["key"],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_operations": {
+          "description": "Confirmed operations allowed under this scope, counted from the journal.",
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "refusal": {
+      "description": "error.details.scope when a write is refused locally (CLI-014, SEC-010): why, which file, what is missing and an example grant for the person to adjust and save.",
+      "type": "object",
+      "properties": {
+        "status": {"enum": ["missing", "invalid", "expired", "revoked", "insufficient", "budget_spent"]},
+        "path": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "scope_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "missing": {"$ref": "#/$defs/missing"},
+        "grant_example": {"$ref": "#"}
+      },
+      "required": ["status", "path"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "description": "A missing or unreadable file has no scope id.",
+          "if": {"required": ["status"], "properties": {"status": {"enum": ["missing", "invalid"]}}},
+          "then": {"properties": {"scope_id": {"type": "null"}}}
+        },
+        {
+          "description": "A readable scope is named.",
+          "if": {"required": ["status"], "properties": {"status": {"enum": ["expired", "revoked", "insufficient", "budget_spent"]}}},
+          "then": {"required": ["scope_id"], "properties": {"scope_id": {"type": "string"}}}
+        },
+        {
+          "description": "An insufficient scope says what is missing.",
+          "if": {"required": ["status"], "properties": {"status": {"const": "insufficient"}}},
+          "then": {"required": ["missing"]}
+        }
+      ]
+    },
+    "missing": {
+      "description": "What the request needs beyond the current scope. Known keys are typed; a tool may add others.",
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "effects": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/effect"}
+        },
+        "dangerous": {"type": "boolean"},
+        "target": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+        "destinations": {
+          "type": "array",
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+        },
+        "outputs": {
+          "description": "New files whose directory is not under the scope's outputs.",
+          "type": "array",
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+        },
+        "roots": {
+          "description": "Existing files the command would overwrite, not under the scope's roots.",
+          "type": "array",
+          "items": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"}
+        }
+      }
+    }
+  }
+}

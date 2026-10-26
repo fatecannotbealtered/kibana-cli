@@ -1,95 +1,80 @@
 package cmd
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 )
 
-func TestDoctor_Help(t *testing.T) {
-	buf := new(bytes.Buffer)
-	rootCmd.SetOut(buf)
-	rootCmd.SetArgs([]string{"doctor", "--help"})
-	_ = rootCmd.Execute()
-	rootCmd.SetOut(nil)
-	if f := doctorCmd.Flags().Lookup("help"); f != nil {
-		_ = f.Value.Set("false")
+// doctorChecks returns doctor's checks by name.
+func doctorChecks(t *testing.T, r cliResult) map[string]map[string]any {
+	t.Helper()
+	out := map[string]map[string]any{}
+	for _, c := range listOf(r.data()["checks"]) {
+		m := c.(map[string]any)
+		out[m["check"].(string)] = m
 	}
-	if !strings.Contains(buf.String(), "doctor") {
-		t.Fatal("missing doctor in help")
+	return out
+}
+
+func TestDoctor(t *testing.T) {
+	e := newTestEnv(t)
+	c := doctorChecks(t, e.run("doctor"))
+	// Kibana 9 hides its version from this account; Elasticsearch tells it.
+	if c["connectivity"]["status"] != "pass" || c["credentials"]["status"] != "pass" || c["console_proxy"]["status"] != "pass" ||
+		c["kibana_version"]["status"] != "pass" || !strings.Contains(c["kibana_version"]["message"].(string), "Kibana 9.5.2, from Elasticsearch") {
+		t.Fatalf("checks: %v", c)
+	}
+	e.kb.fullStatus = true
+	if c = doctorChecks(t, e.run("doctor")); !strings.Contains(c["kibana_version"]["message"].(string), "from Kibana's GET /api/status") {
+		t.Fatalf("status with the version: %v", c["kibana_version"])
+	}
+	e.kb.fullStatus, e.kb.esRootForbidden = false, true
+	if c = doctorChecks(t, e.run("doctor")); c["kibana_version"]["status"] != "pass" || !strings.HasPrefix(c["kibana_version"]["message"].(string), "Unknown") {
+		t.Fatalf("version unknown: %v", c["kibana_version"])
+	}
+	e.vars["KIBANA_CLI_KIBANA_VERSION"] = "9.5.0"
+	if c = doctorChecks(t, e.run("doctor")); !strings.Contains(c["kibana_version"]["message"].(string), "9.5.0, from the kibana_version setting") {
+		t.Fatalf("configured version: %v", c["kibana_version"])
+	}
+	e.vars["KIBANA_CLI_KIBANA_VERSION"], e.kb.esRootForbidden = "", false
+	// Kibana 9's restriction, when a proxy strips the header: named as what it is.
+	e.kb.stripOrigin = true
+	c = doctorChecks(t, e.run("doctor"))
+	if c["console_proxy"]["status"] != "fail" || !strings.Contains(c["console_proxy"]["message"].(string), "x-elastic-internal-origin") {
+		t.Fatalf("internal origin: %v", c["console_proxy"])
+	}
+	e.kb.stripOrigin = false
+	e.vars["KIBANA_CLI_PASSWORD"] = "wrong"
+	if c = doctorChecks(t, e.run("doctor")); c["credentials"]["status"] != "fail" || c["connectivity"]["status"] != "pass" {
+		t.Fatalf("wrong password: %v", c)
+	}
+	e.vars["KIBANA_CLI_PASSWORD"] = ""
+	if c = doctorChecks(t, e.run("doctor")); c["credentials"]["status"] != "fail" || !strings.Contains(c["credentials"]["fix"].(string), "auth login") {
+		t.Fatalf("no password: %v", c)
+	}
+	e.vars["KIBANA_CLI_HOST"] = "http://127.0.0.1:1"
+	if c = doctorChecks(t, e.run("doctor")); c["connectivity"]["status"] != "fail" {
+		t.Fatalf("unreachable: %v", c)
+	}
+	e.vars["KIBANA_CLI_HOST"] = ""
+	if c = doctorChecks(t, e.run("doctor")); c["connectivity"]["status"] != "warn" {
+		t.Fatalf("not configured: %v", c)
 	}
 }
 
-func TestDoctor_NoConfig(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", t.TempDir())
-	t.Setenv("KIBANA_CLI_HOST", "")
-	t.Setenv("KIBANA_CLI_USER", "")
-	origExit := lastExit
-	defer func() { lastExit = origExit }()
-	lastExit = 0
-	rootCmd.SetArgs([]string{"doctor"})
-	_ = rootCmd.Execute()
-	if lastExit != ExitAuth {
-		t.Fatalf("expected exit %d, got %d", ExitAuth, lastExit)
+func TestContextReportsTheFieldMapAndAllowlist(t *testing.T) {
+	e := newTestEnv(t)
+	e.writeFieldMap("profiles:\n  app:\n    index: app-*\n")
+	e.vars["KIBANA_CLI_ALLOWED_INDEX_PREFIXES"] = "app-,legacy-"
+	e.vars["KIBANA_CLI_DEFAULT_INDEX"] = "app-log-*"
+	r := e.run("context")
+	d := r.data()
+	raw := r.out
+	if r.exit != 0 || d["account"] != testUser || !strings.Contains(raw, `"allowed_index_prefixes":["app-","legacy-"]`) ||
+		!strings.Contains(raw, `"default_index":"app-log-*"`) || !strings.Contains(raw, `"profiles":["app"]`) {
+		t.Fatalf("context: %s", r.out)
 	}
-}
-
-func TestDoctor_WithMockServer(t *testing.T) {
-	srv := newMockKibanaServer()
-	defer srv.Close()
-	t.Setenv("KIBANA_CLI_HOST", srv.URL)
-	t.Setenv("KIBANA_CLI_USER", "ops")
-	t.Setenv("KIBANA_CLI_PASSWORD", "secret")
-	origExit := lastExit
-	defer func() { lastExit = origExit }()
-	lastExit = 0
-	rootCmd.SetArgs([]string{"doctor"})
-	_ = rootCmd.Execute()
-	if lastExit != ExitOK {
-		t.Fatalf("expected exit 0, got %d", lastExit)
-	}
-}
-
-func TestDoctor_NoConfig_JSON(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", t.TempDir())
-	t.Setenv("KIBANA_CLI_HOST", "")
-	origJM := jsonMode
-	origExit := lastExit
-	defer func() { jsonMode = origJM; lastExit = origExit }()
-	lastExit = 0
-	out := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"doctor", "--json"})
-		_ = rootCmd.Execute()
-	})
-	if !strings.Contains(out, `"configExists"`) {
-		t.Fatalf("unexpected output: %s", out)
-	}
-}
-
-func TestDoctorVersionCheck(t *testing.T) {
-	if !versionMeetsMin("1.1.0", "1.1.0") {
-		t.Fatal("expected equal version to pass")
-	}
-	if versionMeetsMin("1.0.9", "1.1.0") {
-		t.Fatal("expected older version to fail")
-	}
-	result := &doctorResult{Version: "1.0.9", SkillMinVersion: "1.1.0", SecurityTier: securityTier}
-	checks := buildDoctorChecks(result)
-	if len(checks) == 0 || checks[0].Check != "version" || checks[0].Status != "fail" {
-		t.Fatalf("expected failing version check: %+v", checks)
-	}
-	foundReleaseReadiness := false
-	for _, check := range checks {
-		if check.Check == "release_readiness" {
-			foundReleaseReadiness = true
-			if check.Status != "pass" {
-				t.Fatalf("release_readiness check = %+v", check)
-			}
-		}
-	}
-	if !foundReleaseReadiness {
-		t.Fatalf("missing release_readiness check: %+v", checks)
+	if len(e.kb.Requests()) != 0 {
+		t.Fatal("context made a request")
 	}
 }

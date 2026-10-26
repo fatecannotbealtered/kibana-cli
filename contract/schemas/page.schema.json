@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-cli-spec:page:2.0",
+  "title": "page",
+  "description": "The data of a list command (CLI-041): items, count and has_more always; while has_more is true exactly one of next_cursor, next_offset or continuation_reason; truncated with truncated_reason when the tool capped the list; scope echoes what the list covers (filters actually applied, and narrower-than-expected coverage such as direct members only); sort names the order; total, when the upstream reports it, is the number of items the whole list has, everything scope covers, so \"how many\" needs no paging (CLI-044). count is only the items in this response. check-contract.py checks that count equals the number of items, that next_offset advances past offset and that total agrees with offset, count and has_more.",
+  "type": "object",
+  "properties": {
+    "items": {"type": "array"},
+    "count": {"type": "integer", "minimum": 0},
+    "has_more": {"type": "boolean"},
+    "next_cursor": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "next_offset": {"type": "integer", "minimum": 0},
+    "continuation_reason": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "offset": {"type": "integer", "minimum": 0},
+    "truncated": {"type": "boolean"},
+    "truncated_reason": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "scope": {"type": "object"},
+    "sort": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/text"},
+    "total": {"type": "integer", "minimum": 0}
+  },
+  "required": ["items", "count", "has_more"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "has_more true: exactly one way to continue or a reason it cannot; has_more false: no continuation keys.",
+      "if": {"required": ["has_more"], "properties": {"has_more": {"const": true}}},
+      "then": {
+        "oneOf": [
+          {"required": ["next_cursor"]},
+          {"required": ["next_offset"]},
+          {"required": ["continuation_reason"]}
+        ]
+      },
+      "else": {
+        "properties": {
+          "next_cursor": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"},
+          "next_offset": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"},
+          "continuation_reason": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}
+        }
+      }
+    },
+    {
+      "description": "A truncated list says why and admits there is more; truncated_reason only accompanies truncated true.",
+      "if": {"required": ["truncated"], "properties": {"truncated": {"const": true}}},
+      "then": {"required": ["truncated_reason"], "properties": {"has_more": {"const": true}}},
+      "else": {"properties": {"truncated_reason": {"$ref": "urn:ai-native-cli-spec:common:2.0#/$defs/absent"}}}
+    }
+  ]
+}
