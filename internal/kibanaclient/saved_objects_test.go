@@ -141,3 +141,33 @@ func TestParseFieldsForWildcard(t *testing.T) {
 		}
 	}
 }
+
+// TestDataViewAPIRecordsWhichAPIAnswered: with no version known, the data views
+// API answers on 9.x and the index-pattern saved objects on 7.x (no data views
+// API); a Discover link picks its path from that.
+func TestDataViewAPIRecordsWhichAPIAnswered(t *testing.T) {
+	for major, want := range map[int]string{7: EndpointSavedObjects, 9: EndpointDataViews} {
+		var rc recorder
+		c := testClient(kibanaAPIs(t, &rc, major))
+		if c.DataViewAPI() != "" || c.KnownVersion() != "" {
+			t.Fatalf("Kibana %d: known before any read: %q %q", major, c.DataViewAPI(), c.KnownVersion())
+		}
+		if _, err := c.ListDataViews(context.Background()); err != nil || c.DataViewAPI() != want {
+			t.Fatalf("Kibana %d list: %q %v", major, c.DataViewAPI(), err)
+		}
+		r := testClient(kibanaAPIs(t, &rc, major))
+		if _, err := r.ResolveDataView(context.Background(), "dv1"); err != nil || r.DataViewAPI() != want {
+			t.Fatalf("Kibana %d resolve: %q %v", major, r.DataViewAPI(), err)
+		}
+	}
+	c := New(Config{Host: "http://127.0.0.1:1", KibanaVersion: " 7.10.2 "})
+	if c.KnownVersion() != "7.10.2" || c.major() != 7 {
+		t.Fatalf("configured version: %q %d", c.KnownVersion(), c.major())
+	}
+	var rc recorder
+	looked := testClient(kibanaAPIs(t, &rc, 9))
+	looked.VersionInfo(context.Background())
+	if looked.KnownVersion() != "9.5.2" || len(rc.reqs) != 1 {
+		t.Fatalf("looked-up version: %q after %d requests", looked.KnownVersion(), len(rc.reqs))
+	}
+}

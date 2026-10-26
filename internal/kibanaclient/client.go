@@ -68,6 +68,10 @@ type Client struct {
 	// where from; versionDone records that it looked.
 	version, versionSource string
 	versionDone            bool
+	// dataViewAPI is the data view API that last answered: EndpointDataViews (the
+	// data views API of Kibana 8.0 and later) or EndpointSavedObjects (the
+	// index-pattern saved objects); "" before any data view read.
+	dataViewAPI string
 }
 
 // New builds a client.
@@ -476,21 +480,45 @@ func (c *Client) elasticsearchVersion(ctx context.Context) (string, error) {
 	return strings.TrimSpace(raw.Version.Number), nil
 }
 
+// KnownVersion is the Kibana version the client knows without a request: the
+// configured one, else one an earlier lookup found; "" when unknown.
+func (c *Client) KnownVersion() string {
+	if v := strings.TrimSpace(c.cfg.KibanaVersion); v != "" {
+		return v
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.version != "":
+		return c.version
+	case c.status != nil:
+		return strings.TrimSpace(c.status.Version)
+	}
+	return ""
+}
+
 // major is the Kibana major version when the client knows it without a request
 // (the configured version or an earlier lookup), else 0: the APIs are then tried
 // newest first, falling back on a missing route.
 func (c *Client) major() int {
-	v := strings.TrimSpace(c.cfg.KibanaVersion)
-	if v == "" {
-		c.mu.Lock()
-		switch {
-		case c.version != "":
-			v = c.version
-		case c.status != nil:
-			v = c.status.Version
-		}
-		c.mu.Unlock()
-	}
-	n, _ := strconv.Atoi(strings.SplitN(v, ".", 2)[0])
+	n, _ := strconv.Atoi(strings.SplitN(c.KnownVersion(), ".", 2)[0])
 	return n
+}
+
+// DataViewAPI is the data view API that last answered this client:
+// EndpointDataViews when Kibana has the data views API (8.0 and later),
+// EndpointSavedObjects when the index-pattern saved objects answered, "" before any
+// data view read. With no version known the data views API is asked first, so
+// EndpointSavedObjects then means Kibana has no data views API: Kibana 7.x.
+func (c *Client) DataViewAPI() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.dataViewAPI
+}
+
+// answered records which data view API answered.
+func (c *Client) answered(api string) {
+	c.mu.Lock()
+	c.dataViewAPI = api
+	c.mu.Unlock()
 }

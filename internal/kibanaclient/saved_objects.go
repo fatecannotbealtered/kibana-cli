@@ -63,6 +63,7 @@ func (c *Client) listDataViewsAPI(ctx context.Context) ([]DataView, error) {
 	for _, v := range raw.DataView {
 		out = append(out, DataView{ID: v.ID, Title: v.Title, Name: v.Name})
 	}
+	c.answered(EndpointDataViews)
 	return out, nil
 }
 
@@ -104,6 +105,7 @@ func (c *Client) listIndexPatternObjects(ctx context.Context) ([]DataView, error
 			break
 		}
 	}
+	c.answered(EndpointSavedObjects)
 	return out, nil
 }
 
@@ -157,6 +159,7 @@ func (c *Client) dataViewBySavedObject(ctx context.Context, id string) (*DataVie
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing the index pattern: %w", err)
 	}
+	c.answered(EndpointSavedObjects)
 	return &DataView{ID: raw.ID, Title: raw.Attributes.Title, Name: raw.Attributes.Name, TimeFieldName: raw.Attributes.TimeFieldName}, nil
 }
 
@@ -176,6 +179,7 @@ func (c *Client) dataViewByAPI(ctx context.Context, id string) (*DataView, error
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing the data view: %w", err)
 	}
+	c.answered(EndpointDataViews)
 	v := raw.DataView
 	return &DataView{ID: v.ID, Title: v.Title, Name: v.Name, TimeFieldName: v.TimeFieldName}, nil
 }

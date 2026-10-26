@@ -106,16 +106,21 @@ func BuildAggBody(opts AggOptions) map[string]any {
 	if metric := metricSubAgg(opts); metric != nil {
 		agg["aggs"] = map[string]any{"metric": metric}
 	}
-	q := SearchOptions{Index: opts.Index, From: opts.From, To: opts.To, TimeField: opts.TimeField, Query: opts.Query,
-		QueryClause: opts.QueryClause, MsgOnly: opts.MsgOnly, MessageField: opts.MessageField, MessageFields: opts.MessageFields,
-		ServiceValue: opts.ServiceValue, ServiceFields: opts.ServiceFields, LevelValue: opts.LevelValue, LevelFields: opts.LevelFields,
-		TraceID: opts.TraceID, TraceFields: opts.TraceFields, TraceMode: opts.TraceMode, Fields: opts.Fields}
 	return map[string]any{
 		"size":             0,
 		"track_total_hits": true,
-		"query":            buildQuery(q),
+		"query":            buildQuery(opts.SearchOptions()),
 		"aggs":             map[string]any{"terms_agg": agg},
 	}
+}
+
+// SearchOptions are the search options of the documents the aggregation counts:
+// its query, with the time range, as BuildAggBody sends it.
+func (opts AggOptions) SearchOptions() SearchOptions {
+	return SearchOptions{Index: opts.Index, From: opts.From, To: opts.To, TimeField: opts.TimeField, Query: opts.Query,
+		QueryClause: opts.QueryClause, MsgOnly: opts.MsgOnly, MessageField: opts.MessageField, MessageFields: opts.MessageFields,
+		ServiceValue: opts.ServiceValue, ServiceFields: opts.ServiceFields, LevelValue: opts.LevelValue, LevelFields: opts.LevelFields,
+		TraceID: opts.TraceID, TraceFields: opts.TraceFields, TraceMode: opts.TraceMode, Fields: opts.Fields}
 }
 
 func normalizeAggOptions(opts AggOptions) AggOptions {

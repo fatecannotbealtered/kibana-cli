@@ -1,6 +1,7 @@
 package kibanaclient
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/fatecannotbealtered/kibana-cli/internal/fieldmap"
@@ -50,8 +51,15 @@ func buildQuery(opts SearchOptions) map[string]any {
 			"range": map[string]any{opts.TimeField: rangeQ},
 		})
 	}
-	for k, v := range opts.Fields {
-		clauses := termFilterClauses(k, v)
+	// The field filters go in field-name order, so the same options always give
+	// the same body (a Discover link carries it, and tests compare the two).
+	keys := make([]string, 0, len(opts.Fields))
+	for k := range opts.Fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		clauses := termFilterClauses(k, opts.Fields[k])
 		if len(clauses) == 1 {
 			filter = append(filter, clauses[0])
 			continue
@@ -96,6 +104,14 @@ func buildQuery(opts SearchOptions) map[string]any {
 		return map[string]any{"match_all": map[string]any{}}
 	}
 	return map[string]any{"bool": boolQ}
+}
+
+// QueryWithoutTimeRange is the query Search sends for opts without its time range
+// clause: what a Kibana Discover filter carries, while the range goes into
+// Discover's time picker. With no other clause it is match_all.
+func QueryWithoutTimeRange(opts SearchOptions) map[string]any {
+	opts.From, opts.To = "", ""
+	return buildQuery(opts)
 }
 
 func termFilterClauses(key, value string) []map[string]any {

@@ -164,3 +164,37 @@ func TestBuildTraceQuery_emptyAndNoFields(t *testing.T) {
 		t.Fatalf("expected free-text fallback when no trace fields, got %#v", q)
 	}
 }
+
+// TestQueryWithoutTimeRange: the query a Discover link carries is the query the
+// search sends minus its range clause, the field filters in a fixed order.
+func TestQueryWithoutTimeRange(t *testing.T) {
+	opts := SearchOptions{Index: "app-*", From: "2026-10-25T07:00:00Z", To: "2026-10-25T08:00:00Z", TimeField: "@timestamp",
+		Fields: map[string]string{"z.f": "1", "a.f": "2", "m.f": "3"}, LevelValue: "ERROR", LevelFields: []string{"level"}}
+	full := BuildSearchBody(opts)["query"].(map[string]any)["bool"].(map[string]any)
+	filter := full["filter"].([]map[string]any)
+	if _, isRange := filter[0]["range"]; !isRange {
+		t.Fatalf("the range comes first: %#v", filter)
+	}
+	got := QueryWithoutTimeRange(opts)["bool"].(map[string]any)
+	if !reflect.DeepEqual(got["filter"], filter[1:]) || !reflect.DeepEqual(got["must"], full["must"]) {
+		t.Fatalf("without range:\n%#v\nfull:\n%#v", got, full)
+	}
+	var order []string
+	for _, f := range filter[1:] {
+		for _, c := range f["bool"].(map[string]any)["should"].([]map[string]any) {
+			for k := range c["term"].(map[string]any) {
+				order = append(order, k)
+			}
+		}
+	}
+	if want := []string{"a.f", "a.f.keyword", "m.f", "m.f.keyword", "z.f", "z.f.keyword"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("field filter order: %v", order)
+	}
+	if q := QueryWithoutTimeRange(SearchOptions{From: "x", To: "y", TimeField: "@timestamp"}); q["match_all"] == nil {
+		t.Fatalf("only a range: %#v", q)
+	}
+	agg := AggOptions{Index: "app-*", From: "a", To: "b", TimeField: "@timestamp", Query: "timeout", LevelValue: "ERROR", LevelFields: []string{"level"}}
+	if !reflect.DeepEqual(BuildAggBody(agg)["query"], buildQuery(agg.SearchOptions())) {
+		t.Fatal("the aggregation's query is its SearchOptions' query")
+	}
+}
