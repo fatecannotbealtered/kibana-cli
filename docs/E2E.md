@@ -4,8 +4,10 @@
 and is safe anywhere: it never touches a real Kibana or the OS keyring. That alone
 makes a command `experimental` (VER-005); it becomes `verified` only with a recorded
 run against a real Kibana, which `scripts/live-run.py` makes. The read commands are
-`verified` by the records in [evidence/](evidence/); `auth login`, `auth logout`,
-`field-map init` and `field-map add-profile` stay `experimental`.
+`verified` by the records in [evidence/](evidence/), except `log search` and `log
+aggregate`, whose output `--discover-url` changed after the runs (`experimental` until
+the next run); `auth login`, `auth logout`, `field-map init` and `field-map
+add-profile` stay `experimental`.
 
 ## What the live run does
 

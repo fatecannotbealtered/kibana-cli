@@ -207,3 +207,15 @@ Not run live, still `experimental`: `auth login`, `auth logout`, `field-map init
 `field-map add-profile` (they write the keyring, settings or local files; their
 gates are covered by the conformance suite). Not checked live: Kibana 8.x; macOS and
 Linux keyrings; KQL and Lucene counts against Discover.
+
+## After 2.0: Discover links (#11, for 2.1.0)
+
+`--discover-url` on `log search` and `log aggregate` adds `scope.discover_url`, a
+Discover link with the CLI's own query (minus the time range) as one custom filter;
+format, data view rules and limits in [../DISCOVER-LINKS.md](../DISCOVER-LINKS.md).
+Checked by hand on Kibana 9.5.2 (`total` 12, Discover 12 hits). It changes the
+output of both commands, so their live records no longer count: both are
+`experimental` until `scripts/live-run.py` runs again (VER-005). Open: whether
+Kibana 7.9 and 7.10 redirect the legacy `/app/kibana#/discover` link, which they get
+when the version is unknown (no `kibana_version` setting); the 7.7.1 legacy link;
+Kibana 8.x; spaces.

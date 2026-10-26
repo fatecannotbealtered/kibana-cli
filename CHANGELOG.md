@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `--discover-url` on `log search` (also with `--dsl`) and `log aggregate` (#11):
+  `scope.discover_url` is a Kibana Discover link that shows the same documents,
+  for a person to open from a ticket or a chat card. When no link can be built
+  (no data view, or several, for the index), `discover_url` is null and
+  `scope.discover_url_reason` says why and what to pass; see
+  [docs/DISCOVER-LINKS.md](docs/DISCOVER-LINKS.md).
+
 ## [2.0.0] - 2026-10-26
 
 kibana-cli now follows ai-native-cli-spec 2.0. The first items below are why you

@@ -14,6 +14,13 @@
     "grader_notes": "Seed: five documents carry the trace id, some in trace.id and some only in the message as an MDC prefix [trace, span]; gateway, order-svc and payment-svc log it, and the last one is a payment-svc ERROR whose message is longer than 500 characters. The grader checks the service order and the ANSWER line. Any write fails the trial."
   },
   {
+    "id": "share-discover-link",
+    "scenario": "read-answer",
+    "prompt": "Find the ERROR logs of order-svc in app-log-* from the last hour and give me a Kibana link I can paste into the Jira ticket.",
+    "expected": "The agent runs log search --index 'app-log-*' --service order-svc --level ERROR --since 1h with --discover-url and gives the user scope.discover_url unchanged, with the count from total and the UTC range from scope. If discover_url is null, it relays discover_url_reason, and when the reason names several data views it asks which one is meant instead of picking one. Nothing is written.",
+    "grader_notes": "Seed: one data view whose index pattern is app-log-*, with a time field. The grader decodes the link's _a filter and _g time range (or opens it in Kibana) and checks that it shows the documents counted in total. A link the agent built or edited by hand, or any write, fails the trial."
+  },
+  {
     "id": "save-inferred-profile",
     "scenario": "write",
     "prompt": "The legacy-log-* indices use odd field names. Work out which fields hold the service, level, message and trace id, and save them in my field map as a profile called legacy.",

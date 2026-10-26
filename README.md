@@ -71,6 +71,7 @@ Reads need no grant, so searching logs needs no scope file. The tool never creat
 Built in: `reference`, `context`, `doctor`, `changelog`, `operation show|list|resolve` and `update`. `kibana-cli <noun> <verb> --help` and `kibana-cli reference --command "<noun> <verb>"` describe one command; this README does not repeat flags or schemas.
 
 - `log search` finds documents by time range, service, level, trace id, text (Lucene or a strict KQL subset) and exact field values; `log aggregate` counts them per value or per time bucket; `log get` reads one whole document.
+- With `--discover-url`, `log search` and `log aggregate` add `scope.discover_url`: a Kibana Discover link that shows the same documents, for a person to open ([docs/DISCOVER-LINKS.md](docs/DISCOVER-LINKS.md)).
 - `pattern` lists data views and index fields, and `pattern infer` guesses which fields hold the service, level, message and trace id; `field-map` keeps those guesses as named profiles for indices that use their own field names.
 - `object` reads dashboards, visualizations, Lens objects, saved searches and data views as saved objects.
 - Kibana 7.x to 9.x; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
@@ -187,7 +188,7 @@ node scripts/check-spec.js       # vendored specs, contract and library match th
 node scripts/check-version.js    # every version location matches package.json
 ```
 
-CI runs these on every push and pull request, and again before a release is signed (VER-008). Every write command needs a conformance sample, every command needs a test that runs it against the fake Kibana in `cmd/`, and a command's maturity (`draft`, `experimental`, `verified`, `stable`) rises only with its evidence (VER-001, VER-003, VER-005). `scripts/live-run.py` runs every read command against a real Kibana and writes the record to `docs/evidence/` ([docs/E2E.md](docs/E2E.md)); the read commands are `verified` by runs on Kibana 9.5.2, 7.10 and 7.7.1, and the writes stay `experimental`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+CI runs these on every push and pull request, and again before a release is signed (VER-008). Every write command needs a conformance sample, every command needs a test that runs it against the fake Kibana in `cmd/`, and a command's maturity (`draft`, `experimental`, `verified`, `stable`) rises only with its evidence (VER-001, VER-003, VER-005). `scripts/live-run.py` runs every read command against a real Kibana and writes the record to `docs/evidence/` ([docs/E2E.md](docs/E2E.md)); the read commands are `verified` by runs on Kibana 9.5.2, 7.10 and 7.7.1, except `log search` and `log aggregate`, `experimental` again since `--discover-url` until the next run, and the writes stay `experimental`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Links
 

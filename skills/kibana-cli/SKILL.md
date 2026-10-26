@@ -81,6 +81,7 @@ If a confirm's reply is lost or it returns `E_OUTCOME_UNKNOWN`, run `kibana-cli 
 - Unknown field names: `pattern infer --index 'app-log-*'` guesses the service, level, message and trace fields from a sample and returns `next_command`, a `field-map add-profile` line that saves them as a profile; run it with the write recipe if the user wants the profile kept, then search with `--field-profile <name>`.
 - A dashboard or saved search: `object list --type dashboard --query payments`, then `object get <ref>` (`--fields +attributes` adds its stored query and panels).
 - A body the flags cannot express: `log search --index <pattern> --dsl '<_search body JSON>'`; it is still a search.
+- When the user wants to share the result or check it in Kibana: add `--discover-url` to the `log search` or `log aggregate` call and give them `scope.discover_url` unchanged; if it is null, `scope.discover_url_reason` says what to pass instead (often `--data-view <ref>`).
 
 ## Report
 

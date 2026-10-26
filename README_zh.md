@@ -71,6 +71,7 @@ PowerShell 用 `$env:NAME = "value"` 设置同样的变量。`KIBANA_CLI_HOST` �
 内置命令：`reference`、`context`、`doctor`、`changelog`、`operation show|list|resolve` 和 `update`。`kibana-cli <noun> <verb> --help` 和 `kibana-cli reference --command "<noun> <verb>"` 说明一个命令；本 README 不重复 flag 和 schema。
 
 - `log search` 按时间范围、服务、级别、trace id、文本（Lucene，或 KQL 的一个严格子集）和字段的精确值找日志；`log aggregate` 按字段的值或时间段计数；`log get` 读一条完整的日志。
+- 加上 `--discover-url`，`log search` 和 `log aggregate` 会在 `scope.discover_url` 里给出一个 Kibana Discover 链接，打开后看到的是同一批日志，方便发给别人看（见 [docs/DISCOVER-LINKS.md](docs/DISCOVER-LINKS.md)）。
 - `pattern` 列出数据视图和索引的字段；`pattern infer` 猜哪些字段存服务、级别、消息和 trace id。索引的字段名跟常见的不一样时，`field-map` 把这些猜测存成有名字的 profile。
 - `object` 读取仪表盘、可视化、Lens、保存的搜索和数据视图这些保存对象。
 - 支持 Kibana 7.x 到 9.x，见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
@@ -187,7 +188,7 @@ node scripts/check-spec.js       # vendored specs, contract and library match th
 node scripts/check-version.js    # every version location matches package.json
 ```
 
-CI 在每次 push 和 pull request 时运行这些检查，发布签名前还会再跑一次（VER-008）。每个写入命令都要有符合性测试的样例，每个命令都要有一个对 `cmd/` 里的假 Kibana 运行它的测试；命令的成熟度（`draft`、`experimental`、`verified`、`stable`）只随证据提升（VER-001、VER-003、VER-005）。`scripts/live-run.py` 对真实的 Kibana 运行每个只读命令，并把记录写到 `docs/evidence/`（见 [docs/E2E.md](docs/E2E.md)）；只读命令已在 Kibana 9.5.2、7.10 和 7.7.1 上实测，是 `verified`，写入命令仍是 `experimental`。见 [CONTRIBUTING_zh.md](CONTRIBUTING_zh.md)。
+CI 在每次 push 和 pull request 时运行这些检查，发布签名前还会再跑一次（VER-008）。每个写入命令都要有符合性测试的样例，每个命令都要有一个对 `cmd/` 里的假 Kibana 运行它的测试；命令的成熟度（`draft`、`experimental`、`verified`、`stable`）只随证据提升（VER-001、VER-003、VER-005）。`scripts/live-run.py` 对真实的 Kibana 运行每个只读命令，并把记录写到 `docs/evidence/`（见 [docs/E2E.md](docs/E2E.md)）；只读命令已在 Kibana 9.5.2、7.10 和 7.7.1 上实测，是 `verified`；`log search` 和 `log aggregate` 因为加了 `--discover-url`，在下次实测前又回到 `experimental`；写入命令仍是 `experimental`。见 [CONTRIBUTING_zh.md](CONTRIBUTING_zh.md)。
 
 ## 链接
 
